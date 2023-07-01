@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "__MSG_app_title__",
-  "version": "1.0.1",
+  "version": "1.0.2",
 
   "default_locale": "ja",
   "description": "__MSG_app_description__",
@@ -34,8 +34,7 @@
   "content_scripts": [
     {
       "matches": [
-        "https://*.rakuten-sec.co.jp/*",
-        "https://*.sbisec.co.jp/ETGate/*"
+        "https://*.rakuten-sec.co.jp/*"
       ],
       "css": [
         "style.css"
@@ -43,7 +42,20 @@
       "js": [
         "third-party/jquery.min.js",
         "link.js",
-        "rakuten-cs.js",
+        "rakuten-cs.js"
+      ]
+    },
+    {
+      "matches": [
+        "https://*.sbisec.co.jp/ETGate/*",
+        "https://*.sbi.ifis.co.jp/*"
+      ],
+      "css": [
+        "style.css"
+      ],
+      "js": [
+        "third-party/jquery.min.js",
+        "link.js",
         "sbi-cs.js"
       ]
     }
