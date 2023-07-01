@@ -1,0 +1,20 @@
+{
+  "name": "chrome.ext.kabu-tantan",
+  "version": "1.0.0",
+  "description": "Chrome extension.",
+  "main": "src/main.js",
+  "scripts": {
+    "lint": "eslint src"
+  },
+  "author": "www.harurow",
+  "license": "MIT",
+  "devDependencies": {
+    "eslint": "^8.17.0",
+    "eslint-config-standard": "^17.0.0",
+    "eslint-plugin-import": "^2.26.0",
+    "eslint-plugin-n": "^15.2.2",
+    "eslint-plugin-promise": "^6.0.0",
+    "stylelint": "^14.9.1",
+    "stylelint-config-standard": "^26.0.0"
+  }
+}

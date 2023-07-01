@@ -1,0 +1,8 @@
+{
+  "app_title": {
+    "message": "株リンク"
+  },
+  "app_description": {
+    "message": "証券会社のHPから外部の株式情報ページへ遷移するリンクを作ります"
+  }
+}
