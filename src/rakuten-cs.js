@@ -1,5 +1,5 @@
 $(function () {
-  setTimeout(hooks, 100)
+  setTimeout(hooks, 500)
 })
 
 /**
@@ -20,8 +20,6 @@ function hook (hookSetting) {
     return
   }
 
-  console.log(`Hello, rakuten-sec.co.jp : ${hookSetting.title}`)
-
   $(hookSetting.selector)
     .each(function () {
       const elem = $(this)
@@ -32,6 +30,7 @@ function hook (hookSetting) {
         return
       }
 
+      // 一致した最後の数字4桁を銘柄コードとして扱う
       const tickerCode = matches[matches.length - 1]
 
       build(elem, tickerCode)
@@ -44,37 +43,8 @@ function hook (hookSetting) {
  * @param {string} tickerCode
  */
 function build (elem, tickerCode) {
-  const dropDownMenu = $('<ul class="x-kabu">')
-    .css('padding', '3px 8px')
-    .css('text-align', 'left')
-
-  gotoLinks.forEach((linkSetting) => {
-    const link = $('<a>')
-      .text(linkSetting.title)
-      .attr('title', linkSetting.title)
-      .attr('target', '_blank')
-      .attr('rel', 'noopener noreferrer')
-      .attr('href', linkSetting.url.replace('{}', tickerCode))
-    const list = $('<li class="x-kabu-menu-item">')
-      .css('margin', '3px 6px')
-      .append(link)
-    dropDownMenu.append(list)
-  })
-
-  const mainMenu = $('<span class="x-kabu-root">')
-    .text(elem.text())
-    .css('display', 'inline-block')
-    .append(dropDownMenu)
-    .hover(
-      function () {
-        dropDownMenu.addClass('open')
-      },
-      function () {
-        dropDownMenu.removeClass('open')
-      }
-    )
-
-  elem.html(mainMenu)
+  const dropDownMenu = createDropDownMenu(tickerCode)
+  attachDropDownMenu(elem, dropDownMenu)
 }
 
 /**
@@ -95,7 +65,36 @@ const hookSettings = [
   {
     title: '保有商品一覧・国内株式',
     url: '/app/ass_jp_stk_possess_lst.do;',
-    selector: 'table#poss-tbl-sp tr td table tr td'
+    selector: 'table#poss-tbl-sp tr td table tr td nobr'
+  },
+  {
+    title: 'ランキング・売買代金',
+    url: '/app/market_ranking.do',
+    selector: 'div#str-main-inner div.mbody table.tbl-data-01 tr td'
+  },
+  {
+    title: 'ランキング・出来高',
+    url: '/app/market_ranking_volume.do',
+    selector: 'div#str-main-inner div.mbody table.tbl-data-01 tr td'
+  },
+  {
+    title: 'ランキング・値上り・値下り',
+    url: '/app/market_ranking_change.do',
+    selector: 'div#str-main-inner div.mbody table.tbl-data-01 tr td'
+  },
+  {
+    title: 'ランキング・信用残',
+    url: '/app/market_ranking_debit.do',
+    selector: 'div#str-main-inner div.mbody table.tbl-data-01 tr td'
+  },
+  {
+    title: 'ランキング・楽天内',
+    url: '/app/market_ranking_rakuten.do',
+    selector: `div#daily-ranking table.tbl-data-01 tr td.align-C,
+               div#weekly-ranking table.tbl-data-01 tr td.align-C,
+               div#daily-ranking-margin table.tbl-data-01 tr td.align-C,
+               div#margin-oneday-ranking table.tbl-data-01 tr td.align-C,
+               div#sor-ranking table.tbl-data-01 tr td.align-C`
   },
   {
     title: '国内株式・個別銘柄',

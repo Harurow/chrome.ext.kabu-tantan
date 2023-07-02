@@ -1,5 +1,5 @@
 $(function () {
-  setTimeout(hooks, 300)
+  setTimeout(hooks, 500)
 })
 
 /**
@@ -26,6 +26,7 @@ function hook (hookSetting) {
         return
       }
 
+      // 一致した最後の数字4桁を銘柄コードとして扱う
       const tickerCode = matches[matches.length - 1]
 
       build(elem, tickerCode)
@@ -38,37 +39,8 @@ function hook (hookSetting) {
  * @param {string} tickerCode
  */
 function build (elem, tickerCode) {
-  const dropDownMenu = $('<ul class="x-kabu">')
-    .css('padding', '3px 8px')
-    .css('text-align', 'left')
-
-  gotoLinks.forEach((linkSetting) => {
-    const link = $('<a>')
-      .text(linkSetting.title)
-      .attr('title', linkSetting.title)
-      .attr('target', '_blank')
-      .attr('rel', 'noopener noreferrer')
-      .attr('href', linkSetting.url.replace('{}', tickerCode))
-    const list = $('<li class="x-kabu-menu-item">')
-      .css('margin', '3px 6px')
-      .append(link)
-    dropDownMenu.append(list)
-  })
-
-  const mainMenu = $('<span class="x-kabu-root">')
-    .text(elem.text())
-    .css('display', 'inline-block')
-    .append(dropDownMenu)
-    .hover(
-      function () {
-        dropDownMenu.addClass('open')
-      },
-      function () {
-        dropDownMenu.removeClass('open')
-      }
-    )
-
-  elem.html(mainMenu)
+  const dropDownMenu = createDropDownMenu(tickerCode)
+  attachDropDownMenu(elem, dropDownMenu)
 }
 
 /**
