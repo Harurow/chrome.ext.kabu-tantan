@@ -100,5 +100,10 @@ const hookSettings = [
     title: '国内株式・個別銘柄',
     url: '/app/info_jp_prc_stock.do',
     selector: 'div#line1 h1.hdg-l1-01-title span:first'
+  },
+  {
+    title: '国内株式・株価検索',
+    url: '/app/info_jp_prc_search.do',
+    selector: 'div#line1 h1.hdg-l1-01-title span:first'
   }
 ]

@@ -49,9 +49,11 @@ function build (elem, tickerCode) {
  */
 const hookSettings = [
   {
+    title: "個別銘柄",
     selector: 'div#main div.mgt15 div.trHead01 table.tbl01 tr.vaT td.tdL H3 span.fm01 span.normal'
   },
   {
+    title: 'ポートフォリオ',
     selector: 'body.vsc-initialized div.middleArea2 div.middleAreaM2 table table table tr td.mtext'
   }
 ]
