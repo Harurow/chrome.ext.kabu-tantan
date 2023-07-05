@@ -22,6 +22,9 @@ function hook (hookSetting) {
 
   $(hookSetting.selector)
     .each(function () {
+      // 該当要素の文字列に数値4桁があれば銘柄コードとして採用
+      // 複数ある場合は最後の該当数値を利用する
+
       const elem = $(this)
       const text = elem.text().trim()
 
@@ -30,7 +33,6 @@ function hook (hookSetting) {
         return
       }
 
-      // 一致した最後の数字4桁を銘柄コードとして扱う
       const tickerCode = matches[matches.length - 1]
 
       build(elem, tickerCode)

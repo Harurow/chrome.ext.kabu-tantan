@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "__MSG_app_title__",
-  "version": "1.0.4",
+  "version": "1.0.5",
 
   "default_locale": "ja",
   "description": "__MSG_app_description__",
@@ -57,6 +57,15 @@
         "third-party/jquery.min.js",
         "link.js",
         "sbi-cs.js"
+      ]
+    },
+    {
+      "matches": [
+        "https://jp.tradingview.com/*"
+      ],
+      "js": [
+        "third-party/jquery.min.js",
+        "tradingview-cs.js"
       ]
     }
   ]
