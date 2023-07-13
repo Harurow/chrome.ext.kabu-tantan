@@ -60,6 +60,11 @@ const hookSettings = [
     selector: 'form#form table.tbl-data-01 td.align-C div.mbody nobr'
   },
   {
+    title: 'お気に入り編集',
+    url: '/app/info_jp_prc_reg_lst_edit.do;',
+    selector: 'form table.tbl-data-01 td.align-C div.mbody nobr'
+  },
+  {
     title: '保有商品一覧・すべて',
     url: '/app/ass_all_possess_lst.do;',
     selector: 'div#table_possess_data table.tbl-bold-border tr > td:contains("国内株式") + td'

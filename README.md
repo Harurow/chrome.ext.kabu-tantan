@@ -1,9 +1,9 @@
 # Chrome拡張 株リンク
 
 楽天証券、SBI証券のHPに外部の株式情報ページへのリンクを作ります。
-銘柄コードにカーソルを合わせると「TradingView」、「株探」、「Yahooファイナンス」へのリンクメニューが表示される
+銘柄コードにカーソルを合わせると「TradingView」、「株探」、「MINKABU」、「Yahooファイナンス」へのリンクメニューが表示される
 
-選択コンテキストメニューから「TradingView」、「株探」、「Yahooファイナンス」への検索を追加
+選択コンテキストメニューから「TradingView」、「株探」、「MINKABU」、「Yahooファイナンス」への検索を追加
 
 ## 対応サイト
 
@@ -50,7 +50,7 @@ TradingViewの右クリックメニューにYahooファインスと株探への�
 
 ### コンテキストメニュー
 
-選択している場合のコンテキストメニューに「株探」、「Yahoo!ファイナンス」、「TradingView」を追加  
+選択している場合のコンテキストメニューに「TradingView」、「株探」、「MINKABU」、「Yahoo!ファイナンス」を追加  
 なお、選択範囲に4桁の数値が見つかった場合のみ画面が開きます。
 
 ![](https://github.com/Harurow/chrome.ext.kabu-tantan/blob/main/etc/screen-5.png?raw=true "コンテキストメニュー")

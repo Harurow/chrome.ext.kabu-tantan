@@ -7,6 +7,7 @@ function createDropDownMenu (tickerCode) {
   const dropDownMenu = $('<ul class="x-kabu">')
     .css('padding', '3px 8px')
     .css('text-align', 'left')
+    .css('z-index', '999999')
 
   gotoLinks.forEach((linkSetting) => {
     const link = $('<a>')
@@ -82,24 +83,8 @@ const gotoLinks = [
     url: 'https://kabutan.jp/stock/?code={}'
   },
   {
-    title: '株探/チャート',
-    url: 'https://kabutan.jp/stock/chart?code={}'
-  },
-  {
-    title: '株探/時系列',
-    url: 'https://kabutan.jp/stock/kabuka?code={}'
-  },
-  {
-    title: '株探/ニュース',
-    url: 'https://kabutan.jp/stock/news?code={}'
-  },
-  {
-    title: '株探/決算',
-    url: 'https://kabutan.jp/stock/finance?code={}'
-  },
-  {
-    title: '株探/大株主',
-    url: 'https://kabutan.jp/stock/holder?code={}'
+    title: 'MINKABU/株価情報トップ',
+    url: 'https://minkabu.jp/stock/{}'
   },
   {
     title: 'Yahoo! ファイナス/掲示板',

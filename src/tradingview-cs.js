@@ -61,8 +61,9 @@ function hookMenu () {
 
   const tickerCode = firstMenuItemText.slice(0, 4)
 
-  const yahoo = `${tickerCode} をYahoo!ファイナンスで開く`
   const kabutan = `${tickerCode} を株探で開く`
+  const minkabu = `${tickerCode} をMINKABUで開く`
+  const yahoo = `${tickerCode} をYahoo!ファイナンスで開く`
 
   const menuItem = $(`
   <tr class="row-DFIg7eOh">
@@ -79,7 +80,7 @@ function hookMenu () {
       <div class="content-GJX1EXhk">
         <span class="label-GJX1EXhk" data-label="true">
           <div class="wrapper-NLkHhUu3">
-            <a style="color: var(--tv-color-popup-element-text); width: 100%;" title="${yahoo}" target="_blank" rel="noopener noreferrer" href="https://finance.yahoo.co.jp/quote/${tickerCode}/bbs">${yahoo}</a>
+            <a style="color: var(--tv-color-popup-element-text); width: 100%;" title="${kabutan}" target="_blank" rel="noopener noreferrer" href="https://kabutan.jp/stock/?code=${tickerCode}">${kabutan}</a>
           </div>
         </span>
       </div>
@@ -94,7 +95,22 @@ function hookMenu () {
       <div class="content-GJX1EXhk">
         <span class="label-GJX1EXhk" data-label="true">
           <div class="wrapper-NLkHhUu3">
-            <a style="color: var(--tv-color-popup-element-text); width: 100%;" title="${kabutan}" target="_blank" rel="noopener noreferrer" href="https://kabutan.jp/stock/?code=${tickerCode}">${kabutan}</a>
+            <a style="color: var(--tv-color-popup-element-text); width: 100%;" title="${minkabu}" target="_blank" rel="noopener noreferrer" href="https://minkabu.jp/stock/${tickerCode}">${minkabu}</a>
+          </div>
+        </span>
+      </div>
+    </td>
+  </tr>
+  <tr class="subMenu-GJX1EXhk">
+    <td></td>
+  </tr>
+  <tr class="item-GJX1EXhk interactive-GJX1EXhk normal-GJX1EXhk">
+    <td class="iconCell-GJX1EXhk" data-icon-cell="true"></td>
+    <td>
+      <div class="content-GJX1EXhk">
+        <span class="label-GJX1EXhk" data-label="true">
+          <div class="wrapper-NLkHhUu3">
+            <a style="color: var(--tv-color-popup-element-text); width: 100%;" title="${yahoo}" target="_blank" rel="noopener noreferrer" href="https://finance.yahoo.co.jp/quote/${tickerCode}/bbs">${yahoo}</a>
           </div>
         </span>
       </div>
