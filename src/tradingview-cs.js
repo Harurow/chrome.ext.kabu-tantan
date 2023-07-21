@@ -55,17 +55,19 @@ function hookMenu () {
   const ctxMenu = $('div.menu-Tx5xMZww.context-menu.menuWrap-Kq3ruQo8 > div > div[data-name="menu-inner"] > table', overlapManagerRoot)
   const firstMenuItemText = $('tr:first td:eq(1) div span:first', ctxMenu).text()
 
-  if (!/^\d{4}/.test(firstMenuItemText)) {
-    return
+  if (/^\d{4}/.test(firstMenuItemText)) {
+    ctxMenu.append(addTokyoTicker(firstMenuItemText.slice(0, 4)))
+  } else if (/^[A-Z]{1,5}/.test(firstMenuItemText)) {
+    ctxMenu.append(addNewyorkTicker(firstMenuItemText.match(/^[A-Z]{1,5}/g)[0]))
   }
+}
 
-  const tickerCode = firstMenuItemText.slice(0, 4)
-
+function addTokyoTicker(tickerCode) {
   const kabutan = `${tickerCode} を株探で開く`
   const minkabu = `${tickerCode} をMINKABUで開く`
   const yahoo = `${tickerCode} をYahoo!ファイナンスで開く`
 
-  const menuItem = $(`
+  return $(`
   <tr class="row-DFIg7eOh">
     <td>
       <div class="line-DFIg7eOh"></div>
@@ -119,6 +121,49 @@ function hookMenu () {
   <tr class="subMenu-GJX1EXhk" data-kabu-tantan>
     <td></td>
   </tr>`)
+}
 
-  ctxMenu.append(menuItem)
+function addNewyorkTicker(tickerCode) {
+  const kabutan = `${tickerCode} を株探で開く`
+  const minkabu = `${tickerCode} をMINKABUで開く`
+
+  return $(`
+  <tr class="row-DFIg7eOh">
+    <td>
+      <div class="line-DFIg7eOh"></div>
+    </td>
+    <td>
+      <div class="line-DFIg7eOh"></div>
+    </td>
+  </tr>
+  <tr class="item-GJX1EXhk interactive-GJX1EXhk normal-GJX1EXhk">
+    <td class="iconCell-GJX1EXhk" data-icon-cell="true"></td>
+    <td>
+      <div class="content-GJX1EXhk">
+        <span class="label-GJX1EXhk" data-label="true">
+          <div class="wrapper-NLkHhUu3">
+            <a style="color: var(--tv-color-popup-element-text); width: 100%;" title="${kabutan}" target="_blank" rel="noopener noreferrer" href="https://us.kabutan.jp/stocks/${tickerCode}">${kabutan}</a>
+          </div>
+        </span>
+      </div>
+    </td>
+  </tr>
+  <tr class="subMenu-GJX1EXhk">
+    <td></td>
+  </tr>
+  <tr class="item-GJX1EXhk interactive-GJX1EXhk normal-GJX1EXhk">
+    <td class="iconCell-GJX1EXhk" data-icon-cell="true"></td>
+    <td>
+      <div class="content-GJX1EXhk">
+        <span class="label-GJX1EXhk" data-label="true">
+          <div class="wrapper-NLkHhUu3">
+            <a style="color: var(--tv-color-popup-element-text); width: 100%;" title="${minkabu}" target="_blank" rel="noopener noreferrer" href="https://us.minkabu.jp/stocks/${tickerCode}">${minkabu}</a>
+          </div>
+        </span>
+      </div>
+    </td>
+  </tr>
+  <tr class="subMenu-GJX1EXhk" data-kabu-tantan>
+    <td></td>
+  </tr>`)
 }
