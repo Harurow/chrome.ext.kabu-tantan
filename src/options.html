@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>    
+    <title>株リンク オプション</title>
+
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <link type="text/css" rel="stylesheet" href="third-party/materialize.min.css" media="screen,projection"/>
+    <link type="text/css" rel="stylesheet" href="options.css" media="screen,projection"/>
+  </head>
+  <body>
+    <div id="main">
+      <header class="row">
+        <div class="col s10">
+          <h4 style="color: #003c4b; padding: .2em .8em;">株リンク オプション</h4>
+        </div>
+        <div class="col s2">
+          <ul class="right">
+            <a id="save" class="btn-floating btn-large waves-effect waves-light pulse scale-transition scale-out"><i class="material-icons">save</i></a>
+          </ul>
+        </div>
+      </header>
+
+      <main>
+        <div class="row">
+          <div class="col s3"></div>
+          <div class="col s6">
+            <ul id="link-list" class="collection with-header">
+              <li class="collection-header"><h5>利用する連携サイト</h5></li>
+              </li>
+            </ul>
+          </div>
+          <div class="col s3"></div>
+        </div>
+
+      </main>
+  
+      <footer>
+        <address>
+          <a rel="noopener" target="_blank" href="https://zenn.dev/harurow/">
+            <img title="zenn" src="https://img.shields.io/badge/Zenn-www.harurow-lightgrey?style=flat-square&logo=zenn">
+          </a>
+        </address>
+        <small>&copy; 2023 www.harurow</small>
+      </footer>
+    </div>
+
+    <script type="text/javascript" src="third-party/materialize.min.js"></script>
+    <script type="text/javascript" src="third-party/jquery.min.js"></script>
+    <script type="text/javascript" src="urls.js"></script>
+    <script type="text/javascript" src="options.js"></script>
+  </body>
+</html>

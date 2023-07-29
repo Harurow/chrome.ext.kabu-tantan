@@ -1,0 +1,95 @@
+
+html {
+  overflow: hidden;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+}
+
+body {
+  display: block;
+  border: none;
+  background: var(--background);
+  color: var(--color);
+  font-family: system-ui, "Hiragino Kaku Gothic ProN", Segoe UI, arial, sans-serif;
+  cursor: default !important;
+
+  user-select: none !important;
+  font-size: medium;
+}
+
+div#main {
+  display: grid;
+  padding: 0;
+  width: 100%;
+  height: 100vh;
+  border-radius: 0;
+
+  grid-template-rows: auto 1fr auto;
+}
+
+header {
+  z-index: 102;
+  display: block;
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: fit-content;
+  border-bottom: 2px solid #dfdfe1;
+  background-color: #e9e9eb;
+  font-size: larger;
+  transition: .2s;
+}
+
+header.with-scroll {
+  box-shadow:rgb(0 0 0 / 20%) 0px 2px 4px -1px,
+             rgb(0 0 0 / 14%) 0px 4px 5px 0px,
+             rgb(0 0 0 / 12%) 0px 1px 10px 0px;
+}
+
+header.row {
+  margin-bottom: 0;
+}
+
+main {
+  display: block;
+  overflow-x: hidden;
+  overflow-y: auto;
+  height: 100%;
+}
+
+footer {
+  position: relative;
+  z-index: 101;
+  display: block;
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 20px;
+  border: none;
+  background: linear-gradient(to right, #9f9f9f, #9f9f9f 200px, ghostwhite 60%);
+  box-shadow:rgb(0 0 0 / 20%) 0px -1px 1px -1px,
+             rgb(0 0 0 / 14%) 0px 0px 1px 0px,
+             rgb(0 0 0 / 12%) 0px 0px 3px 0px;
+}
+
+footer address {
+  display: inline-block;
+}
+
+footer small {
+  position: absolute;
+  right: 0.6em;
+  bottom: 0.3em;
+  display: inline-block;
+  opacity: 50%;
+}
+
+span.switch-title {
+  vertical-align: middle;
+  font-size: large;
+}

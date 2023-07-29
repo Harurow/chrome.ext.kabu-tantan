@@ -1,59 +1,55 @@
-$(function () {
-  setTimeout(hooks, 500)
+$(() => {
+  setTimeout(attachAsync, 500)
 })
 
 /**
  * ページを改変するエントリポイント
  */
-function hooks () {
+const attachAsync = async () => {
+  // 利用するURLリスト
+  const keys = await getEnableLinkKeysAsync()
+
   // 設定に従い一つづつ試す
-  hookSettings
-    .forEach(hook)
-}
-
-/**
- * ページを改変する
- * @param {{ title: string, url: string, selector: string }} hookSetting
- */
-function hook (hookSetting) {
-  if (location.href.indexOf(hookSetting.url) === -1) {
-    return
-  }
-
-  $(hookSetting.selector)
-    .each(function () {
-      // 該当要素の文字列に数値4桁があれば銘柄コードとして採用
-      // 複数ある場合は最後の該当数値を利用する
-
-      const elem = $(this)
-      const text = elem.text().trim()
-
-      const matches = text.match(/\d{4}/g)
-      if (!matches) {
-        return
-      }
-
-      const tickerCode = matches[matches.length - 1]
-
-      build(elem, tickerCode)
+  menuSelectors
+    .filter((menuSelector) => (location.href.indexOf(menuSelector.url) !== -1))
+    .forEach((menuSelector) => {
+      $(menuSelector.selector)
+        .each((_, element) => attachMenu(element, keys))
     })
 }
 
 /**
- * 要素に対して外部リンクを紐づける
- * @param {JQuery<HTMLElement>} elem
- * @param {string} tickerCode
+ * 要素にメニューをつける
+ * @param { HTMLElement } element 
+ * @param { string[] } keys
  */
-function build (elem, tickerCode) {
-  const dropDownMenu = createDropDownMenu(tickerCode)
-  attachDropDownMenu(elem, dropDownMenu)
+const attachMenu = (element, keys) => {
+  const text = $(element).text()
+  const match = text.trim().match(/\d{4}/g)
+
+  if (!match) {
+    return
+  }
+
+  const tickerCode = match[0]
+  const childNodes = element.childNodes
+
+  for (let i = 0; i < childNodes.length; i++) {
+    const node = childNodes[i]
+    if (node.nodeName !== '#text' || node.nodeValue.indexOf(tickerCode) === -1) {
+      continue
+    }
+
+    const menu = createMenu(keys, tickerCode, node.nodeValue)
+    element.replaceChild(menu[0], node)
+  }
 }
 
 /**
  * 改変情報
- * @type { title: string, url: string, selector: string }[]
+ * @type { { title: string, url: string, selector: string }[] }
  */
-const hookSettings = [
+const menuSelectors = [
   {
     title: 'お気に入り',
     url: '/app/info_jp_prc_reg_lst.do;',
@@ -76,23 +72,28 @@ const hookSettings = [
   },
   {
     title: 'ランキング・売買代金',
-    url: '/app/market_ranking.do',
-    selector: 'div#str-main-inner div.mbody table.tbl-data-01 tr td'
+    url: '/app/market_ranking.do;',
+    selector: 'div#str-main-inner div.mbody table.tbl-data-01 tr td:nth-of-type(2)'
   },
   {
     title: 'ランキング・出来高',
-    url: '/app/market_ranking_volume.do',
-    selector: 'div#str-main-inner div.mbody table.tbl-data-01 tr td'
+    url: '/app/market_ranking_volume.do;',
+    selector: 'div#str-main-inner div.mbody table.tbl-data-01 tr td:nth-of-type(2)'
   },
   {
     title: 'ランキング・値上り・値下り',
-    url: '/app/market_ranking_change.do',
-    selector: 'div#str-main-inner div.mbody table.tbl-data-01 tr td'
+    url: '/app/market_ranking_change.do;',
+    selector: 'div#str-main-inner div.mbody table.tbl-data-01 tr td:nth-of-type(2)'
   },
   {
     title: 'ランキング・信用残',
-    url: '/app/market_ranking_debit.do',
-    selector: 'div#str-main-inner div.mbody table.tbl-data-01 tr td'
+    url: '/app/market_ranking_debit.do;',
+    selector: 'div#str-main-inner div.mbody table.tbl-data-01 tr td:nth-of-type(2)'
+  },
+  {
+    title: 'ランキング・積立',
+    url: '/app/market_ranking_reserve.do;',
+    selector: 'div#str-main-inner table table.tbl-data-01 tr td:nth-of-type(2)'
   },
   {
     title: 'ランキング・楽天内',

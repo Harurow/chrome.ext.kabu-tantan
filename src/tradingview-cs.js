@@ -1,15 +1,15 @@
-$(function () {
-  setTimeout(hooks, 500)
+$(() => {
+  setTimeout(attach, 500)
 })
 
 /**
  * ページを改変するエントリポイント
  */
-function hooks () {
+const attach = () => {
   // bodyを監視し子要素にオーバーラップレイヤーができるのを監視する
   const body = $('body')[0]
   const bodyObserver = new MutationObserver(() => {
-    if (bodyObserverCallback()) {
+    if (mutationObserverCallback()) {
       bodyObserver.disconnect()
     }
   })
@@ -17,7 +17,13 @@ function hooks () {
   bodyObserver.observe(body, { childList: true })
 }
 
-function bodyObserverCallback () {
+/**
+ * bodyタグの更新を監視する
+ * コンテキストメニュー用のレイヤーが作成されていれば、そのレイヤーを監視する
+ * コンテキストメニューレイヤーが作成された場合はメニューを拡張する
+ * @returns { boolean } オブサーバを切断するか
+ */
+const mutationObserverCallback = () => {
   // オーバーラップレイヤーを監視しコンテキストメニューの構築を監視する
 
   const overlapManagerRoot = $('div#overlap-manager-root')[0]
@@ -29,7 +35,7 @@ function bodyObserverCallback () {
     mutions.forEach((mution) => {
       if (mution.type === 'childList') {
         if (mution.addedNodes.length > 0) {
-          hookMenu()
+          attachMenu()
         }
       }
     })
@@ -37,14 +43,15 @@ function bodyObserverCallback () {
 
   overlapManagerRootObserver.observe(overlapManagerRoot, { childList: true })
 
-  hookMenu()
+  attachMenu()
 
   return true
 }
 
-const selectedClassName = 'selected-IEe5qpW4'
-
-function hookMenu () {
+/**
+ * メニューを解析して拡張する
+ */
+const attachMenu = () => {
   // コンテキストメニューから銘柄コード(数値4桁)を取得する
   // 銘柄コードが取得できたらメニューを追加する
   const overlapManagerRoot = $('div#overlap-manager-root')
@@ -56,114 +63,91 @@ function hookMenu () {
   const firstMenuItemText = $('tr:first td:eq(1) div span:first', ctxMenu).text()
 
   if (/^\d{4}/.test(firstMenuItemText)) {
-    ctxMenu.append(addTokyoTicker(firstMenuItemText.slice(0, 4)))
+    addTokyoTickerAsync(ctxMenu, firstMenuItemText.slice(0, 4))
   } else if (/^[A-Z]{1,5}/.test(firstMenuItemText)) {
-    ctxMenu.append(addNewyorkTicker(firstMenuItemText.match(/^[A-Z]{1,5}/g)[0]))
+    addNewyorkTicker(ctxMenu, firstMenuItemText.match(/^[A-Z]{1,5}/g)[0])
   }
 }
 
-function addTokyoTicker(tickerCode) {
-  const kabutan = `${tickerCode} を株探で開く`
-  const minkabu = `${tickerCode} をMINKABUで開く`
-  const yahoo = `${tickerCode} をYahoo!ファイナンスで開く`
-
+/**
+ * メニューのセパレータ
+ * @returns {JQuery<HTMLElement>}
+ */
+const makeMenuSeparator = () => {
   return $(`
-  <tr class="row-DFIg7eOh">
+  <tr class="row-DFIg7eOh" data-kabu-tantan>
     <td>
       <div class="line-DFIg7eOh"></div>
     </td>
     <td>
       <div class="line-DFIg7eOh"></div>
     </td>
-  </tr>
+  </tr>`)
+}
+
+/**
+ * メニューを作成する
+ * @param {string} title 
+ * @param {string} url 
+ * @returns {JQuery<HTMLElement>}
+ */
+const makeMenuItem = (title, url) => {
+  return $(`
   <tr class="item-GJX1EXhk interactive-GJX1EXhk normal-GJX1EXhk">
     <td class="iconCell-GJX1EXhk" data-icon-cell="true"></td>
     <td>
       <div class="content-GJX1EXhk">
         <span class="label-GJX1EXhk" data-label="true">
           <div class="wrapper-NLkHhUu3">
-            <a style="color: var(--tv-color-popup-element-text); width: 100%;" title="${kabutan}" target="_blank" rel="noopener noreferrer" href="https://kabutan.jp/stock/?code=${tickerCode}">${kabutan}</a>
+            <a style="color: var(--tv-color-popup-element-text); width: 100%;" title="${title}" target="_blank" rel="noopener noreferrer" href="${url}">${title}</a>
           </div>
         </span>
       </div>
     </td>
   </tr>
   <tr class="subMenu-GJX1EXhk">
-    <td></td>
-  </tr>
-  <tr class="item-GJX1EXhk interactive-GJX1EXhk normal-GJX1EXhk">
-    <td class="iconCell-GJX1EXhk" data-icon-cell="true"></td>
-    <td>
-      <div class="content-GJX1EXhk">
-        <span class="label-GJX1EXhk" data-label="true">
-          <div class="wrapper-NLkHhUu3">
-            <a style="color: var(--tv-color-popup-element-text); width: 100%;" title="${minkabu}" target="_blank" rel="noopener noreferrer" href="https://minkabu.jp/stock/${tickerCode}">${minkabu}</a>
-          </div>
-        </span>
-      </div>
-    </td>
-  </tr>
-  <tr class="subMenu-GJX1EXhk">
-    <td></td>
-  </tr>
-  <tr class="item-GJX1EXhk interactive-GJX1EXhk normal-GJX1EXhk">
-    <td class="iconCell-GJX1EXhk" data-icon-cell="true"></td>
-    <td>
-      <div class="content-GJX1EXhk">
-        <span class="label-GJX1EXhk" data-label="true">
-          <div class="wrapper-NLkHhUu3">
-            <a style="color: var(--tv-color-popup-element-text); width: 100%;" title="${yahoo}" target="_blank" rel="noopener noreferrer" href="https://finance.yahoo.co.jp/quote/${tickerCode}/bbs">${yahoo}</a>
-          </div>
-        </span>
-      </div>
-    </td>
-  </tr>
-  <tr class="subMenu-GJX1EXhk" data-kabu-tantan>
     <td></td>
   </tr>`)
 }
 
-function addNewyorkTicker(tickerCode) {
-  const kabutan = `${tickerCode} を株探で開く`
-  const minkabu = `${tickerCode} をMINKABUで開く`
+/**
+ * 国内株用のメニューを作成する
+ * @param {JQuery<HTMLElement>} ctxMenu 
+ * @param {string} code 
+ */
+const addTokyoTickerAsync = async (ctxMenu, code) => {
+  const items = await getEnableLinkKeysAsync()
 
-  return $(`
-  <tr class="row-DFIg7eOh">
-    <td>
-      <div class="line-DFIg7eOh"></div>
-    </td>
-    <td>
-      <div class="line-DFIg7eOh"></div>
-    </td>
-  </tr>
-  <tr class="item-GJX1EXhk interactive-GJX1EXhk normal-GJX1EXhk">
-    <td class="iconCell-GJX1EXhk" data-icon-cell="true"></td>
-    <td>
-      <div class="content-GJX1EXhk">
-        <span class="label-GJX1EXhk" data-label="true">
-          <div class="wrapper-NLkHhUu3">
-            <a style="color: var(--tv-color-popup-element-text); width: 100%;" title="${kabutan}" target="_blank" rel="noopener noreferrer" href="https://us.kabutan.jp/stocks/${tickerCode}">${kabutan}</a>
-          </div>
-        </span>
-      </div>
-    </td>
-  </tr>
-  <tr class="subMenu-GJX1EXhk">
-    <td></td>
-  </tr>
-  <tr class="item-GJX1EXhk interactive-GJX1EXhk normal-GJX1EXhk">
-    <td class="iconCell-GJX1EXhk" data-icon-cell="true"></td>
-    <td>
-      <div class="content-GJX1EXhk">
-        <span class="label-GJX1EXhk" data-label="true">
-          <div class="wrapper-NLkHhUu3">
-            <a style="color: var(--tv-color-popup-element-text); width: 100%;" title="${minkabu}" target="_blank" rel="noopener noreferrer" href="https://us.minkabu.jp/stocks/${tickerCode}">${minkabu}</a>
-          </div>
-        </span>
-      </div>
-    </td>
-  </tr>
-  <tr class="subMenu-GJX1EXhk" data-kabu-tantan>
-    <td></td>
-  </tr>`)
+  ctxMenu.append(makeMenuSeparator())
+
+  items.forEach((key) => {
+    if (key.indexOf('tradingview.com') !== 0) {
+      const item = externalUrlsMap[key]
+      const title = `${code} を${item.title}で開く`
+      const url = makeUrl(item.url1, code)
+      ctxMenu.append(makeMenuItem(title, url))
+    }
+  })
+}
+
+/**
+ * 米国株用のメニューを作成する
+ * @param {JQuery<HTMLElement>} ctxMenu 
+ * @param {string} code 
+ */
+const addNewyorkTicker = async (ctxMenu, code) => {
+  const items = await getEnableLinkKeysAsync()
+
+  ctxMenu.append(makeMenuSeparator())
+
+  items.forEach((key) => {
+    if (key.indexOf('tradingview.com') !== 0) {
+        const item = externalUrlsMap[key]
+      if (item.url3) {
+        const title = `${code} を${item.title}で開く`
+        const url = makeUrl(item.url3, code)
+        ctxMenu.append(makeMenuItem(title, url))
+      }
+    }
+  })
 }

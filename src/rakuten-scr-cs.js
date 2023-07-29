@@ -1,14 +1,36 @@
 $(() => {
-  setTimeout(attach, 500)
+  setTimeout(attachAsync, 500)
 })
 
 /**
  * ページを改変するエントリポイント
  */
-const attach = async () => {
+const attachAsync = async () => {
   // 利用するURLリスト
   const keys = await getEnableLinkKeysAsync()
 
+  // ページ変更の対応のために監視する
+  const target = $('div#resultpanel div.pagenavcontrolbox')[0]
+  if (!target) {
+    return
+  }
+  
+  const observer = new MutationObserver(() => {
+    // ページ変更対応
+    mutationObserverCallback(keys)
+  })
+
+  observer.observe(target, { childList: true } )
+
+  // 初期ページ対応
+  mutationObserverCallback(keys)
+}
+
+/**
+ * ページ変更に伴い再度リンクメニューをアタッチ
+ * @param { string[] } keys
+ */
+const mutationObserverCallback = (keys) => {
   // 設定に従い一つづつ試す
   menuSelectors
     .forEach((menuSelector) => {
@@ -39,22 +61,18 @@ const attachMenu = (element, keys) => {
       continue
     }
 
-    const menu = createMenu(keys, tickerCode, node.nodeValue)
+    const menu = createMenu(keys, tickerCode, node.nodeValue, true)
     element.replaceChild(menu[0], node)
   }
 }
 
 /**
  * 改変情報
- * @type { { selector: string }[] }
+ * @type { { title: string, url: string, selector: string }[] }
  */
 const menuSelectors = [
   {
-    title: "個別銘柄",
-    selector: 'div#main div.mgt15 div.trHead01 table.tbl01 tr.vaT td.tdL H3 span.fm01 span.normal'
+    title: 'スーパースクリーナー',
+    selector: 'div#resultpanel div.resulttablebox tr.datarow td:nth-of-type(1) a'
   },
-  {
-    title: 'ポートフォリオ',
-    selector: 'body.vsc-initialized div.middleArea2 div.middleAreaM2 table table table tr td.mtext:nth-of-type(2)'
-  }
 ]

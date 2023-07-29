@@ -1,11 +1,11 @@
-ul.x-kabu {
+ul.x-kabu-body {
   display: none;
   position: absolute;
   background-color: white;
   border: 1px solid black;
 }
 
-ul.x-kabu.open {
+ul.x-kabu-body.open {
   display: block;
 }
 
