@@ -62,6 +62,7 @@ const attachMenu = (element, keys) => {
     }
 
     const menu = createMenu(keys, tickerCode, node.nodeValue, true)
+    $('ul.x-kabu-body', menu).css( { marginTop: -3 } )
     element.replaceChild(menu[0], node)
   }
 }
