@@ -42,6 +42,8 @@ SBI証券の以下のページの銘柄コード(数値4桁)にカーソルを�
 ### TradingView
 
 TradingViewの右クリックメニューに株探、MINKABU、Yahooファインスへのリンクを追加します  
+さらに楽天証券にログインしている場合、「楽天証券」を開くメニューが追加されます
+
 ※ 米国株(英字1〜5文字)は株探、MINKABUのみ
 
 ![](https://github.com/Harurow/chrome.ext.kabu-tantan/blob/main/etc/screen-4.png?raw=true "TradingView・コンテキストメニュー")

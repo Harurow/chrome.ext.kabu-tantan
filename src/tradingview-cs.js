@@ -108,6 +108,10 @@ const makeMenuItem = (title, url) => {
   <tr class="subMenu-GJX1EXhk">
     <td></td>
   </tr>`)
+  .click(() => {
+    // クリックした場合はメニューが消えるように'ESC'キーを押したことにして消す
+    document.dispatchEvent(new KeyboardEvent('keyup', { keyCode: 27 }))
+  })
 }
 
 /**
@@ -120,13 +124,30 @@ const addTokyoTickerAsync = async (ctxMenu, code) => {
 
   ctxMenu.append(makeMenuSeparator())
 
-  items.forEach((key) => {
-    if (key.indexOf('tradingview.com') !== 0) {
-      const item = externalUrlsMap[key]
-      const title = `${code} を${item.title}で開く`
-      const url = makeUrl(item.url1, code)
+  chrome.runtime.sendMessage({ type: 'rakuten-sec:info', data: { country: 'jp', tickerCode: code } }, (response) => {
+    // 楽天証券にログインしている時は楽天証券メニューを追加
+    if (response.data.rakutenUrl) {
+      const title = `${code} を楽天証券で開く`
+      const url = response.data.rakutenUrl
       ctxMenu.append(makeMenuItem(title, url))
     }
+
+    // 内藤証券の国内株式マーケット情報で個別銘柄を開いている時はメニューを追加
+    if (response.data.naitoUrl) {
+      const title = `${code} を内藤証券で開く`
+      const url = response.data.naitoUrl
+      ctxMenu.append(makeMenuItem(title, url))
+    }
+
+    // 各サイトのメニューを追加
+    items.forEach((key) => {
+      if (key.indexOf('tradingview.com') !== 0) {
+        const item = externalUrlsMap[key]
+        const title = `${code} を${item.title}で開く`
+        const url = makeUrl(item.url1, code)
+        ctxMenu.append(makeMenuItem(title, url))
+      }
+    })
   })
 }
 
@@ -140,14 +161,24 @@ const addNewyorkTicker = async (ctxMenu, code) => {
 
   ctxMenu.append(makeMenuSeparator())
 
-  items.forEach((key) => {
-    if (key.indexOf('tradingview.com') !== 0) {
-        const item = externalUrlsMap[key]
-      if (item.url3) {
-        const title = `${code} を${item.title}で開く`
-        const url = makeUrl(item.url3, code)
-        ctxMenu.append(makeMenuItem(title, url))
-      }
+  chrome.runtime.sendMessage({ type: 'rakuten-sec:info', data: { country: 'us', tickerCode: code } }, (response) => {
+    // urlがある場合は楽天証券メニューを追加
+    if (response.data.rakutenUrl) {
+      const title = `${code} を楽天証券で開く`
+      const url = response.data.rakutenUrl
+      ctxMenu.append(makeMenuItem(title, url))
     }
+
+    // 各サイトのメニューを追加
+    items.forEach((key) => {
+      if (key.indexOf('tradingview.com') !== 0) {
+          const item = externalUrlsMap[key]
+        if (item.url3) {
+          const title = `${code} を${item.title}で開く`
+          const url = makeUrl(item.url3, code)
+          ctxMenu.append(makeMenuItem(title, url))
+        }
+      }
+    })
   })
 }
