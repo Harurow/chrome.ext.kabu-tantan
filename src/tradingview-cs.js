@@ -9,12 +9,21 @@ const attach = () => {
   // bodyを監視し子要素にオーバーラップレイヤーができるのを監視する
   const body = $('body')[0]
   const bodyObserver = new MutationObserver(() => {
-    if (mutationObserverCallback()) {
+    if (bodyObserverCallback()) {
       bodyObserver.disconnect()
     }
   })
-
   bodyObserver.observe(body, { childList: true })
+
+  // canvasを監視し属性が変わったら追加したボタンの状態を更新させる
+  const canvas = $('div.chart-gui-wrapper canvas[aria-hidden!="true"]')[0]
+  if (canvas) {
+    const canvasObserver = new MutationObserver(canvasObserverCallback)
+    canvasObserver.observe(canvas, { attributes: true })
+  
+    // 楽天証券などのボタンを追加
+    createButtons()
+  }
 }
 
 /**
@@ -23,7 +32,7 @@ const attach = () => {
  * コンテキストメニューレイヤーが作成された場合はメニューを拡張する
  * @returns { boolean } オブサーバを切断するか
  */
-const mutationObserverCallback = () => {
+const bodyObserverCallback = () => {
   // オーバーラップレイヤーを監視しコンテキストメニューの構築を監視する
 
   const overlapManagerRoot = $('div#overlap-manager-root')[0]
@@ -40,7 +49,7 @@ const mutationObserverCallback = () => {
       }
     })
   })
-
+  
   overlapManagerRootObserver.observe(overlapManagerRoot, { childList: true })
 
   attachMenu()
@@ -62,10 +71,12 @@ const attachMenu = () => {
   const ctxMenu = $('div.menu-Tx5xMZww.context-menu.menuWrap-Kq3ruQo8 > div > div[data-name="menu-inner"] > table', overlapManagerRoot)
   const firstMenuItemText = $('tr:first td:eq(1) div span:first', ctxMenu).text()
 
-  if (/^\d{4}/.test(firstMenuItemText)) {
-    addTokyoTickerAsync(ctxMenu, firstMenuItemText.slice(0, 4))
-  } else if (/^[A-Z]{1,5}/.test(firstMenuItemText)) {
-    addNewyorkTicker(ctxMenu, firstMenuItemText.match(/^[A-Z]{1,5}/g)[0])
+  const { code, type } = getTickerCode()
+
+  if (type === 'jp') {
+    addTokyoTickerAsync(ctxMenu, code)
+  } else if (type === 'us') {
+    addNewyorkTicker(ctxMenu, code)
   }
 }
 
@@ -124,7 +135,7 @@ const addTokyoTickerAsync = async (ctxMenu, code) => {
 
   ctxMenu.append(makeMenuSeparator())
 
-  chrome.runtime.sendMessage({ type: 'rakuten-sec:info', data: { country: 'jp', tickerCode: code } }, (response) => {
+  chrome.runtime.sendMessage({ type: 'rakuten-sec:info', data: { type: 'jp', code: code } }, (response) => {
     // 楽天証券にログインしている時は楽天証券メニューを追加
     if (response.data.rakutenUrl) {
       const title = `${code} を楽天証券で開く`
@@ -161,7 +172,7 @@ const addNewyorkTicker = async (ctxMenu, code) => {
 
   ctxMenu.append(makeMenuSeparator())
 
-  chrome.runtime.sendMessage({ type: 'rakuten-sec:info', data: { country: 'us', tickerCode: code } }, (response) => {
+  chrome.runtime.sendMessage({ type: 'rakuten-sec:info', data: { type: 'us', code: code } }, (response) => {
     // urlがある場合は楽天証券メニューを追加
     if (response.data.rakutenUrl) {
       const title = `${code} を楽天証券で開く`
@@ -181,4 +192,81 @@ const addNewyorkTicker = async (ctxMenu, code) => {
       }
     })
   })
+}
+
+/**
+ * 銘柄コード情報を持っているcanvasタグのコールバック
+ * 楽天証券ボタンの表示/非表示を切り替える
+ */
+const canvasObserverCallback = () => {
+  const rakuten = $('div.rakuten-sec')
+
+  // 銘柄コードが取得できた場合、かつ、楽天証券のURLが取得できればボタンを表示
+  const { code, type } = getTickerCode()
+  if (code) {
+    chrome.runtime.sendMessage({ type: 'rakuten-sec:info', data: { type, code } }, (response) => {
+      // 楽天証券にログインしている時は楽天証券メニューを追加
+      if (response.data.rakutenUrl) {
+        rakuten.show()
+      } else {
+        rakuten.hide()
+      }
+    })
+  } else {
+    rakuten.hide()
+  }
+}
+
+/**
+ * ボタンを追加
+ * ・楽天証券 : 楽天証券にログインしてる時だけ有効なボタン。
+ */
+const createButtons = () => {
+  // 楽天証券ボタンを作成
+  const rakuten = $(`
+    <div class="apply-common-tooltip button-hw_3o_pb sellButton-hw_3o_pb rakuten-sec">
+      <span class="buttonText-hw_3o_pb">楽天証券</span>
+    </div>`)
+    .hide()
+    .click(() => {
+      const { code, type } = getTickerCode()
+      if (code) {
+        chrome.runtime.sendMessage({ type: 'rakuten-sec:open', data: { code, type } }, (response) => {
+          if (response.data.rakutenUrl === null) {
+            alert('楽天証券にログインしてください')
+          }
+        })
+      }
+    })
+
+  // 楽天証券ボタンを追加する
+  $('div.container-hw_3o_pb .buttonsWrapper-hw_3o_pb.notAvailableOnMobile-hw_3o_pb.withoutBg-hw_3o_pb')
+    .append(rakuten)
+}
+
+/**
+ * 銘柄コードを取得
+ * @returns 取得した銘柄コード、取得できない場合はnull
+ */
+const getTickerCode = () => {
+  const canvas = $('div.chart-gui-wrapper canvas[aria-hidden!="true"]')
+  if (canvas) {
+    const ariaLabel = canvas.attr('aria-label')
+    if (ariaLabel) {
+      if (ariaLabel.startsWith('TSE:')) {
+        const regex = new RegExp('(TSE:)([0-9][0-9ACDFGHJKLMNPRSTUWXY][0-9][0-9ACDFGHJKLMNPRSTUWXY])')
+        if (regex.test(ariaLabel)) {
+          const code = regex.exec(ariaLabel)[2]
+          return { code: code, type: 'jp' }
+        }
+      } else if (ariaLabel.startsWith('BATS:')) {
+        const regex = new RegExp('(BATS:)([A-Z]{1,5})')
+        if (regex.test(ariaLabel)) {
+          const code = regex.exec(ariaLabel)[2]
+          return { code: code, type: 'us' }
+        }
+      }
+    }
+  }
+  return null
 }
