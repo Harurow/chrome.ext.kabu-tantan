@@ -27,7 +27,7 @@ const remakeContextMenus = async () => {
  *  )}
  */
 const getTickerCode = (text) => {
-  let match = text.match(/^\s*(\d{4})\s*/)
+  let match = text.match(/^\s*([0-9][0-9ACDFGHJKLMNPRSTUWXY][0-9][0-9ACDFGHJKLMNPRSTUWXY])\s*/)
   if (match) {
     return { status: true, type: 'jp', code: match[1] }
   }
@@ -157,7 +157,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         // 内藤証券の国内株マーケットページを探す
         // 個別銘柄のページを開いていればそのURLをコピーして銘柄コードを変えたページを返す
         chrome.tabs.query({ url: 'https://*.qhit.net/naito/iswebptt2/*'}, (naitoTabs) => {
-          const qcodeRegex = new RegExp('([;?&]qcode=)([0-9]{4})')
+          const qcodeRegex = new RegExp('([;?&]qcode=)([0-9][0-9ACDFGHJKLMNPRSTUWXY][0-9][0-9ACDFGHJKLMNPRSTUWXY])')
           for (let i = 0; i < naitoTabs.length; i++) {
             const tab = naitoTabs[i]
             if (qcodeRegex.test(tab.url)) {

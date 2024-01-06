@@ -46,7 +46,7 @@ const mutationObserverCallback = (keys) => {
  */
 const attachMenu = (element, keys) => {
   const text = $(element).text()
-  const match = text.trim().match(/\d{4}/g)
+  const match = text.trim().match(/[0-9][0-9ACDFGHJKLMNPRSTUWXY][0-9][0-9ACDFGHJKLMNPRSTUWXY]/g)
 
   if (!match) {
     return
