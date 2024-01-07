@@ -34,7 +34,6 @@ const attach = () => {
  */
 const bodyObserverCallback = () => {
   // オーバーラップレイヤーを監視しコンテキストメニューの構築を監視する
-
   const overlapManagerRoot = $('div#overlap-manager-root')[0]
   if (!overlapManagerRoot) {
     return false
@@ -69,12 +68,13 @@ const attachMenu = () => {
   }
 
   const ctxMenu = $('div.menu-Tx5xMZww.context-menu.menuWrap-Kq3ruQo8 > div > div[data-name="menu-inner"] > table', overlapManagerRoot)
-  const { code, type } = getTickerCode()
+  // 選択された銘柄リストからコードを取得
+  const firstMenuItemText = $('tr:first td:eq(1) div span:first', ctxMenu).text()
 
-  if (type === 'jp') {
-    addTokyoTickerAsync(ctxMenu, code)
-  } else if (type === 'us') {
-    addNewyorkTicker(ctxMenu, code)
+  if (/^[0-9][0-9ACDFGHJKLMNPRSTUWXY][0-9][0-9ACDFGHJKLMNPRSTUWXY]/.test(firstMenuItemText)) {
+    addTokyoTickerAsync(ctxMenu, firstMenuItemText.slice(0, 4))
+  } else if (/^[A-Z]{1,5}/.test(firstMenuItemText)) {
+    addNewyorkTicker(ctxMenu, firstMenuItemText.match(/^[A-Z]{1,5}/g)[0])
   }
 }
 
