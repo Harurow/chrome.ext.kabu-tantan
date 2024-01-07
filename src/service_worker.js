@@ -189,34 +189,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   return false
 })
 
-
-/**
- * ログイン済みの楽天証券サイトからセッションIDを取得する
- * @param {function} callback 
- */
-const getRakutenSecSessionId = (callback) => {
-  // メンバーページのURLからセッションIDを取得し銘柄に対応したページ遷移先のURLを構築する
-  chrome.tabs.query({url: 'https://member.rakuten-sec.co.jp/*'}, (tabs) => {
-    const sessionIdRegex = new RegExp('[;?&]BV_SessionID=([^?&]+)')
-    let sessionId = null
-    for (let i = 0; i < tabs.length; i++) {
-      const tab = tabs[i]
-      const matchedSessionId = sessionIdRegex.exec(tab.url)
-      if (matchedSessionId) {
-        sessionId = matchedSessionId[1]
-        break
-      }
-    }
-
-    callback(sessionId)
-  })
-}
-
-/**
- 
- * @param {function} callback 
-*/
-
 /**
  * ログイン済みの楽天証券サイトからセッションIDを取得しURLを取得する
  * @param {'jp' | 'us'} type 
