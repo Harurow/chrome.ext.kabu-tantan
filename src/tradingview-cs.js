@@ -130,21 +130,22 @@ const makeMenuItem = (title, url) => {
  */
 const addTokyoTickerAsync = async (ctxMenu, code) => {
   const items = await getEnableLinkKeysAsync()
-  const response = await chrome.runtime.sendMessage({ type: 'rakuten-sec:info', data: { type: 'jp', code: code } })
+  const rakutenResponse = await chrome.runtime.sendMessage({ type: 'rakuten-sec:info', data: { code, type: 'jp' } })
+  const noitoResponse = await chrome.runtime.sendMessage({ type: 'naito-sec:info', data: { code } })
 
   ctxMenu.append(makeMenuSeparator())
 
   // 楽天証券にログインしている時は楽天証券メニューを追加
-  if (response.data.rakutenUrl) {
+  if (rakutenResponse.data.rakutenUrl) {
     const title = `${code} を楽天証券で開く`
-    const url = response.data.rakutenUrl
+    const url = rakutenResponse.data.rakutenUrl
     ctxMenu.append(makeMenuItem(title, url))
   }
 
   // 内藤証券の国内株式マーケット情報で個別銘柄を開いている時はメニューを追加
-  if (response.data.naitoUrl) {
+  if (noitoResponse.data.naitoUrl) {
     const title = `${code} を内藤証券で開く`
-    const url = response.data.naitoUrl
+    const url = noitoResponse.data.naitoUrl
     ctxMenu.append(makeMenuItem(title, url))
   }
 
@@ -166,7 +167,7 @@ const addTokyoTickerAsync = async (ctxMenu, code) => {
  */
 const addNewyorkTicker = async (ctxMenu, code) => {
   const items = await getEnableLinkKeysAsync()
-  const response = await chrome.runtime.sendMessage({ type: 'rakuten-sec:info', data: { type: 'us', code: code } })
+  const response = await chrome.runtime.sendMessage({ type: 'rakuten-sec:info', data: { code, type: 'us' } })
 
   ctxMenu.append(makeMenuSeparator())
 
@@ -195,30 +196,56 @@ const addNewyorkTicker = async (ctxMenu, code) => {
  * 楽天証券ボタンの表示/非表示を切り替える
  */
 const canvasObserverCallback = () => {
-  const rakuten = $('div.rakuten-sec')
-  const naito = $('div.naito-sec')
+  updateButtons()
+}
+
+/**
+ * ボタンの表示・非表示を切り替える
+ */
+const updateButtons = async () => {
+  const rakuten = $('div.ktt-rakuten-sec')
+  const naito = $('div.ktt-naito-sec')
+  const kabutan = $('div.ktt-kabutan')
+  const minkabu = $('div.ktt-minkabu')
+  const yahoo = $('div.ktt-yahoo')
 
   // 銘柄コードが取得できた場合、かつ、楽天証券のURLが取得できればボタンを表示
   const { code, type } = getTickerCode()
-  if (code) {
-    chrome.runtime.sendMessage({ type: 'rakuten-sec:info', data: { type, code } }, (response) => {
-      // 楽天証券にログインしている時は楽天証券ボタンを表示
-      if (response.data.rakutenUrl) {
-        rakuten.show()
-      } else {
-        rakuten.hide()
-      }
 
-      // 内藤証券の国内株マーケットを開いている場合はボタンを表示
-      if (response.data.naitoUrl) {
-        naito.show()
-      } else {
-        naito.hide()
-      }
-    })
+  if (code == null) {
+    // 銘柄コードが取得できなかったので全部非表示
+    updateVisible(rakuten, false)
+    updateVisible(naito, false)
+    updateVisible(kabutan, false)
+    updateVisible(minkabu, false)
+    updateVisible(yahoo, false)
+    return
+  }
+
+  const rakutenResponse = await chrome.runtime.sendMessage({ type: 'rakuten-sec:info', data: { code, type } })
+  const naitoResponse = type === 'jp'
+    ? await chrome.runtime.sendMessage({ type: 'naito-sec:info', data: { code } })
+    : { data: { naitoUrl: null } }
+
+  // 楽天証券にログインしている時は楽天証券ボタンを表示
+  // 内藤証券の国内株マーケットを開いている場合はボタンを表示
+  updateVisible(rakuten, rakutenResponse.data.rakutenUrl)
+  updateVisible(naito, naitoResponse.data.naitoUrl)
+  updateVisible(kabutan, true)
+  updateVisible(minkabu, true)
+  updateVisible(yahoo, true)
+}
+
+/**
+ * ボタン(jQuery)の表示・非表示を切り替える
+ * @param {JQuery} button 
+ * @param {boolean} condition 
+ */
+const updateVisible = (button, condition) => {
+  if (condition) {
+    button.show()
   } else {
-    rakuten.hide()
-    naito.hide()
+    button.hide()
   }
 }
 
@@ -229,43 +256,57 @@ const canvasObserverCallback = () => {
  */
 const createButtons = () => {
   // 楽天証券ボタンを作成
-  const rakuten = $(`
-    <div class="apply-common-tooltip button-hw_3o_pb sellButton-hw_3o_pb rakuten-sec">
-      <span class="buttonText-hw_3o_pb">楽天証券</span>
-    </div>`)
-    .hide()
-    .click(() => {
+  const rakuten = makeChartButton('楽天証券', 'ktt-rakuten-sec')
+    .click(async () => {
       const { code, type } = getTickerCode()
       if (code) {
-        chrome.runtime.sendMessage({ type: 'rakuten-sec:open', data: { code, type } }, (response) => {
-          if (response.data.rakutenUrl === null) {
-            alert('楽天証券にログインしてください')
-          }
-        })
+        const response = await chrome.runtime.sendMessage({ type: 'rakuten-sec:open', data: { code, type } })
+        if (response.data.rakutenUrl === null) {
+          alert('楽天証券にログインしてください')
+        }
       }
     })
 
   // 内藤証券ボタンを作成
-  const naito = $(`
-    <div class="apply-common-tooltip button-hw_3o_pb sellButton-hw_3o_pb naito-sec">
-      <span class="buttonText-hw_3o_pb">内藤証券</span>
-    </div>`)
-    .hide()
-    .click(() => {
+  const naito = makeChartButton('内藤証券', 'ktt-naito-sec')
+    .click(async () => {
       const { code, type } = getTickerCode()
       if (code && type === 'jp') {
-        chrome.runtime.sendMessage({ type: 'naito-sec:open', data: { code } }, (response) => {
-          if (response.data.naitoUrl === null) {
-            alert('内藤証券の国内株マーケットの個別銘柄のページを開いておいてください')
-          }
-        })
+        const response = await chrome.runtime.sendMessage({ type: 'naito-sec:open', data: { code } })
+        if (response.data.naitoUrl === null) {
+          alert('内藤証券の国内株マーケットの個別銘柄のページを開いてください')
+        }
       }
     })
 
-  // 楽天証券ボタンを追加する
+    // 汎用ボタン作成
+  const makeButton = (title, className, key) => {
+    return makeChartButton(title, className)
+      .click(() => {
+        const { code, type } = getTickerCode()
+        if (code) {
+          const item = externalUrlsMap[key]
+          const url = makeUrl(type === 'us' ? item.url3 : item.url1, code)
+          chrome.runtime.sendMessage({ type: 'open-url', data: { url } })
+        }
+      })
+  }
+
+  // 株探, みんかぶ, Yahoo!
+  const kabutan = makeButton('株探', 'ktt-kabutan', 'kabutan.jp/stock')
+  const minkabu = makeButton('みんかぶ', 'ktt-minkabu', 'minkabu.jp/stock')
+  const yahoo = makeButton('Yahoo!', 'ktt-yahoo', 'finance.yahoo.co.jp/bbs')
+
+  // 各ボタンを追加する
   $('div.container-hw_3o_pb .buttonsWrapper-hw_3o_pb.notAvailableOnMobile-hw_3o_pb.withoutBg-hw_3o_pb')
     .append(rakuten)
     .append(naito)
+    .append(kabutan)
+    .append(minkabu)
+    .append(yahoo)
+
+  // 初回のボタン状態を設定
+  updateButtons()
 }
 
 /**
@@ -294,4 +335,18 @@ const getTickerCode = () => {
   }
 
   return { code: null, type: null }
+}
+
+/**
+ * TradingViewのボタンを作る
+ * @param {string} title 
+ * @param {string} className 
+ * @returns jQueryで作ったボタン
+ */
+const makeChartButton = (title, className) => {
+  return $(`
+  <div class="apply-common-tooltip button-hw_3o_pb buyButton-hw_3o_pb ${className}" style="color: skyblue; border-color: skyblue;">
+    <span class="buttonText-hw_3o_pb">${title}</span>
+  </div>`)
+  .hide()
 }

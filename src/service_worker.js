@@ -128,88 +128,138 @@ chrome.action.onClicked.addListener((tab) => {
 // メッセージを受け取った時のイベントハンドラを登録
 // 詳細は個別にコメント
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  const response = { type: request.type, data: null }
-
   if (request.type === 'rakuten-sec:info') {
-    const { code, type } = request.data
-    response.data = { rakutenUrl: null, naitoUrl: null }
-    
-    // 楽天証券のURLを取得する
-    getRakutenSecUrl(type, code, (url) => {
-      response.data.rakutenUrl = url
-
-      // 国内株の場合は内藤証券のURLも取得する
-      if (type === 'jp') {
-        getNaitoSecUrl(code, (url) => {
-          response.data.naitoUrl = url
-          sendResponse?.(response)
-        })
-      } else {
-        sendResponse?.(response)
-      }
-    })
-
+    onMessageRakutenSecInfoAsync(request, sendResponse)
     return true
   } else if (request.type === 'rakuten-sec:open') {
-    const { code, type } = request.data
-    
-    // 楽天証券のURLを取得する
-    getRakutenSecUrl(type, code, (url) => {
-      response.data = { rakutenUrl: url }
-
-      // 楽天証券ページを開く
-      if (url) {
-        chrome.tabs.create({ url })
-      }
-
-      sendResponse?.(response)
-    })
-
+    onMessageRakutenSecOpenAsync(request, sendResponse)
     return true
   } else if (request.type === 'naito-sec:info') {
-    const { code } = request.data
-    getNaitoSecUrl(code, (url) => {
-      response.data = { naitoUrl: url }
-      sendResponse?.(response)
-    })
+    onMessageNaitoSecInfoAsync(request, sendResponse)
     return true
   } else if (request.type === 'naito-sec:open') {
-    const { code } = request.data
-    getNaitoSecUrl(code, (url) => {
-      response.data = { naitoUrl: url }
-      // 内藤証券ページを開く
-      if (url) {
-        chrome.tabs.create({ url })
-      }
-      sendResponse?.(response)
-    })
+    onMessageNaitoSecOpenAsync(request, sendResponse)
     return true
+  } else if (request.type === 'open-url') {
+    onMessageOpenUrlAsync(request, sendResponse)
   }
 
   return false
 })
 
 /**
+ * 楽天証券の情報取得時のメッセージ処理
+ * @param {*} request リクエスト情報
+ * @param {*} sendResponse レスポンスコールバック
+ */
+const onMessageRakutenSecInfoAsync = async (request, sendResponse) => {
+  const response = { type: request.type, data: null }
+  const { code, type } = request.data
+  response.data = { rakutenUrl: null }
+  
+  // 楽天証券のURLを取得する
+  response.data.rakutenUrl = await getRakutenSecUrlAsync(type, code)
+
+  sendResponse?.(response)
+}
+
+/**
+ * 楽天証券を開く時のメッセージ処理
+ * @param {*} request リクエスト情報
+ * @param {*} sendResponse レスポンスコールバック
+ */
+const onMessageRakutenSecOpenAsync = async (request, sendResponse) => {
+  const response = { type: request.type, data: null }
+  const { code, type } = request.data
+  response.data = { rakutenUrl: null }
+
+  // 楽天証券のURLを取得する
+  response.data.rakutenUrl = await getRakutenSecUrlAsync(type, code)
+
+  // 楽天証券ページを開く
+  if (response.data.rakutenUrl) {
+    chrome.tabs.create({ url: response.data.rakutenUrl })
+  }
+
+  sendResponse?.(response)
+}
+
+/**
+ * 内藤証券の情報取得時のメッセージ処理
+ * @param {*} request リクエスト情報
+ * @param {*} sendResponse レスポンスコールバック
+ */
+const onMessageNaitoSecInfoAsync = async (request, sendResponse) => {
+  const response = { type: request.type, data: null }
+  const { code } = request.data
+  response.data = { naitoUrl: null }
+
+  // 内藤証券のURLを取得する
+  response.data.naitoUrl = await getNaitoSecUrlAsync(code)
+
+  sendResponse?.(response)
+}
+
+/**
+ * 内藤証券を開く時のメッセージ処理
+ * @param {*} request リクエスト情報
+ * @param {*} sendResponse レスポンスコールバック
+ */
+const onMessageNaitoSecOpenAsync = async (request, sendResponse) => {
+  const response = { type: request.type, data: null }
+  const { code } = request.data
+  response.data = { naitoUrl: null }
+
+  // 内藤証券のURLを取得する
+  response.data.naitoUrl = await getNaitoSecUrlAsync(code)
+
+  // 内藤証券ページを開く
+  if (response.data.naitoUrl) {
+    chrome.tabs.create({ url: response.data.naitoUrl })
+  }
+
+  sendResponse?.(response)
+}
+
+/**
+ * URLを開く時のメッセージ処理
+ * @param {*} request リクエスト情報
+ * @param {*} sendResponse レスポンスコールバック
+ */
+const onMessageOpenUrlAsync = async (request, sendResponse) => {
+  const response = { type: request.type, data: null }
+  const { url } = request.data
+
+  // ページを開く
+  if (url) {
+    chrome.tabs.create({ url })
+  }
+
+  sendResponse?.(response)
+}
+
+/**
  * ログイン済みの楽天証券サイトからセッションIDを取得しURLを取得する
  * @param {'jp' | 'us'} type 
  * @param {string} code 
- * @param {function} callback 
  */
-const getRakutenSecUrl = (type, code, callback) => {
+const getRakutenSecUrlAsync = async (type, code) => {
   // メンバーページのURLからセッションIDを取得し銘柄に対応したページ遷移先のURLを構築する
-  chrome.tabs.query({url: 'https://member.rakuten-sec.co.jp/*'}, (tabs) => {
-    const sessionIdRegex = new RegExp('[;?&]BV_SessionID=([^?&]+)')
-    let sessionId = null
-    for (let i = 0; i < tabs.length; i++) {
-      const tab = tabs[i]
-      const matchedSessionId = sessionIdRegex.exec(tab.url)
-      if (matchedSessionId) {
-        sessionId = matchedSessionId[1]
-        break
-      }
-    }
+  const tabs = await chrome.tabs.query({url: 'https://member.rakuten-sec.co.jp/*'})
 
-    let url = null
+  const sessionIdRegex = new RegExp('[;?&]BV_SessionID=([^?&]+)')
+  let sessionId = null
+  for (let i = 0; i < tabs.length; i++) {
+    const tab = tabs[i]
+    const matchedSessionId = sessionIdRegex.exec(tab.url)
+    if (matchedSessionId) {
+      sessionId = matchedSessionId[1]
+      break
+    }
+  }
+
+  let url = null
+  if (sessionId) {
     switch (type) {
       case 'jp':
         url = `https://member.rakuten-sec.co.jp/app/info_jp_prc_stock.do;BV_SessionID=${sessionId}?eventType=init&dscrCd=${code}&marketCd=1&chartPeriod=1&dscrCd=6526&gmn=J&smn=01&lmn=01&fmn=01`
@@ -218,29 +268,27 @@ const getRakutenSecUrl = (type, code, callback) => {
         url = `https://member.rakuten-sec.co.jp/app/info_us_prc_stock.do;BV_SessionID=${sessionId}?eventType=init&tickerCd=${code}&chartType=&l-id=mem_us_fu_a_a`
         break
     }
+  }
 
-    callback(url)
-  })
+  return url
 }
 
 /**
  * ログイン済みの内藤証券の国内株マーケットのURLから指定した銘柄コードのURLを取得する
  * @param {string} code 銘柄コード
- * @param {function} callback 
  */
-const getNaitoSecUrl = (code, callback) => {
+const getNaitoSecUrlAsync = async (code) => {
   // 個別銘柄のページを開いていればそのURLをコピーして銘柄コードを変えたページを返す
-  chrome.tabs.query({ url: 'https://*.qhit.net/naito/iswebptt2/*'}, (tabs) => {
-    const qcodeRegex = new RegExp('([;?&]qcode=)([0-9][0-9ACDFGHJKLMNPRSTUWXY][0-9][0-9ACDFGHJKLMNPRSTUWXY])')
-    let url = null
-    for (let i = 0; i < tabs.length; i++) {
-      const tab = tabs[i]
-      if (qcodeRegex.test(tab.url)) {
-        url = tab.url.replace(qcodeRegex, `$1${code}`)
-        break
-      }
+  const tabs = await chrome.tabs.query({ url: 'https://*.qhit.net/naito/iswebptt2/*'})
+  const qcodeRegex = new RegExp('([;?&]qcode=)([0-9][0-9ACDFGHJKLMNPRSTUWXY][0-9][0-9ACDFGHJKLMNPRSTUWXY])')
+  let url = null
+  for (let i = 0; i < tabs.length; i++) {
+    const tab = tabs[i]
+    if (qcodeRegex.test(tab.url)) {
+      url = tab.url.replace(qcodeRegex, `$1${code}`)
+      break
     }
+  }
 
-    callback(url)
-  })
+  return url
 }
