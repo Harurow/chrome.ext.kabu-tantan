@@ -69,8 +69,6 @@ const attachMenu = () => {
   }
 
   const ctxMenu = $('div.menu-Tx5xMZww.context-menu.menuWrap-Kq3ruQo8 > div > div[data-name="menu-inner"] > table', overlapManagerRoot)
-  const firstMenuItemText = $('tr:first td:eq(1) div span:first', ctxMenu).text()
-
   const { code, type } = getTickerCode()
 
   if (type === 'jp') {
@@ -200,26 +198,36 @@ const addNewyorkTicker = async (ctxMenu, code) => {
  */
 const canvasObserverCallback = () => {
   const rakuten = $('div.rakuten-sec')
+  const naito = $('div.naito-sec')
 
   // 銘柄コードが取得できた場合、かつ、楽天証券のURLが取得できればボタンを表示
   const { code, type } = getTickerCode()
   if (code) {
     chrome.runtime.sendMessage({ type: 'rakuten-sec:info', data: { type, code } }, (response) => {
-      // 楽天証券にログインしている時は楽天証券メニューを追加
+      // 楽天証券にログインしている時は楽天証券ボタンを表示
       if (response.data.rakutenUrl) {
         rakuten.show()
       } else {
         rakuten.hide()
       }
+
+      // 内藤証券の国内株マーケットを開いている場合はボタンを表示
+      if (response.data.naitoUrl) {
+        naito.show()
+      } else {
+        naito.hide()
+      }
     })
   } else {
     rakuten.hide()
+    naito.hide()
   }
 }
 
 /**
  * ボタンを追加
- * ・楽天証券 : 楽天証券にログインしてる時だけ有効なボタン。
+ * ・楽天証券 : 楽天証券にログインしてる時だけ有効なボタン
+ * ・内藤証券 : 内藤証券にログインし、国内株マーケットの個別銘柄を開いている時だけ有効なボタン
  */
 const createButtons = () => {
   // 楽天証券ボタンを作成
@@ -239,9 +247,27 @@ const createButtons = () => {
       }
     })
 
+  // 内藤証券ボタンを作成
+  const naito = $(`
+    <div class="apply-common-tooltip button-hw_3o_pb sellButton-hw_3o_pb naito-sec">
+      <span class="buttonText-hw_3o_pb">内藤証券</span>
+    </div>`)
+    .hide()
+    .click(() => {
+      const { code, type } = getTickerCode()
+      if (code && type === 'jp') {
+        chrome.runtime.sendMessage({ type: 'naito-sec:open', data: { code } }, (response) => {
+          if (response.data.naitoUrl === null) {
+            alert('内藤証券の国内株マーケットの個別銘柄のページを開いておいてください')
+          }
+        })
+      }
+    })
+
   // 楽天証券ボタンを追加する
   $('div.container-hw_3o_pb .buttonsWrapper-hw_3o_pb.notAvailableOnMobile-hw_3o_pb.withoutBg-hw_3o_pb')
     .append(rakuten)
+    .append(naito)
 }
 
 /**
@@ -268,5 +294,6 @@ const getTickerCode = () => {
       }
     }
   }
-  return null
+
+  return { code: null, type: null }
 }
