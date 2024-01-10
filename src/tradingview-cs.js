@@ -318,8 +318,8 @@ const getTickerCode = () => {
   if (canvas) {
     const ariaLabel = canvas.attr('aria-label')
     if (ariaLabel) {
-      if (ariaLabel.startsWith('TSE:')) {
-        const regex = new RegExp('(TSE:)([0-9][0-9ACDFGHJKLMNPRSTUWXY][0-9][0-9ACDFGHJKLMNPRSTUWXY])')
+      if (ariaLabel.startsWith('TSE:') || ariaLabel.startsWith('TSE_DLY:')) {
+        const regex = new RegExp('(TSE(_DLY?):)([0-9][0-9ACDFGHJKLMNPRSTUWXY][0-9][0-9ACDFGHJKLMNPRSTUWXY])')
         if (regex.test(ariaLabel)) {
           const code = regex.exec(ariaLabel)[2]
           return { code: code, type: 'jp' }
