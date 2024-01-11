@@ -319,9 +319,9 @@ const getTickerCode = () => {
     const ariaLabel = canvas.attr('aria-label')
     if (ariaLabel) {
       if (ariaLabel.startsWith('TSE:') || ariaLabel.startsWith('TSE_DLY:')) {
-        const regex = new RegExp('(TSE(_DLY?):)([0-9][0-9ACDFGHJKLMNPRSTUWXY][0-9][0-9ACDFGHJKLMNPRSTUWXY])')
+        const regex = new RegExp('(TSE(_DLY)?:)([0-9][0-9ACDFGHJKLMNPRSTUWXY][0-9][0-9ACDFGHJKLMNPRSTUWXY])')
         if (regex.test(ariaLabel)) {
-          const code = regex.exec(ariaLabel)[2]
+          const code = regex.exec(ariaLabel)[3]
           return { code: code, type: 'jp' }
         }
       } else if (ariaLabel.startsWith('BATS:')) {
