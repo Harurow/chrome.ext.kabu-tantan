@@ -9,11 +9,13 @@ const remakeContextMenus = async () => {
 
   // 有効なURLリストをコンテキストメニューへ追加
   keys.forEach((key) => {
-    chrome.contextMenus.create({
-      id: key,
-      title: externalUrlsMap[key].title,
-      contexts: ['selection']
-    })
+    if (externalUrlsMap[key]) {
+      chrome.contextMenus.create({
+        id: key,
+        title: externalUrlsMap[key].title,
+        contexts: ['selection']
+      })
+    }
   });
 }
 

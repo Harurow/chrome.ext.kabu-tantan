@@ -203,22 +203,15 @@ const canvasObserverCallback = () => {
  * ボタンの表示・非表示を切り替える
  */
 const updateButtons = async () => {
-  const rakuten = $('div.ktt-rakuten-sec')
-  const naito = $('div.ktt-naito-sec')
-  const kabutan = $('div.ktt-kabutan')
-  const minkabu = $('div.ktt-minkabu')
-  const yahoo = $('div.ktt-yahoo')
-
+  
   // 銘柄コードが取得できた場合、かつ、楽天証券のURLが取得できればボタンを表示
   const { code, type } = getTickerCode()
 
   if (code == null) {
     // 銘柄コードが取得できなかったので全部非表示
-    updateVisible(rakuten, false)
-    updateVisible(naito, false)
-    updateVisible(kabutan, false)
-    updateVisible(minkabu, false)
-    updateVisible(yahoo, false)
+    $('.ktt-tv-linkButton').each(function() {
+      updateVisible($(this), false)
+    })
     return
   }
 
@@ -229,16 +222,19 @@ const updateButtons = async () => {
 
   // 楽天証券にログインしている時は楽天証券ボタンを表示
   // 内藤証券の国内株マーケットを開いている場合はボタンを表示
+  const rakuten = $('div.ktt-rakuten-sec')
+  const naito = $('div.ktt-naito-sec')
   updateVisible(rakuten, rakutenResponse.data.rakutenUrl)
   updateVisible(naito, naitoResponse.data.naitoUrl)
-  updateVisible(kabutan, true)
-  updateVisible(minkabu, true)
-  updateVisible(yahoo, true)
+
+  $('.ktt-tv-infoButton').each(function () {
+    updateVisible($(this), true)
+  })
 }
 
 /**
  * ボタン(jQuery)の表示・非表示を切り替える
- * @param {JQuery} button 
+ * @param {*} button 
  * @param {boolean} condition 
  */
 const updateVisible = (button, condition) => {
@@ -250,13 +246,15 @@ const updateVisible = (button, condition) => {
 }
 
 /**
- * ボタンを追加
+ * 連携ボタンを追加
  * ・楽天証券 : 楽天証券にログインしてる時だけ有効なボタン
  * ・内藤証券 : 内藤証券にログインし、国内株マーケットの個別銘柄を開いている時だけ有効なボタン
  */
-const createButtons = () => {
+const createButtons = async () => {
+  const buttonCollection = $('div.container-hw_3o_pb .buttonsWrapper-hw_3o_pb.notAvailableOnMobile-hw_3o_pb.withoutBg-hw_3o_pb')
+ 
   // 楽天証券ボタンを作成
-  const rakuten = makeChartButton('楽天証券', 'ktt-rakuten-sec')
+  const rakuten = makeChartButton('楽天証券', 'ktt-rakuten-sec ktt-tv-secButon')
     .click(async () => {
       const { code, type } = getTickerCode()
       if (code) {
@@ -266,9 +264,10 @@ const createButtons = () => {
         }
       }
     })
+  buttonCollection.append(rakuten)
 
   // 内藤証券ボタンを作成
-  const naito = makeChartButton('内藤証券', 'ktt-naito-sec')
+  const naito = makeChartButton('内藤証券', 'ktt-naito-sec ktt-tv-secButon')
     .click(async () => {
       const { code, type } = getTickerCode()
       if (code && type === 'jp') {
@@ -278,6 +277,7 @@ const createButtons = () => {
         }
       }
     })
+  buttonCollection.append(naito)
 
     // 汎用ボタン作成
   const makeButton = (title, className, key) => {
@@ -290,20 +290,17 @@ const createButtons = () => {
           chrome.runtime.sendMessage({ type: 'open-url', data: { url } })
         }
       })
-  }
+    }
 
-  // 株探, みんかぶ, Yahoo!
-  const kabutan = makeButton('株探', 'ktt-kabutan', 'kabutan.jp/stock')
-  const minkabu = makeButton('みんかぶ', 'ktt-minkabu', 'minkabu.jp/stock')
-  const yahoo = makeButton('Yahoo!', 'ktt-yahoo', 'finance.yahoo.co.jp/bbs')
-
-  // 各ボタンを追加する
-  $('div.container-hw_3o_pb .buttonsWrapper-hw_3o_pb.notAvailableOnMobile-hw_3o_pb.withoutBg-hw_3o_pb')
-    .append(rakuten)
-    .append(naito)
-    .append(kabutan)
-    .append(minkabu)
-    .append(yahoo)
+  // 外部連携リンクボタン
+  const keys = await getEnableLinkKeysAsync()
+  keys.forEach((key) => {
+    const item = externalUrlsMap[key]
+    if (item.tvTitle) {
+      const button = makeButton(item.tvTitle, keyToCssName(item.key) + ' ktt-tv-infoButton', key)
+      buttonCollection.append(button)
+    }
+  })
 
   // 初回のボタン状態を設定
   updateButtons()
@@ -345,8 +342,15 @@ const getTickerCode = () => {
  */
 const makeChartButton = (title, className) => {
   return $(`
-  <div class="apply-common-tooltip button-hw_3o_pb buyButton-hw_3o_pb ${className}" style="color: skyblue; border-color: skyblue;">
+  <div class="apply-common-tooltip button-hw_3o_pb buyButton-hw_3o_pb ktt-tv-linkButton ${className}" style="color: skyblue; border-color: skyblue;">
     <span class="buttonText-hw_3o_pb">${title}</span>
   </div>`)
   .hide()
+}
+
+/**
+ * キー文字列からcssのクラス名を生成する
+ */
+const keyToCssName = (key) => {
+  return 'ktt-' + key.replace(/\./g, '_').replace(/\//g, '-')
 }

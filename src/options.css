@@ -89,7 +89,31 @@ footer small {
   opacity: 50%;
 }
 
-span.switch-title {
+span.item-title {
   vertical-align: middle;
   font-size: large;
+}
+
+i.material-icons.handle {
+  padding: 0;
+  cursor: grab;
+}
+
+li.row.ui-sortable-helper i.material-icons.handle {
+  cursor: grabbing;
+}
+
+li.collection-item a {
+  line-height: 0;
+}
+
+.collection .collection-item.ui-sortable-helper {
+  border-top: 1px solid #e0e0e0;
+}
+
+.collection-item img.trading-view {
+  margin-left: 0.5em;
+  width: 20px;
+  vertical-align: text-top;
+  opacity: 0.5;
 }
