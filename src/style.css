@@ -18,3 +18,16 @@ li.x-kabu-menu-item {
 li.xkau-menu-item:last-child {
   margin-right: 0;
 }
+
+
+ul.ktt-tv-holder > li {
+  display: inline-block;
+}
+
+li.apply-common-tooltip.button-hw_3o_pb.buyButton-hw_3o_pb > ul.ktt-tv-holder {
+  display: none;
+}
+
+li.ktt-tv-menu {
+  display: inline-block;
+}

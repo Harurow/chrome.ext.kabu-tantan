@@ -193,11 +193,11 @@ const onMessageRakutenSecOpenAsync = async (request, sendResponse) => {
  */
 const onMessageNaitoSecInfoAsync = async (request, sendResponse) => {
   const response = { type: request.type, data: null }
-  const { code } = request.data
+  const { code, type } = request.data
   response.data = { naitoUrl: null }
 
   // 内藤証券のURLを取得する
-  response.data.naitoUrl = await getNaitoSecUrlAsync(code)
+  response.data.naitoUrl = await getNaitoSecUrlAsync(type, code)
 
   sendResponse?.(response)
 }
@@ -209,11 +209,11 @@ const onMessageNaitoSecInfoAsync = async (request, sendResponse) => {
  */
 const onMessageNaitoSecOpenAsync = async (request, sendResponse) => {
   const response = { type: request.type, data: null }
-  const { code } = request.data
+  const { code, type } = request.data
   response.data = { naitoUrl: null }
 
   // 内藤証券のURLを取得する
-  response.data.naitoUrl = await getNaitoSecUrlAsync(code)
+  response.data.naitoUrl = await getNaitoSecUrlAsync(type, code)
 
   // 内藤証券ページを開く
   if (response.data.naitoUrl) {
@@ -277,18 +277,22 @@ const getRakutenSecUrlAsync = async (type, code) => {
 
 /**
  * ログイン済みの内藤証券の国内株マーケットのURLから指定した銘柄コードのURLを取得する
+ * @param {'jp' | 'us'} type 
  * @param {string} code 銘柄コード
  */
-const getNaitoSecUrlAsync = async (code) => {
+const getNaitoSecUrlAsync = async (type, code) => {
   // 個別銘柄のページを開いていればそのURLをコピーして銘柄コードを変えたページを返す
   const tabs = await chrome.tabs.query({ url: 'https://*.qhit.net/naito/iswebptt2/*'})
   const qcodeRegex = new RegExp('([;?&]qcode=)([0-9][0-9ACDFGHJKLMNPRSTUWXY][0-9][0-9ACDFGHJKLMNPRSTUWXY])')
+
   let url = null
-  for (let i = 0; i < tabs.length; i++) {
-    const tab = tabs[i]
-    if (qcodeRegex.test(tab.url)) {
-      url = tab.url.replace(qcodeRegex, `$1${code}`)
-      break
+  if (type === 'jp') {
+    for (let i = 0; i < tabs.length; i++) {
+      const tab = tabs[i]
+      if (qcodeRegex.test(tab.url)) {
+        url = tab.url.replace(qcodeRegex, `$1${code}`)
+        break
+      }
     }
   }
 

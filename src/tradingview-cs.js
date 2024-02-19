@@ -21,8 +21,8 @@ const attach = () => {
     const canvasObserver = new MutationObserver(canvasObserverCallback)
     canvasObserver.observe(canvas, { attributes: true })
   
-    // 楽天証券などのボタンを追加
-    createButtons()
+    // 株リンクメニューを追加
+    createKabuLinkMenu()
   }
 }
 
@@ -131,7 +131,7 @@ const makeMenuItem = (title, url) => {
 const addTokyoTickerAsync = async (ctxMenu, code) => {
   const items = await getEnableLinkKeysAsync()
   const rakutenResponse = await chrome.runtime.sendMessage({ type: 'rakuten-sec:info', data: { code, type: 'jp' } })
-  const noitoResponse = await chrome.runtime.sendMessage({ type: 'naito-sec:info', data: { code } })
+  const noitoResponse = await chrome.runtime.sendMessage({ type: 'naito-sec:info', data: { code, type: 'jp' } })
 
   ctxMenu.append(makeMenuSeparator())
 
@@ -196,52 +196,30 @@ const addNewyorkTicker = async (ctxMenu, code) => {
  * 楽天証券ボタンの表示/非表示を切り替える
  */
 const canvasObserverCallback = () => {
-  updateButtons()
+  updateKabuLinkMenu()
 }
 
 /**
  * ボタンの表示・非表示を切り替える
  */
-const updateButtons = async () => {
+const updateKabuLinkMenu = async () => {
+  const { code } = getTickerCode()
   
-  // 銘柄コードが取得できた場合、かつ、楽天証券のURLが取得できればボタンを表示
-  const { code, type } = getTickerCode()
-
-  if (code == null) {
-    // 銘柄コードが取得できなかったので全部非表示
-    $('.ktt-tv-linkButton').each(function() {
-      updateVisible($(this), false)
-    })
-    return
-  }
-
-  const rakutenResponse = await chrome.runtime.sendMessage({ type: 'rakuten-sec:info', data: { code, type } })
-  const naitoResponse = type === 'jp'
-    ? await chrome.runtime.sendMessage({ type: 'naito-sec:info', data: { code } })
-    : { data: { naitoUrl: null } }
-
-  // 楽天証券にログインしている時は楽天証券ボタンを表示
-  // 内藤証券の国内株マーケットを開いている場合はボタンを表示
-  const rakuten = $('div.ktt-rakuten-sec')
-  const naito = $('div.ktt-naito-sec')
-  updateVisible(rakuten, rakutenResponse.data.rakutenUrl)
-  updateVisible(naito, naitoResponse.data.naitoUrl)
-
-  $('.ktt-tv-infoButton').each(function () {
-    updateVisible($(this), true)
+  $('.ktt-tv-kabuLinkMenu').each(function() {
+    updateVisible($(this), code)
   })
 }
 
 /**
  * ボタン(jQuery)の表示・非表示を切り替える
- * @param {*} button 
+ * @param {*} element 
  * @param {boolean} condition 
  */
-const updateVisible = (button, condition) => {
+const updateVisible = (element, condition) => {
   if (condition) {
-    button.show()
+    element.show()
   } else {
-    button.hide()
+    element.hide()
   }
 }
 
@@ -250,60 +228,148 @@ const updateVisible = (button, condition) => {
  * ・楽天証券 : 楽天証券にログインしてる時だけ有効なボタン
  * ・内藤証券 : 内藤証券にログインし、国内株マーケットの個別銘柄を開いている時だけ有効なボタン
  */
-const createButtons = async () => {
-  const buttonCollection = $('div.container-hw_3o_pb .buttonsWrapper-hw_3o_pb.notAvailableOnMobile-hw_3o_pb.withoutBg-hw_3o_pb')
- 
-  // 楽天証券ボタンを作成
-  const rakuten = makeChartButton('楽天証券', 'ktt-rakuten-sec ktt-tv-secButon')
-    .click(async () => {
-      const { code, type } = getTickerCode()
-      if (code) {
+const createKabuLinkMenu = async () => {
+  // TradingViewへのメニュー挿入位置
+  const container = $('div.container-hw_3o_pb')
+
+  const buttonsWrapper =
+    $('<div>', {
+      class: 'buttonsWrapper-hw_3o_pb notAvailableOnMobile-hw_3o_pb withoutBg-hw_3o_pb column-hw_3o_pb'
+    }).appendTo(container)
+
+  $(`<div class="ktt-tv-kabuLinkMenu">
+    <span>株Link</span>
+  </div>`)
+  .appendTo(buttonsWrapper)
+  .click(async (e) => {
+    // 銘柄コードを取得
+    const { code, type } = getTickerCode()
+
+    // 銘柄コードが取得できなかったので株Linkを追加しない
+    if (code == null) {
+      return
+    }
+
+    // 株Linkをクリックした場合、メニューを表示
+    // キー入力された場合はキャンセル扱い
+
+    // body要素
+    const body = $('body')
+
+    // メニュー表示中にキーボードを押すとキャンセル
+    const keydown = (e) => {
+      e.preventDefault()
+      clearMenu()
+    }
+
+    // メニューをクリア
+    const clearMenu = () => {
+      body[0].removeEventListener('keydown', keydown)
+      background.remove()
+    }
+
+    // キーボードイベントを追加
+    body[0].addEventListener('keydown', keydown)
+
+    // 背景
+    const background = $('<div>', {
+      class: 'ktt-tv-menuBack'
+    })
+    .click((e) => {
+      // 背景クリックはキャンセル
+      clearMenu()
+    })
+    .appendTo(body)
+  
+    // メニューの全体
+    const menuBody = $(`
+      <div class="menu-Tx5xMZww context-menu menuWrap-Kq3ruQo8" style="position: fixed; left: ${e.clientX}px; top: ${e.clientY}px;">
+        <div class="scrollWrap-Kq3ruQo8" style="overflow-y: auto;">
+          <div class="menuBox-Kq3ruQo8" data-name="menu-inner">
+            <table>
+              <tbody>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>`)
+    
+    // メニュー項目を構築する
+    const createMenuItem = (title) => $(`
+      <tr data-role="menuitem" class="accessible-rm8yeqY4 item-GJX1EXhk interactive-GJX1EXhk normal-GJX1EXhk" tabindex="-1">
+        <td class="iconCell-GJX1EXhk" data-icon-cell="true">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 28 28" width="28" height="28"></svg>
+        </td>
+        <td>
+          <div class="content-GJX1EXhk">
+            <span class="label-GJX1EXhk" data-label="true">${title}</span>
+          </div>
+        </td>
+      </tr>`)
+
+    // メニュー項目の追加先要素
+    const tbody = $('tbody', menuBody)
+
+    // 証券会社のメニューを追加したか
+    let isAppendedSecMenuItem = false
+
+    // 楽天証券にログインしている時は楽天証券のURLが取得できる
+    const rakutenResponse = await chrome.runtime.sendMessage({ type: 'rakuten-sec:info', data: { code, type } })
+
+    // 楽天証券メニューを追加
+    if (rakutenResponse.data.rakutenUrl) {
+      createMenuItem('楽天証券を開く')
+      .click(async (e) => {
+        // 楽天証券のページを開く
         const response = await chrome.runtime.sendMessage({ type: 'rakuten-sec:open', data: { code, type } })
         if (response.data.rakutenUrl === null) {
           alert('楽天証券にログインしてください')
         }
-      }
-    })
-  buttonCollection.append(rakuten)
+      })
+      .appendTo(tbody)
+      isAppendedSecMenuItem = true
+    }
+    
+    // 内藤証券にログインしている時は内藤証券のURLが取得できる
+    const naitoResponse = await chrome.runtime.sendMessage({ type: 'naito-sec:info', data: { code, type } })
 
-  // 内藤証券ボタンを作成
-  const naito = makeChartButton('内藤証券', 'ktt-naito-sec ktt-tv-secButon')
-    .click(async () => {
-      const { code, type } = getTickerCode()
-      if (code && type === 'jp') {
-        const response = await chrome.runtime.sendMessage({ type: 'naito-sec:open', data: { code } })
+    // 内藤証券メニューを追加
+    if (naitoResponse.data.naitoUrl) {
+      createMenuItem('内藤証券を開く')
+      .click(async (e) => {
+        // 内藤証券のページを開く
+        const response = await chrome.runtime.sendMessage({ type: 'naito-sec:open', data: { code, type } })
         if (response.data.naitoUrl === null) {
-          alert('内藤証券の国内株マーケットの個別銘柄のページを開いてください')
+          alert('内藤証券にログインしてください')
         }
-      }
-    })
-  buttonCollection.append(naito)
+      })
+      .appendTo(tbody)
+      isAppendedSecMenuItem = true
+    }
 
-    // 汎用ボタン作成
-  const makeButton = (title, className, key) => {
-    return makeChartButton(title, className)
-      .click(() => {
-        const { code, type } = getTickerCode()
-        if (code) {
+    // 証券会社メニューがある場合はセパレータを追加
+    if (isAppendedSecMenuItem) {
+      $(`<tr class="row-DFIg7eOh"><td><div class="line-DFIg7eOh"></div></td><td><div class="line-DFIg7eOh"></div></td></tr>`)
+      .appendTo(tbody)
+    }
+    
+    // 有効になってる外部連携リンクをメニューに追加する
+    const keys = await getEnableLinkKeysAsync()
+    keys.forEach((key) => {
+      const item = externalUrlsMap[key]
+      if (item.tvTitle) {
+        createMenuItem(`${item.title}で開く`)
+        .click(() => {
           const item = externalUrlsMap[key]
           const url = makeUrl(type === 'us' ? item.url3 : item.url1, code)
           chrome.runtime.sendMessage({ type: 'open-url', data: { url } })
-        }
-      })
-    }
+        })
+        .appendTo(tbody)
+      }
+    })
 
-  // 外部連携リンクボタン
-  const keys = await getEnableLinkKeysAsync()
-  keys.forEach((key) => {
-    const item = externalUrlsMap[key]
-    if (item.tvTitle) {
-      const button = makeButton(item.tvTitle, keyToCssName(item.key) + ' ktt-tv-infoButton', key)
-      buttonCollection.append(button)
-    }
+    menuBody.appendTo(background)
   })
-
-  // 初回のボタン状態を設定
-  updateButtons()
 }
 
 /**
@@ -332,25 +398,4 @@ const getTickerCode = () => {
   }
 
   return { code: null, type: null }
-}
-
-/**
- * TradingViewのボタンを作る
- * @param {string} title 
- * @param {string} className 
- * @returns jQueryで作ったボタン
- */
-const makeChartButton = (title, className) => {
-  return $(`
-  <div class="apply-common-tooltip button-hw_3o_pb buyButton-hw_3o_pb ktt-tv-linkButton ${className}" style="color: skyblue; border-color: skyblue;">
-    <span class="buttonText-hw_3o_pb">${title}</span>
-  </div>`)
-  .hide()
-}
-
-/**
- * キー文字列からcssのクラス名を生成する
- */
-const keyToCssName = (key) => {
-  return 'ktt-' + key.replace(/\./g, '_').replace(/\//g, '-')
 }
