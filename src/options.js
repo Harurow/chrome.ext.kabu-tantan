@@ -49,7 +49,7 @@ $(async () => {
     // サイトが廃止になるケースがあるので externalUrlsMap にあるか確認してから登録
     if (item) {
       keyObjects[key] = 'checked'
-      const li = createItem(item, 'checked', item.tvTitle)
+      const li = createItem(item, 'checked', true)
       linkList.append(li)
     }
   })
@@ -57,7 +57,7 @@ $(async () => {
   externalUrls.forEach((item) => {
     if (!keyObjects[item.key]) {
       // 未作成のみ作る
-      const li = createItem(item, '', item.tvTitle)
+      const li = createItem(item, '', true)
       linkList.append(li)
     }
   })

@@ -356,15 +356,15 @@ const createKabuLinkMenu = async () => {
     // 有効になってる外部連携リンクをメニューに追加する
     const keys = await getEnableLinkKeysAsync()
     keys.forEach((key) => {
-      const item = externalUrlsMap[key]
-      if (item.tvTitle) {
+      if (key.indexOf('tradingview.com') !== 0) {
+        const item = externalUrlsMap[key]
         createMenuItem(`${item.title}で開く`)
-        .click(() => {
-          const item = externalUrlsMap[key]
-          const url = makeUrl(type === 'us' ? item.url3 : item.url1, code)
-          chrome.runtime.sendMessage({ type: 'open-url', data: { url } })
-        })
-        .appendTo(tbody)
+          .click(() => {
+            const item = externalUrlsMap[key]
+            const url = makeUrl(type === 'us' ? item.url3 : item.url1, code)
+            chrome.runtime.sendMessage({ type: 'open-url', data: { url } })
+          })
+          .appendTo(tbody)
       }
     })
 

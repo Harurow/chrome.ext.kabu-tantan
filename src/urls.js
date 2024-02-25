@@ -1,6 +1,12 @@
 /**
  * URLリスト
- * @type { { key: string, title: string, tvTitle_: string, url1: string, url2?: string, url3?: string }[] }
+ *   key: 必須 URLを特定するキー
+ *   title: 必須 表示するときの名称
+ *   url0: 必須 オプションから開くURL。トップページ
+ *   url1: 必須 日本銘柄で開くときのURL ${code}
+ *   url2: オプション 米国用URL（証券取引所コードあり） ${exchange} ${code}
+ *   url3: オプション 米国用URL（証券取引所コードなし） ${code}
+ * @type { { key: string, title: string, url1: string, url2?: string, url3?: string }[] }
  */
 const externalUrls = [
   {
@@ -14,7 +20,6 @@ const externalUrls = [
   {
     key: 'minkabu.jp/stock',
     title: 'MINKABU/株価情報トップ',
-    tvTitle: 'みんかぶ',
     url0: 'https://minkabu.jp',
     url1: 'https://minkabu.jp/stock/${code}',
     url2: 'https://us.minkabu.jp/stocks/${code}',
@@ -23,7 +28,6 @@ const externalUrls = [
   {
     key: 'kabutan.jp/stock',
     title: '株探/基本情報',
-    tvTitle: '株探',
     url0: 'https://kabutan.jp',
     url1: 'https://kabutan.jp/stock/?code=${code}',
     url2: 'https://us.kabutan.jp/stocks/${code}',
@@ -32,7 +36,6 @@ const externalUrls = [
   {
     key: 'finance.yahoo.co.jp/bbs',
     title: 'Yahoo!ファイナンス/掲示板',
-    tvTitle: 'Yahoo!',
     url0: 'https://finance.yahoo.co.jp/cm',
     url1: 'https://finance.yahoo.co.jp/quote/${code}/bbs',
     url2: 'https://finance.yahoo.co.jp/cm/rd/finance/${code}',
@@ -49,14 +52,12 @@ const externalUrls = [
   {
     key: 'www.nikkei.com/company',
     title: '日本経済新聞',
-    tvTitle: '日経',
     url0: 'https://www.nikkei.com/nkd/',
     url1: 'https://www.nikkei.com/nkd/company/?scode=${code}'
   },
   {
     key: 'shikiho.toyokeizai.net/stocks',
     title: '四季報',
-    tvTitle: '四季',
     url0: 'https://shikiho.toyokeizai.net/',
     url1: 'https://shikiho.toyokeizai.net/stocks/${code}'
   },
@@ -69,35 +70,30 @@ const externalUrls = [
   {
     key: 'kabubiz.com/riron',
     title: '株Biz/理論株価Web',
-    tvTitle: '株Biz',
     url0: 'https://kabubiz.com/riron/',
     url1: 'https://kabubiz.com/riron/${code:0}000/${code}.php'
   },
   {
     key: 'kabumap.com/base',
     title: '株マップ.com/銘柄基本情報',
-    tvTitle: '株マップ',
     url0: 'https://jp.kabumap.com',
     url1: 'https://jp.kabumap.com/servlets/kabumap/Action?SRC=basic/top/base&codetext=${code}'
   },
   {
     key: 'kabuyoho.ifis.co.jp/report',
     title: '株予報',
-    tvTitle: '株予報',
     url0: 'https://kabuyoho.ifis.co.jp/',
     url1: 'https://kabuyoho.ifis.co.jp/index.php?action=tp1&sa=report&bcode=${code}'
   },
   {
     key: 'kabuyoho.jp/',
     title: '株予報Pro',
-    tvTitle: '株予報Pro',
     url0: 'https://kabuyoho.jp',
     url1: 'https://kabuyoho.jp/reportTop?bcode=${code}'
   },
   {
     key: 'kabuline.com/search',
     title: '株ライン',
-    tvTitle: '株ライン',
     url0: 'https://kabuline.com',
     url1: 'https://kabuline.com/search/tw/${code}'
   },
@@ -122,21 +118,18 @@ const externalUrls = [
   {
     key: 'nikkeiyosoku.com/stock/',
     title: '投資の森',
-    tvTitle: '投資の森',
     url0: 'https://nikkeiyosoku.com/',
     url1: 'https://nikkeiyosoku.com/stock/${code}/'
   },
   {
     key: 'www.buffett-code.com/company',
     title: 'バフェット・コード',
-    tvTitle: 'バフェ',
     url0: 'https://www.buffett-code.com/',
     url1: 'https://www.buffett-code.com/company/${code}/'
   },
   {
     key: 'www.kabuka.jp.net/rating',
     title: '目標株価まとめ',
-    tvTitle: '目標株価',
     url0: 'https://www.kabuka.jp.net',
     url1: 'https://www.kabuka.jp.net/rating/${code}.html'
   },
@@ -151,7 +144,16 @@ const externalUrls = [
     title: 'logmi',
     url0: 'https://finance.logmi.jp/',
     url1: 'https://finance.logmi.jp/companies?query=${code}'
+  },
+  {
+    key: 'moomoo.com/',
+    title: 'moomoo証券',
+    url0: 'https://www.moomoo.com/ja/quote/jp',
+    url1: 'https://www.moomoo.com/ja/stock/${code}-JP',
+    url2: 'https://www.moomoo.com/ja/stock/${code}-US',
+    url3: 'https://www.moomoo.com/ja/stock/${code}-US'
   }
+
   // {
   //   key: 'tyn-imarket.com/stocks',
   //   title: 'iMarket',
