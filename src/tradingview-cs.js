@@ -235,17 +235,14 @@ const updateVisible = (element, condition) => {
  */
 const createKabuLinkMenu = async () => {
   // TradingViewへのメニュー挿入位置
-  const container = $('div.container-hw_3o_pb')
-
-  const buttonsWrapper =
-    $('<div>', {
-      class: 'buttonsWrapper-hw_3o_pb notAvailableOnMobile-hw_3o_pb withoutBg-hw_3o_pb column-hw_3o_pb'
-    }).appendTo(container)
+  // data-name属性経由で取得することでCSSクラス名変更の影響を受けない
+  const container = $('[data-name="buy-order-button"]').parent()
+  if (container.length === 0) return
 
   $(`<div class="ktt-tv-kabuLinkMenu">
     <span>株Link</span>
   </div>`)
-  .appendTo(buttonsWrapper)
+  .appendTo(container)
   .click(async (e) => {
     // 銘柄コードを取得
     const { code, type } = getTickerCode()
