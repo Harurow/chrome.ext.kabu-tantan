@@ -2,16 +2,18 @@ $(() => {
   setTimeout(attach, 500)
 })
 
+// overlapManagerRootのオブザーバーを保持する変数
+let overlapManagerRootObserver = null
+
 /**
  * ページを改変するエントリポイント
  */
 const attach = () => {
   // bodyを監視し子要素にオーバーラップレイヤーができるのを監視する
+  // #overlap-manager-rootは右クリックのたびに生成・削除されるため、bodyObserverは切断しない
   const body = $('body')[0]
   const bodyObserver = new MutationObserver(() => {
-    if (bodyObserverCallback()) {
-      bodyObserver.disconnect()
-    }
+    bodyObserverCallback()
   })
   bodyObserver.observe(body, { childList: true })
 
@@ -30,16 +32,21 @@ const attach = () => {
  * bodyタグの更新を監視する
  * コンテキストメニュー用のレイヤーが作成されていれば、そのレイヤーを監視する
  * コンテキストメニューレイヤーが作成された場合はメニューを拡張する
- * @returns { boolean } オブサーバを切断するか
+ * #overlap-manager-rootは右クリックのたびに生成・削除されるため、毎回新しいオブザーバーを設定する
  */
 const bodyObserverCallback = () => {
   // オーバーラップレイヤーを監視しコンテキストメニューの構築を監視する
   const overlapManagerRoot = $('div#overlap-manager-root')[0]
   if (!overlapManagerRoot) {
-    return false
+    return
   }
 
-  const overlapManagerRootObserver = new MutationObserver((mutions) => {
+  // 前回のオブザーバーを切断してから新しく設定する
+  if (overlapManagerRootObserver) {
+    overlapManagerRootObserver.disconnect()
+  }
+
+  overlapManagerRootObserver = new MutationObserver((mutions) => {
     mutions.forEach((mution) => {
       if (mution.type === 'childList') {
         if (mution.addedNodes.length > 0) {
@@ -48,12 +55,10 @@ const bodyObserverCallback = () => {
       }
     })
   })
-  
+
   overlapManagerRootObserver.observe(overlapManagerRoot, { childList: true })
 
   attachMenu()
-
-  return true
 }
 
 /**
@@ -67,7 +72,7 @@ const attachMenu = () => {
     return
   }
 
-  const ctxMenu = $('div.menu-Tx5xMZww.context-menu.menuWrap-Kq3ruQo8 > div > div[data-name="menu-inner"] > table', overlapManagerRoot)
+  const ctxMenu = $('div.menu-Tx5xMZww.context-menu.menuWrap-Kq3ruQo8 > div > div[data-qa-id="menu-inner"] > table', overlapManagerRoot)
   // 選択された銘柄リストからコードを取得
   const firstMenuItemText = $('tr:first td:eq(1) div span:first', ctxMenu).text()
 
