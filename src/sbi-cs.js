@@ -19,7 +19,7 @@ const attach = async () => {
 
 /**
  * 要素にメニューをつける
- * @param { HTMLElement } element 
+ * @param { HTMLElement } element
  * @param { string[] } keys
  */
 const attachMenu = (element, keys) => {
@@ -50,7 +50,7 @@ const attachMenu = (element, keys) => {
  */
 const menuSelectors = [
   {
-    title: "個別銘柄",
+    title: '個別銘柄',
     selector: 'div#main div.mgt15 div.trHead01 table.tbl01 tr.vaT td.tdL H3 span.fm01 span.normal'
   },
   {

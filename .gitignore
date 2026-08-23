@@ -1,3 +1,18 @@
-.DS_store
+# macOS
+.DS_Store
+
+# 依存パッケージ
 /node_modules
+
+# 配布用パッケージ
+/dist
 src.zip
+
+# Playwright
+/test-results
+/playwright-report
+/blob-report
+/playwright/.cache
+
+# レビュー承認の記録（コミットゲート用。共有しない）
+/.claude/review-approved.json

@@ -1,6 +1,8 @@
+/* 楽天証券・SBI証券のページに注入するドロップダウンメニューのスタイル */
+
 ul.x-kabu-body {
-  display: none;
   position: absolute;
+  display: none;
   background-color: white;
   border: 1px solid black;
 }
@@ -10,24 +12,11 @@ ul.x-kabu-body.open {
 }
 
 li.x-kabu-menu-item {
+  display: block;
   width: 100%;
   margin-right: 4px;
-  display: block;
 }
 
-li.xkau-menu-item:last-child {
+li.x-kabu-menu-item:last-child {
   margin-right: 0;
-}
-
-
-ul.ktt-tv-holder > li {
-  display: inline-block;
-}
-
-li.apply-common-tooltip.button-hw_3o_pb.buyButton-hw_3o_pb > ul.ktt-tv-holder {
-  display: none;
-}
-
-li.ktt-tv-menu {
-  display: inline-block;
 }

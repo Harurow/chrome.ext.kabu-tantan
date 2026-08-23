@@ -1,0 +1,34 @@
+/*
+ * Material Icons のフォント読み込み。
+ *
+ * フォント本体 (third-party/material-icons.woff2) は Google 提供 (Apache License 2.0)
+ * https://github.com/google/material-design-icons
+ *
+ * Chrome ウェブストアの審査およびプライバシー観点から、
+ * fonts.googleapis.com への実行時リクエストを避けてローカル同梱している。
+ * 使用アイコンだけにサブセット化済み（手順は docs/ARCHITECTURE.md）。
+ */
+
+@font-face {
+  font-family: "Material Icons";
+  font-style: normal;
+  font-weight: 400;
+  src: url("third-party/material-icons.woff2") format("woff2");
+}
+
+.material-icons {
+  display: inline-block;
+  font-family: "Material Icons", sans-serif;
+  font-size: 24px;
+  font-style: normal;
+  font-weight: normal;
+  line-height: 1;
+  text-transform: none;
+
+  /* このフォントのリガチャは rlig（必須リガチャ）で、指定なしで適用される。
+     Google 配布の CSS にある font-feature-settings: "liga" はこのフォントには効かない */
+  letter-spacing: normal;
+  overflow-wrap: normal;
+  white-space: nowrap;
+  -webkit-font-smoothing: antialiased;
+}

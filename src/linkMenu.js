@@ -1,13 +1,13 @@
 /**
  * ドロップダウンメニューを作成する
  * @param { string [] } keys
- * @param {string} code 
- * @param {string} text 
+ * @param {string} code
+ * @param {string} text
  * @param {boolean} nonStyle
  * @returns {JQuery<HTMLElement>}
  */
 const createMenu = (keys, code, text, nonStyle) => {
-  const menuBody = $('<ul>', { 'class': 'x-kabu-body' })
+  const menuBody = $('<ul>', { class: 'x-kabu-body' })
     .css({
       padding: '3px 6px',
       textAlign: 'left',
@@ -21,13 +21,13 @@ const createMenu = (keys, code, text, nonStyle) => {
     menuBody.append(createMenuItem(title, url))
   })
 
-  const menu = $('<span>', { 'class': 'x-kabu-root' })
-    .css({ display: nonStyle ? undefined : 'inline-block' } )
-    .append(text)
+  const menu = $('<span>', { class: 'x-kabu-root' })
+    .css({ display: nonStyle ? undefined : 'inline-block' })
+    .append(document.createTextNode(text))
     .append(menuBody)
     .hover(
-       () => { menuBody.addClass('open') },
-       () => { menuBody.removeClass('open') }
+      () => { menuBody.addClass('open') },
+      () => { menuBody.removeClass('open') }
     )
 
   return menu
@@ -40,7 +40,7 @@ const createMenu = (keys, code, text, nonStyle) => {
  * @returns {JQuery<HTMLElement>}
  */
 const createMenuItem = (title, url) => {
-  return $('<li>', { 'class': 'x-kabu-menu-item' })
+  return $('<li>', { class: 'x-kabu-menu-item' })
     .css({ margin: '3px 6px' })
     .append($('<a>', {
       title,

@@ -16,7 +16,7 @@ const remakeContextMenus = async () => {
         contexts: ['selection']
       })
     }
-  });
+  })
 }
 
 /**
@@ -33,11 +33,15 @@ const getTickerCode = (text) => {
   if (match) {
     return { status: true, type: 'jp', code: match[1] }
   }
-  match = text.match(/\s*([A-Z]{1,5})\s*(NASDAQ|NYSE)\s*/)
+  // 米国株は「選択範囲の先頭にティッカーが単独で置かれている」場合だけ対象とする。
+  //  - 先頭アンカー(^)が無いと文中の大文字並び（例:「株価はNYSEで上昇」）に誤マッチする
+  //  - 後続境界が無いと単語の途中を拾う。例えば 'Apple Inc. AAPL NASDAQ' から 'A' を
+  //    取り出してしまい、別銘柄のページを開くという最悪の失敗をする
+  match = text.match(/^\s*([A-Z]{1,5})\s*(NASDAQ|NYSE)(?![A-Za-z])/)
   if (match) {
     return { status: true, type: 'us', code: match[1], exchange: match[2] }
   }
-  match = text.match(/\s*([A-Z]{1,5})\s*/)
+  match = text.match(/^\s*([A-Z]{1,5})(?![A-Za-z])\s*/)
   if (match) {
     return { status: true, type: 'us', code: match[1] }
   }
@@ -65,17 +69,35 @@ const getUrl = (type, code, exchange, url1, url2, url3) => {
   return undefined
 }
 
+/**
+ * `MAJOR.MINOR.PATCH` 形式のバージョン文字列を数値として比較する
+ * 文字列比較では '1.9.21' < '1.10.0' の判定を誤るため数値化して比較する
+ * @param {string | undefined} a
+ * @param {string | undefined} b
+ * @returns {number} a が小さければ負、等しければ 0、大きければ正
+ */
+const compareVersion = (a, b) => {
+  const toParts = (v) => String(v ?? '0').split('.').map((n) => Number.parseInt(n, 10) || 0)
+  const pa = toParts(a)
+  const pb = toParts(b)
+  const len = Math.max(pa.length, pb.length)
+
+  for (let i = 0; i < len; i++) {
+    const diff = (pa[i] ?? 0) - (pb[i] ?? 0)
+    if (diff !== 0) {
+      return diff
+    }
+  }
+  return 0
+}
+
 // インストール時のイベントハンドラを登録
 // 初回インストールまたは、1.0.9未満からの更新の場合はオプションページを開く
 chrome.runtime.onInstalled.addListener((details) => {
   remakeContextMenus()
 
-  if (details.reason === 'install' || details.previousVersion < "1.0.9") {
-    if (chrome.runtime.openOptionsPage) {
-      chrome.runtime.openOptionsPage()
-    } else {
-      window.open(chrome.runtime.getURL('options.html'))
-    }
+  if (details.reason === 'install' || compareVersion(details.previousVersion, '1.0.9') < 0) {
+    chrome.runtime.openOptionsPage()
   }
 })
 
@@ -97,12 +119,12 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
   const key = info.menuItemId
   const selectionText = info.selectionText
   const { status, type, code, exchange } = getTickerCode(selectionText)
-  
+
   if (!status) {
     console.log('銘柄コードが見つかりませんでした')
     return
   }
-  
+
   const externalInfo = externalUrlsMap[key]
   if (!externalInfo) {
     console.error(`unknown key: ${key}`)
@@ -113,18 +135,14 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
   const url = getUrl(type, code, exchange, url1, url2, url3)
 
   if (url) {
-    chrome.tabs.create({url})
+    chrome.tabs.create({ url })
   }
 })
 
 // Chrome拡張をクリックした時のイベントハンドラを登録
 // オプションページを開く
 chrome.action.onClicked.addListener((tab) => {
-  if (chrome.runtime.openOptionsPage) {
-    chrome.runtime.openOptionsPage()
-  } else {
-    window.open(chrome.runtime.getURL('options.html'))
-  }
+  chrome.runtime.openOptionsPage()
 })
 
 // メッセージを受け取った時のイベントハンドラを登録
@@ -158,7 +176,7 @@ const onMessageRakutenSecInfoAsync = async (request, sendResponse) => {
   const response = { type: request.type, data: null }
   const { code, type } = request.data
   response.data = { rakutenUrl: null }
-  
+
   // 楽天証券のURLを取得する
   response.data.rakutenUrl = await getRakutenSecUrlAsync(type, code)
 
@@ -242,14 +260,14 @@ const onMessageOpenUrlAsync = async (request, sendResponse) => {
 
 /**
  * ログイン済みの楽天証券サイトからセッションIDを取得しURLを取得する
- * @param {'jp' | 'us'} type 
- * @param {string} code 
+ * @param {'jp' | 'us'} type
+ * @param {string} code
  */
 const getRakutenSecUrlAsync = async (type, code) => {
   // メンバーページのURLからセッションIDを取得し銘柄に対応したページ遷移先のURLを構築する
-  const tabs = await chrome.tabs.query({url: 'https://member.rakuten-sec.co.jp/*'})
+  const tabs = await chrome.tabs.query({ url: 'https://member.rakuten-sec.co.jp/*' })
 
-  const sessionIdRegex = new RegExp('[;?&]BV_SessionID=([^?&]+)')
+  const sessionIdRegex = /[;?&]BV_SessionID=([^?&]+)/
   let sessionId = null
   for (let i = 0; i < tabs.length; i++) {
     const tab = tabs[i]
@@ -277,13 +295,13 @@ const getRakutenSecUrlAsync = async (type, code) => {
 
 /**
  * ログイン済みの内藤証券の国内株マーケットのURLから指定した銘柄コードのURLを取得する
- * @param {'jp' | 'us'} type 
+ * @param {'jp' | 'us'} type
  * @param {string} code 銘柄コード
  */
 const getNaitoSecUrlAsync = async (type, code) => {
   // 個別銘柄のページを開いていればそのURLをコピーして銘柄コードを変えたページを返す
-  const tabs = await chrome.tabs.query({ url: 'https://*.qhit.net/naito/iswebptt2/*'})
-  const qcodeRegex = new RegExp('([;?&]qcode=)([0-9][0-9ACDFGHJKLMNPRSTUWXY][0-9][0-9ACDFGHJKLMNPRSTUWXY])')
+  const tabs = await chrome.tabs.query({ url: 'https://*.qhit.net/naito/iswebptt2/*' })
+  const qcodeRegex = /([;?&]qcode=)([0-9][0-9ACDFGHJKLMNPRSTUWXY][0-9][0-9ACDFGHJKLMNPRSTUWXY])/
 
   let url = null
   if (type === 'jp') {

@@ -171,7 +171,6 @@ const externalUrlsMap = externalUrls.reduce((acc, cur) => {
   return acc
 }, {})
 
-
 /**
  * 利用するリンクのキーリストを取得する
  * @returns { string[] }
@@ -193,14 +192,14 @@ const getEnableLinkKeysAsync = async () => {
 
 /**
  * URLを生成する
- * @param {string} urlTemplate 
- * @param {string} code 
+ * @param {string} urlTemplate
+ * @param {string} code
  * @param {string?} exchange
- * @returns 
+ * @returns
  */
 const makeUrl = (urlTemplate, code, exchange) => {
-  let result =  urlTemplate.replaceAll('${code}', code)
-                           .replaceAll('${code:0}', code[0])
+  let result = urlTemplate.replaceAll('${code}', code)
+    .replaceAll('${code:0}', code[0])
   if (exchange) {
     result = result.replaceAll('${exchange}', exchange)
   }

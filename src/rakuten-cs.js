@@ -20,7 +20,7 @@ const attachAsync = async () => {
 
 /**
  * 要素にメニューをつける
- * @param { HTMLElement } element 
+ * @param { HTMLElement } element
  * @param { string[] } keys
  */
 const attachMenu = (element, keys) => {

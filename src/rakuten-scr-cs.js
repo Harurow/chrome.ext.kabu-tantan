@@ -14,13 +14,13 @@ const attachAsync = async () => {
   if (!target) {
     return
   }
-  
+
   const observer = new MutationObserver(() => {
     // ページ変更対応
     mutationObserverCallback(keys)
   })
 
-  observer.observe(target, { childList: true } )
+  observer.observe(target, { childList: true })
 
   // 初期ページ対応
   mutationObserverCallback(keys)
@@ -41,7 +41,7 @@ const mutationObserverCallback = (keys) => {
 
 /**
  * 要素にメニューをつける
- * @param { HTMLElement } element 
+ * @param { HTMLElement } element
  * @param { string[] } keys
  */
 const attachMenu = (element, keys) => {
@@ -62,7 +62,7 @@ const attachMenu = (element, keys) => {
     }
 
     const menu = createMenu(keys, tickerCode, node.nodeValue, true)
-    $('ul.x-kabu-body', menu).css( { marginTop: -3 } )
+    $('ul.x-kabu-body', menu).css({ marginTop: -3 })
     element.replaceChild(menu[0], node)
   }
 }

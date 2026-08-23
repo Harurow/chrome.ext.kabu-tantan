@@ -1,20 +1,40 @@
 {
   "name": "chrome.ext.kabu-tantan",
-  "version": "1.0.0",
-  "description": "Chrome extension.",
-  "main": "src/main.js",
-  "scripts": {
-    "lint": "eslint src"
+  "version": "1.10.0",
+  "private": true,
+  "description": "証券会社サイトから外部の株式情報ページへ遷移するリンクを追加する Chrome 拡張機能「株リンク」",
+  "homepage": "https://github.com/Harurow/chrome.ext.kabu-tantan",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Harurow/chrome.ext.kabu-tantan.git"
   },
   "author": "www.harurow",
   "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "lint:css": "stylelint \"src/**/*.css\"",
+    "lint:all": "npm run lint && npm run lint:css",
+    "fix": "eslint . --fix && stylelint \"src/**/*.css\" --fix",
+    "validate": "node scripts/validate-manifest.mjs",
+    "package": "node scripts/package.mjs",
+    "test": "playwright test",
+    "test:ui": "playwright test --ui",
+    "test:headed": "playwright test --headed",
+    "check": "npm run lint:all && npm run validate && npm test && npm run docs:tests:check",
+    "docs:tests": "node scripts/test-catalog.mjs",
+    "approve": "node scripts/approve.mjs",
+    "docs:tests:check": "node scripts/test-catalog.mjs --check"
+  },
   "devDependencies": {
-    "eslint": "^8.17.0",
-    "eslint-config-standard": "^17.0.0",
-    "eslint-plugin-import": "^2.26.0",
-    "eslint-plugin-n": "^15.2.2",
-    "eslint-plugin-promise": "^6.0.0",
-    "stylelint": "^14.9.1",
-    "stylelint-config-standard": "^26.0.0"
+    "@playwright/test": "^1.57.0",
+    "eslint": "^9.39.5",
+    "neostandard": "^0.13.0",
+    "stylelint": "^17.14.1",
+    "stylelint-config-recess-order": "^7.8.0",
+    "stylelint-config-standard": "^40.0.0",
+    "stylelint-order": "^8.1.1"
   }
 }
