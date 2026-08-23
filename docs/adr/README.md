@@ -6,6 +6,7 @@
 | --- | --- | --- |
 | [0001](0001-selector-check-design.md) | セレクタ検証ツールの設計判断 | 採択 |
 | [0002](0002-tradingview-dom-repair.md) | TradingView の DOM 改修への追随（2026-08 の破損） | 採択 |
+| [0003](0003-tradingview-submenu.md) | TradingView の右クリックメニューを入れ子にする | 採択 |
 
 ## 書き方
 

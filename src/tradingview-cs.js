@@ -5,6 +5,9 @@ $(() => {
 /** チャート上で contextmenu が発生してから、メニューの拡張を許す猶予(ミリ秒) */
 const chartContextMenuGraceMs = 1500
 
+/** 入れ子メニュー(サブメニュー)を閉じるまでの遅延(ミリ秒) */
+const submenuCloseDelayMs = 150
+
 /** チャート上で最後に contextmenu が発生した時刻。未発生は 0 */
 let chartContextMenuAt = 0
 
@@ -100,20 +103,17 @@ const attachMenu = () => {
     return
   }
 
-  if (type === 'jp') {
-    addTokyoTickerAsync(ctxMenu, code)
-  } else if (type === 'us') {
-    addNewyorkTicker(ctxMenu, code)
-  }
+  addTickerMenuAsync(ctxMenu, code, type)
 }
 
 /**
  * メニューのセパレータ
+ * @param {boolean} marked 二重追加防止の目印(data-kabu-tantan)を付けるか
  * @returns {JQuery<HTMLElement>}
  */
-const makeMenuSeparator = () => {
+const makeMenuSeparator = (marked = false) => {
   return $(`
-  <tr class="${tvMimicClasses.separatorRow}" data-kabu-tantan>
+  <tr class="${tvMimicClasses.separatorRow}"${marked ? ' data-kabu-tantan' : ''}>
     <td>
       <div class="${tvMimicClasses.separatorLine}"></div>
     </td>
@@ -124,102 +124,291 @@ const makeMenuSeparator = () => {
 }
 
 /**
- * メニューを作成する
- * @param {string} title
- * @param {string} url
+ * 入れ子メニューを開くための親行を作成する
+ * ラベルは銘柄コードだけで、遷移先サイトは入れ子(サブメニュー)に出す
+ * 親行自体はリンクではない(ホバーで入れ子を開くだけ)
+ * @param {string} code 銘柄コード(文字種は正規表現で制限済み)
  * @returns {JQuery<HTMLElement>}
  */
-const makeMenuItem = (title, url) => {
+const makeSubmenuParentRow = (code) => {
+  // 矢印のsvgはTradingViewの実測値(検証対象外 / 採取日: 2026-08-23)
   return $(`
-  <tr class="${tvMimicClasses.item}">
+  <tr class="${tvMimicClasses.accessible} ${tvMimicClasses.item}" data-role="menuitem" tabindex="-1">
+    <td class="${tvMimicClasses.iconCell}" data-icon-cell="true"></td>
+    <td>
+      <div class="${tvMimicClasses.content}">
+        <span class="${tvMimicClasses.label}" data-label="true">${code} を開く</span>
+        <span class="${tvMimicClasses.arrowIcon}" data-submenu-arrow="true">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 16" width="10" height="16">
+            <path d="M.6 1.4l1.4-1.4 8 8-8 8-1.4-1.4 6.389-6.532-6.389-6.668z"></path>
+          </svg>
+        </span>
+      </div>
+    </td>
+  </tr>`)
+}
+
+/**
+ * 入れ子メニューの受け皿行を作成する
+ * TradingView自身と同じく、この行のtdの中に入れ子メニューを描画する
+ * (親メニューが閉じられると受け皿ごと消えるため後始末が要らない)
+ * @returns {JQuery<HTMLElement>}
+ */
+const makeSubmenuHolderRow = () => {
+  return $(`
+  <tr class="${tvMimicClasses.subMenu}">
+    <td></td>
+  </tr>`)
+}
+
+/**
+ * 入れ子メニューの項目を作成する
+ * 入れ子の中のtrにはdata-kabu-tantanを付けない
+ * (二重追加の判定がdocument全体検索なので、付けると次の右クリックが拡張されなくなる)
+ * @param {string} code 銘柄コード(文字種は正規表現で制限済み)
+ * @param {{ title: string, url: string }} item タイトルとURL(externalUrls / makeUrl 由来)
+ * @returns {JQuery<HTMLElement>}
+ */
+const makeMenuItem = (code, item) => {
+  return $(`
+  <tr class="${tvMimicClasses.accessible} ${tvMimicClasses.item}" data-role="menuitem" tabindex="-1">
     <td class="${tvMimicClasses.iconCell}" data-icon-cell="true"></td>
     <td>
       <div class="${tvMimicClasses.content}">
         <span class="${tvMimicClasses.label}" data-label="true">
-          <a style="color: var(--tv-color-popup-element-text); width: 100%;" title="${title}" target="_blank" rel="noopener noreferrer" href="${url}">${title}</a>
+          <a style="color: var(--tv-color-popup-element-text); width: 100%;" title="${code} を${item.title}" target="_blank" rel="noopener noreferrer" href="${item.url}">${item.title}</a>
         </span>
       </div>
     </td>
-  </tr>
-  <tr class="${tvMimicClasses.subMenu}">
-    <td></td>
   </tr>`)
     .click(() => {
-    // クリックした場合はメニューが消えるように'ESC'キーを押したことにして消す
+      // クリックした場合はメニューが消えるように'ESC'キーを押したことにして消す
       document.dispatchEvent(new KeyboardEvent('keyup', { keyCode: 27 }))
     })
 }
 
 /**
- * 国内株用のメニューを作成する
- * @param {JQuery<HTMLElement>} ctxMenu
- * @param {string} code
+ * 情報サイトの項目リストを作成する
+ * オプションで設定された並び順を保つ
+ * @param {string} code 銘柄コード
+ * @param {string} type 'jp' または 'us'
+ * @returns {Promise<{ title: string, url: string }[]>}
  */
-const addTokyoTickerAsync = async (ctxMenu, code) => {
-  // 区切り線はawaitの前に付ける
-  // 区切り行が持つdata-kabu-tantanが二重追加のガードになるため、
-  // 応答待ちの間にattachMenu()がもう一度通っても追加されない
-  ctxMenu.append(makeMenuSeparator())
+const makeLinkItemsAsync = async (code, type) => {
+  const keys = await getEnableLinkKeysAsync()
 
-  const items = await getEnableLinkKeysAsync()
-  const rakutenResponse = await chrome.runtime.sendMessage({ type: 'rakuten-sec:info', data: { code, type: 'jp' } })
-  const noitoResponse = await chrome.runtime.sendMessage({ type: 'naito-sec:info', data: { code, type: 'jp' } })
-
-  // 楽天証券にログインしている時は楽天証券メニューを追加
-  if (rakutenResponse.data.rakutenUrl) {
-    const title = `${code} を楽天証券で開く`
-    const url = rakutenResponse.data.rakutenUrl
-    ctxMenu.append(makeMenuItem(title, url))
-  }
-
-  // 内藤証券の国内株式マーケット情報で個別銘柄を開いている時はメニューを追加
-  if (noitoResponse.data.naitoUrl) {
-    const title = `${code} を内藤証券で開く`
-    const url = noitoResponse.data.naitoUrl
-    ctxMenu.append(makeMenuItem(title, url))
-  }
-
-  // 各サイトのメニューを追加
-  items.forEach((key) => {
-    if (key.indexOf('tradingview.com') !== 0) {
-      const item = externalUrlsMap[key]
-      const title = `${code} を${item.title}で開く`
-      const url = makeUrl(item.url1, code)
-      ctxMenu.append(makeMenuItem(title, url))
-    }
-  })
+  return keys
+    // TradingView上でTradingViewを開いても意味がないので除外する
+    .filter((key) => key.indexOf('tradingview.com') !== 0)
+    .map((key) => externalUrlsMap[key])
+    // 米国株では米国株に対応したサイト(url3を持つサイト)だけを残す
+    .filter((item) => item != null && (type !== 'us' || item.url3))
+    .map((item) => ({
+      title: `${item.title}で開く`,
+      url: makeUrl(type === 'us' ? item.url3 : item.url1, code)
+    }))
 }
 
 /**
- * 米国株用のメニューを作成する
- * @param {JQuery<HTMLElement>} ctxMenu
- * @param {string} code
+ * 証券会社の項目リストを作成する
+ * ログインしていない場合はURLが返らないので項目は出ない(エラーは出さない)
+ * @param {string} code 銘柄コード
+ * @param {string} type 'jp' または 'us'
+ * @returns {Promise<{ title: string, url: string }[]>}
  */
-const addNewyorkTicker = async (ctxMenu, code) => {
-  // 区切り線はawaitの前に付ける(addTokyoTickerAsyncと同じ理由)
-  ctxMenu.append(makeMenuSeparator())
+const makeBrokerItemsAsync = async (code, type) => {
+  const items = []
 
-  const items = await getEnableLinkKeysAsync()
-  const response = await chrome.runtime.sendMessage({ type: 'rakuten-sec:info', data: { code, type: 'us' } })
-
-  // urlがある場合は楽天証券メニューを追加
-  if (response.data.rakutenUrl) {
-    const title = `${code} を楽天証券で開く`
-    const url = response.data.rakutenUrl
-    ctxMenu.append(makeMenuItem(title, url))
+  // 楽天証券にログインしている時は楽天証券の個別銘柄URLが取得できる
+  const rakutenResponse = await chrome.runtime.sendMessage({ type: 'rakuten-sec:info', data: { code, type } })
+  if (rakutenResponse.data.rakutenUrl) {
+    items.push({ title: '楽天証券で開く', url: rakutenResponse.data.rakutenUrl })
   }
 
-  // 各サイトのメニューを追加
-  items.forEach((key) => {
-    if (key.indexOf('tradingview.com') !== 0) {
-      const item = externalUrlsMap[key]
-      if (item.url3) {
-        const title = `${code} を${item.title}で開く`
-        const url = makeUrl(item.url3, code)
-        ctxMenu.append(makeMenuItem(title, url))
-      }
+  // 内藤証券は国内株のみ対応しているため、米国株では問い合わせない
+  if (type === 'jp') {
+    const naitoResponse = await chrome.runtime.sendMessage({ type: 'naito-sec:info', data: { code, type } })
+    if (naitoResponse.data.naitoUrl) {
+      items.push({ title: '内藤証券で開く', url: naitoResponse.data.naitoUrl })
     }
-  })
+  }
+
+  return items
+}
+
+/**
+ * 右クリックメニューに拡張の行を追加する(国内株・米国株の共通処理)
+ * 追加するのは常に3行(区切り行・親行・受け皿行)で、遷移先サイトは入れ子に出す
+ * @param {JQuery<HTMLElement>} ctxMenu
+ * @param {string} code
+ * @param {string} type 'jp' または 'us'
+ */
+const addTickerMenuAsync = async (ctxMenu, code, type) => {
+  // 3行はawaitの前に同期的に追加する
+  // 区切り行が持つdata-kabu-tantanが二重追加のガードになるため、
+  // 応答待ちの間にattachMenu()がもう一度通っても追加されない
+  // (親行のラベルに必要なのはcodeだけなのでawaitの前に組み立てられる)
+  const separatorRow = makeMenuSeparator(true)
+  const parentRow = makeSubmenuParentRow(code)
+  const holderRow = makeSubmenuHolderRow()
+  ctxMenu.append(separatorRow).append(parentRow).append(holderRow)
+
+  // 追加した3行をまとめて取り除く(メニューに拡張の痕跡を残さない)
+  const removeRows = () => {
+    separatorRow.remove()
+    parentRow.remove()
+    holderRow.remove()
+  }
+
+  // 証券会社と情報サイトは互いに独立しているので並行に取得する
+  let items
+  try {
+    items = await Promise.all([makeBrokerItemsAsync(code, type), makeLinkItemsAsync(code, type)])
+  } catch {
+    // 応答が得られない場合(拡張の更新でタブが切り離された、メッセージポートが閉じた等)は
+    // ホバーしても何も出ない死んだ行が残らないように取り除く
+    removeRows()
+    return
+  }
+
+  const [brokerItems, linkItems] = items
+
+  // 遷移先が1つも無い場合も取り除く(区切り線だけが残らないようにする)
+  if (brokerItems.length === 0 && linkItems.length === 0) {
+    removeRows()
+    return
+  }
+
+  bindSubmenu(parentRow, holderRow, code, brokerItems, linkItems)
+}
+
+/**
+ * 親行のホバーで入れ子メニューを開閉できるようにする
+ * TradingViewのサブメニュー開閉APIは拡張から呼べないため開閉は自前で持つ
+ * @param {JQuery<HTMLElement>} parentRow
+ * @param {JQuery<HTMLElement>} holderRow
+ * @param {string} code 銘柄コード
+ * @param {{ title: string, url: string }[]} brokerItems
+ * @param {{ title: string, url: string }[]} linkItems
+ */
+const bindSubmenu = (parentRow, holderRow, code, brokerItems, linkItems) => {
+  // 状態は「開いている入れ子の参照」と「遅延クローズのタイマー」の2つだけ
+  let submenu = null
+  let closeTimerId = 0
+
+  const cancelClose = () => {
+    if (closeTimerId !== 0) {
+      clearTimeout(closeTimerId)
+      closeTimerId = 0
+    }
+  }
+
+  // 「親行と入れ子の両方から外れて submenuCloseDelayMs 経過」で閉じる
+  // (親行から入れ子へ移る途中の隙間や、親行の下端を横切る動きで閉じないようにするため)
+  const reserveClose = () => {
+    cancelClose()
+    closeTimerId = setTimeout(() => {
+      closeTimerId = 0
+      if (submenu !== null) {
+        submenu.remove()
+        submenu = null
+      }
+    }, submenuCloseDelayMs)
+  }
+
+  parentRow
+    .on('mouseenter', () => {
+      cancelClose()
+      if (submenu !== null) {
+        return
+      }
+      // 開き直しのたびに作り直す(開いた状態は保持しない)
+      submenu = openSubmenu(parentRow, holderRow, code, brokerItems, linkItems)
+      submenu
+        .on('mouseenter', cancelClose)
+        .on('mouseleave', reserveClose)
+    })
+    .on('mouseleave', reserveClose)
+}
+
+/**
+ * 入れ子メニューを受け皿行のtdの中に描画する
+ * @param {JQuery<HTMLElement>} parentRow
+ * @param {JQuery<HTMLElement>} holderRow
+ * @param {string} code 銘柄コード
+ * @param {{ title: string, url: string }[]} brokerItems
+ * @param {{ title: string, url: string }[]} linkItems
+ * @returns {JQuery<HTMLElement>} 描画した入れ子メニュー
+ */
+const openSubmenu = (parentRow, holderRow, code, brokerItems, linkItems) => {
+  // 位置決めはインラインスタイルで持つ
+  // (模倣用クラスがTradingViewの改修で死んでも項目の選択と遷移は動く)
+  const submenu = $(`
+  <div class="${tvMimicClasses.menuWrap} ktt-tv-subMenu" style="position: fixed; left: 0; top: 0; z-index: 500;">
+    <div class="${tvMimicClasses.scrollWrap}" style="overflow-y: auto;">
+      <div class="${tvMimicClasses.menuBox}">
+        <table>
+          <tbody>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>`)
+
+  const tbody = $('tbody', submenu)
+
+  // 証券会社 → 区切り線 → 情報サイト の順に並べる
+  brokerItems.forEach((item) => makeMenuItem(code, item).appendTo(tbody))
+
+  if (brokerItems.length > 0 && linkItems.length > 0) {
+    makeMenuSeparator().appendTo(tbody)
+  }
+
+  linkItems.forEach((item) => makeMenuItem(code, item).appendTo(tbody))
+
+  submenu.appendTo($('td', holderRow).first())
+  positionSubmenu(submenu, parentRow)
+
+  return submenu
+}
+
+/**
+ * 入れ子メニューの位置を決める
+ * 親メニューの右・親行の高さに合わせ、画面からはみ出す場合だけ補正する
+ * @param {JQuery<HTMLElement>} submenu
+ * @param {JQuery<HTMLElement>} parentRow
+ */
+const positionSubmenu = (submenu, parentRow) => {
+  // 検出用セレクタ(context-menu)はtableを指すので、その外側のdivを基準にする
+  const parentMenu = parentRow.closest('div.context-menu')[0] ?? parentRow[0]
+  const menuRect = parentMenu.getBoundingClientRect()
+  const rowRect = parentRow[0].getBoundingClientRect()
+  const { width, height } = submenu[0].getBoundingClientRect()
+  const { innerWidth, innerHeight } = window
+
+  let left = menuRect.right
+  let top = rowRect.top
+
+  // 画面右端にはみ出す場合は左側に展開する
+  // (はみ出したままだと項目が画面外に出て選択できない)
+  if (left + width > innerWidth) {
+    left = menuRect.left - width
+  }
+  if (left < 0) {
+    left = 0
+  }
+
+  if (height > innerHeight) {
+    // 画面より高い場合は画面内に収め、scrollWrapのoverflow-yでスクロールさせる
+    top = 0
+    // 高さを絞るのはscrollWrapだけにする(外枠にpaddingがあるとその分はみ出すため)
+    // scrollWrapは直下の子(模倣用クラスの中身に依存しないよう位置で引く)
+    submenu.children().first().css('max-height', `${innerHeight}px`)
+  } else if (top + height > innerHeight) {
+    top = innerHeight - height
+  }
+
+  submenu.css({ left: `${left}px`, top: `${top}px` })
 }
 
 /**
@@ -493,6 +682,7 @@ const tvMimicClasses = {
   content: 'content-WSeXSXQB',
   label: 'label-WSeXSXQB',
   subMenu: 'subMenu-WSeXSXQB',
+  arrowIcon: 'arrowIcon-WSeXSXQB',
   // 区切り線
   separatorRow: 'row-tEFkH1Rx',
   separatorLine: 'line-tEFkH1Rx',

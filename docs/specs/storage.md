@@ -45,6 +45,7 @@ storage に `externalUrls` に存在しない `key` が残っていても無視�
 - Service Worker: `if (externalUrlsMap[key])` でガードしてコンテキストメニューを作らない
 - オプションページ: `if (item)` でガードして行を作らない
 - `linkMenu.js`: **ガードしていない**（`externalUrlsMap[key]` が `undefined` だと例外）
+- `tradingview-cs.js`: `makeLinkItemsAsync()` が `item != null` でガードして項目を作らない（1.11.0〜。SPEC-CS-18）
 
 > 既知の弱点: `createMenu` は未知キーで落ちる。
 > 実際には Content Script が `getEnableLinkKeysAsync()` の結果をそのまま渡すため、

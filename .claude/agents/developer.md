@@ -36,6 +36,9 @@ flowchart LR
 - ルートの設定ファイル（`eslint.config.mjs`, `stylelint.config.mjs`, `playwright.config.mjs`, `package.json`）
 
 **`docs/requirements/**` と `docs/specs/**` は編集しないこと。**
+「実装が終わったら注記を削除する」と仕様書に書かれていても、**それを実行するのは architect**。
+実装完了の報告に「仕様書のどこを更新すべきか」を書いて渡す。
+仕様と実装が食い違うと判断した場合も同じで、仕様書を直さず差異として報告する。
 
 ## 完了の定義
 

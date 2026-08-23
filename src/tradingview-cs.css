@@ -25,3 +25,15 @@ div.ktt-tv-menuBack {
   height: 100%;
   background: #ddd0;
 }
+
+/* 右クリックメニューの入れ子(サブメニュー)
+   模倣用クラスが TradingView の改修で死んだときに背景・影が消えないための保険。
+   ダークテーマで白背景になるのを避けるため、色の直値はフォールバックに書かない。
+   `--tv-color-popup-background` は現行の TradingView では未定義で、実際の色は
+   フォールバック側の `--color-popup-background` から来る(2026-08-23 実測)。
+   変数を1つしか書かないと背景が透明になり、TradingView 自身の背景まで打ち消してしまう */
+div.ktt-tv-subMenu {
+  background: var(--tv-color-popup-background, var(--color-popup-background));
+  border-radius: 6px;
+  box-shadow: 0 2px 4px rgb(0 0 0 / 20%);
+}
