@@ -106,9 +106,10 @@ $(() => {
 | 国内株式・株価検索 | `/app/info_jp_prc_search.do` | 同上 |
 
 `:contains()` と `:first` は jQuery 独自セレクタ（jQuery 4.0.0 でも利用可能）。
+セレクタは `rakuten-cs.js` の `menuSelectors` が唯一の情報源（SPEC-SC-02）。
 
 - 要件: FR-02
-- 検証: `auto`（お気に入りのみ）／`manual`（残り11ページ）
+- 検証: `auto`（お気に入りのみ）／`半自動`（`npm run check:selectors`。12ページの検出用セレクタの生存）
 
 ## SPEC-CS-08 楽天スーパースクリーナー
 
@@ -120,7 +121,8 @@ $(() => {
 - `createMenu(..., nonStyle = true)` で呼び、`ul.x-kabu-body` に `margin-top: -3px` を追加する
 
 - 要件: FR-02
-- 検証: `manual`
+- 検証: `半自動`（検索を実行した結果一覧のタブを開いたまま `npm run check:selectors`。
+  検出用セレクタの生存）／`manual`（メニューの見た目・動作）
 
 ## SPEC-CS-09 SBI証券（2セレクタ）
 
@@ -132,10 +134,12 @@ URL による絞り込みは**行わない**。両セレクタを常に試す。
 | ポートフォリオ | `body.vsc-initialized div.middleArea2 div.middleAreaM2 table table table tr td.mtext:nth-of-type(2)` |
 
 > `body.vsc-initialized` は SBI 側ではなく**ブラウザ拡張が付けるクラス**に見える。
-> 環境によっては付かず、ポートフォリオで動作しない可能性がある（要調査）。
+> 環境によっては付かず、ポートフォリオで動作しない可能性がある。
+> SPEC-SC-12 が実サイトで実測して白黒をつける（2026-08-23 時点で**未実施**）。
 
 - 要件: FR-03
-- 検証: `auto`（ポートフォリオ）／`manual`（個別銘柄）
+- 検証: `auto`（ポートフォリオ）／`半自動`（`npm run check:selectors`。2ページの検出用セレクタの生存と
+  `body.vsc-initialized` の追加検査）／`manual`（個別銘柄の見た目・動作）
 
 ## SPEC-CS-10 SBI銘柄スクリーニング
 
@@ -145,9 +149,13 @@ URL による絞り込みは**行わない**。両セレクタを常に試す。
   `MutationObserver({ childList: true, subtree: true })` で監視して再注入する
 
 - 要件: FR-03
-- 検証: `manual`
+- 検証: `半自動`（検索を実行した結果一覧のタブを開いたまま `npm run check:selectors`。
+  検出用セレクタの生存）／`manual`（メニューの見た目・動作）
 
 ## SPEC-CS-11 TradingView: 右クリックメニュー拡張
+
+使うセレクタは `menuSelectors`（SPEC-CS-15）から `selectorOf('overlap-root')` /
+`selectorOf('context-menu')` で引く。
 
 1. `body` を監視して `div#overlap-manager-root` の生成を待つ
 2. 生成されたら、そのレイヤーの `childList` を監視する
@@ -160,16 +168,18 @@ URL による絞り込みは**行わない**。両セレクタを常に試す。
 - 米国株では `url3` を持つサイトのみ追加する
 
 - 要件: FR-04, CON-08
-- 検証: `manual`（**自動テスト対象外**。TradingView でチャートを右クリック）
+- 検証: `半自動`（検出用セレクタの生存は `npm run check:selectors -- --only=tradingview`）／
+  `manual`（**自動テスト対象外**。TradingView でチャートを右クリックし、項目・見た目・遷移を目視）
 
 ## SPEC-CS-12 TradingView: 「株Link」ボタン
 
-`div.container-hw_3o_pb` にボタンを追加する。
+`selectorOf('toolbar-container')`（`div.container-hw_3o_pb`。SPEC-CS-15）にボタンを追加する。
 
 - クラス: `ktt-tv-kabuLinkMenu`
 - クリックで全画面の透明レイヤー `ktt-tv-menuBack` を敷き、その上にメニューを出す
 - 背景クリックまたはキー入力でキャンセルする
-- チャートの `canvas` の属性変化を監視し、銘柄コードが取れないときはボタンを隠す
+- チャートの `canvas`（`selectorOf('chart-canvas')`）の属性変化を監視し、
+  銘柄コードが取れないときはボタンを隠す
 - `tradingview.com` で始まるキーは除外する（SPEC-CS-11 と同じ）
 - **米国株でも `url3` の有無で絞り込まない**（SPEC-CS-11 と異なる）。
   米国株非対応のサイトも項目として並び、クリックすると `makeUrl(undefined, code)` で
@@ -179,7 +189,8 @@ URL による絞り込みは**行わない**。両セレクタを常に試す。
 > FR-07「米国株に対応しないサイトは出さない」を満たしていない。修正候補。
 
 - 要件: FR-04, CON-08
-- 検証: `manual`（**自動テスト対象外**）
+- 検証: `半自動`（検出用セレクタの生存は `npm run check:selectors -- --only=tradingview`）／
+  `manual`（**自動テスト対象外**。ボタンの表示位置・見た目・遷移を目視）
 
 ## SPEC-CS-13 スタイルのクラス接頭辞
 
@@ -200,3 +211,34 @@ URL による絞り込みは**行わない**。両セレクタを常に試す。
 
 - 要件: NFR-01, CON-03
 - 検証: `auto`（`楽天証券 Content Script › 対象外のページにはメニューを注入しない`）
+
+## SPEC-CS-15 TradingView の検出用セレクタ定義
+
+`tradingview-cs.js` の**検出用セレクタ4つ**は、ファイル末尾の `const menuSelectors` にまとめてある。
+他の Content Script と同じ形で、`npm run check:selectors`（SPEC-SC）もこの配列を読む。
+
+| `key` | `title` | セレクタ |
+| --- | --- | --- |
+| `chart-canvas` | チャート canvas | `div.chart-gui-wrapper canvas[aria-hidden!="true"]` |
+| `toolbar-container` | ツールバー挿入先 | `div.container-hw_3o_pb` |
+| `overlap-root` | オーバーレイレイヤー | `div#overlap-manager-root` |
+| `context-menu` | 右クリックメニュー | `div.menu-Tx5xMZww.context-menu.menuWrap-Kq3ruQo8 > div > div[data-name="menu-inner"] > table` |
+
+参照は `const selectorOf = (key) => menuSelectors.find((m) => m.key === key).selector` 経由。
+**置換箇所は6箇所**（`attach()` / `bodyObserverCallback()` / `attachMenu()` ×2 /
+`createKabuLinkMenu()` / `getTickerCode()`）。
+
+- **模倣用クラス**（`item-GJX1EXhk` 等）は括り出さない。検証対象外（FR-12）。
+  `createKabuLinkMenu()` が組み立てる HTML 文字列中の `menu-Tx5xMZww context-menu menuWrap-Kq3ruQo8` は
+  **自前メニューを TradingView の見た目に合わせるための模倣用**であり、検出用セレクタではない。残置する
+- `menuSelectors` は `tradingview-cs.js` 内で実際に使われる。検証専用の定数ではない（FR-12「やらないこと」）
+- セレクタの**値は括り出し時に変更していない**
+
+- 要件: FR-04, FR-12, NFR-13
+- 検証: `auto`（SPEC-SC-16 の `セレクタ定義` 5件）／
+  `半自動`（`npm run check:selectors -- --only=tradingview` で4対象に判定が付くこと）
+
+> 挙動の同一性は `docs/MANUAL-CHECKLIST.md` A 全項目で確認する予定だったが、
+> TradingView 側の DOM 改修でツールバー挿入先・右クリックメニューが破損中のため**実施できない**。
+> 代替根拠として、**括り出し前後でセレクタ文字列4つが HEAD と完全一致することを diff で担保した**
+> （lead・reviewer 確認済み）。破損が直ってメニューが出るようになった時点で A を実施する。

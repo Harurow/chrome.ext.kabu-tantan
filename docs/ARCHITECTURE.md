@@ -54,6 +54,34 @@ Service Worker だけは `importScripts('./urls.js')` で読み込む。
 この暗黙の依存は壊れても実行時まで気づけないため、`npm run validate` が読み込み順を検証する。
 ESLint 側は `eslint.config.mjs` の `sharedGlobals` でこれらをグローバル宣言している。
 
+## 検出用セレクタの単一情報源
+
+サイト側の DOM を探すセレクタ（**検出用セレクタ**）は、`src/*-cs.js` の `menuSelectors` にだけ書く。
+実サイトのセレクタ検証ツール（[SPEC-SC](specs/selector-check.md)）は、この配列を
+`node:vm` で読み出して使う。**検証側にセレクタを書き写さない**（NFR-13）。
+
+```text
+src/rakuten-cs.js      const menuSelectors = [...]   ← 唯一の情報源
+src/rakuten-scr-cs.js  const menuSelectors = [...]
+src/sbi-cs.js          const menuSelectors = [...]
+src/sbi-scr-cs.js      const menuSelectors = [...]
+src/tradingview-cs.js  const menuSelectors = [...]   ← `menuSelectors` に括り出し済み（SPEC-CS-15）
+        ↑ 読むだけ
+scripts/selector-check/load-selectors.mjs
+```
+
+このため `src/*-cs.js` は以下の契約を守る。**破ると検証ツールが動かなくなる。**
+
+1. 検出用セレクタは `const menuSelectors = [ … ]` という名前の配列に置く（1ファイル1箇所）
+2. トップレベルで実行するのは `$(() => …)` の登録だけ。DOM・ネットワークに触れない
+3. 各要素は `{ title, selector }` を持つ（楽天は `url`、TradingView は `key` を追加で持つ）
+
+読み込み順を `npm run validate` で守るのと同じ発想で、この契約は `npm test`
+（`tests/selector-defs.spec.mjs`）で守る。
+
+> 見た目を合わせるための**模倣用クラス**（TradingView の `item-GJX1EXhk` 等）は
+> `menuSelectors` に入れない。壊れても機能は消えないため検証対象外（FR-12）。
+
 ## 銘柄コードの扱い
 
 国内銘柄コードは **4桁**だが、2024年以降の英字含みコード（例: `135A`）に対応するため
@@ -144,6 +172,7 @@ npm test   # 差し替え後は必ず実行する
 | `src/tradingview-cs.css` | TradingView のみ |
 | `src/manifest.json` | 拡張機能全体（権限、Content Script 注入先） |
 | `src/third-party/*` | 全体。差し替え後は `npm test` 必須 |
+| `src/*-cs.js` の `menuSelectors` | `scripts/selector-check/`（定義を読み出す）。値の変更に追随は不要だが、**`title` を変えたら `targets.mjs` も直す** |
 
 ## Material Icons のサブセット
 

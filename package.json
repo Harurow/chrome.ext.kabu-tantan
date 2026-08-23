@@ -27,6 +27,7 @@
     "docs:tests": "node scripts/test-catalog.mjs",
     "approve": "node scripts/approve.mjs",
     "docs:tests:check": "node scripts/test-catalog.mjs --check",
+    "check:selectors": "node scripts/selector-check/index.mjs",
     "lint:md": "markdownlint-cli2 \"docs/**/*.md\" \"*.md\" \".claude/**/*.md\""
   },
   "devDependencies": {

@@ -16,6 +16,7 @@
 | `SPEC-MSG` | [messaging.md](messaging.md) | メッセージ通信 | `src/service_worker.js`, `src/tradingview-cs.js` |
 | `SPEC-CS` | [content-scripts.md](content-scripts.md) | 各サイトへのメニュー注入 | `src/*-cs.js`, `src/linkMenu.js` |
 | `SPEC-OP` | [options-page.md](options-page.md) | オプションページ | `src/options.*` |
+| `SPEC-SC` | [selector-check.md](selector-check.md) | 実サイトのセレクタ検証ツール | `scripts/selector-check/`, `tests/selector-defs.spec.mjs` |
 
 ## 記述の約束
 
@@ -32,3 +33,8 @@
 | `lint` | `npm run lint:all` で検出される |
 | `validate` | `npm run validate` で検証される |
 | `manual` | 手動確認が必要。手順を併記 |
+| `半自動` | `npm run check:selectors` が判定する（人がログイン／ページを用意してから起動する。SPEC-SC） |
+
+## 設計判断
+
+「なぜその作りにしたか」は [../adr/](../adr/) に置く。仕様書には決まった内容だけを書く。

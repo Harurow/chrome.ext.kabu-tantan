@@ -137,7 +137,7 @@ linkList.sortable({ axis: 'y', handle: '.handle', distance: 8, update: … })
 | --- | --- |
 | `fonts.googleapis.com`（Material Icons） | `material-icons.css` + 同梱 woff2 |
 | `static.tradingview.com`（favicon バッジ） | Material Icons の `show_chart` |
-| `img.shields.io`（Zenn バッジ） | テキストリンク |
+| `img.shields.io`（Zenn バッジ） | `images/zenn-badge.svg` として同梱（shields.io が返す SVG をそのまま保存。Zenn ロゴは data URI で自己完結、外部参照なし） |
 
 - 要件: NFR-03, CON-07
 - 検証: `auto`（`オプションページ › 外部ホストへ一切リクエストしない`）

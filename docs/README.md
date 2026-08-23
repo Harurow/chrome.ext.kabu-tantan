@@ -17,11 +17,15 @@ docs/
 │   ├── service-worker.md   SPEC-SW  バックグラウンド処理
 │   ├── messaging.md        SPEC-MSG メッセージ通信
 │   ├── content-scripts.md  SPEC-CS  各サイトへの注入
-│   └── options-page.md     SPEC-OP  オプションページ
+│   ├── options-page.md     SPEC-OP  オプションページ
+│   └── selector-check.md   SPEC-SC  実サイトのセレクタ検証ツール
+├── adr/                設計判断の記録 (ADR-xxxx)
+│   └── 0001-selector-check-design.md
 ├── ARCHITECTURE.md     実装構造・同梱ライブラリの更新手順
 ├── WORKFLOW.md         開発フロー・エージェント・コミットゲート
 ├── TESTING.md          テスト方針・3層の切り分け
 ├── TEST-CATALOG.md     テスト一覧（自動生成）
+├── SELECTOR-CHECK.md   実サイトのセレクタ検証結果（`npm run check:selectors` の生成物）
 ├── MANUAL-CHECKLIST.md 手動確認チェックリスト（利用者が実施）
 ├── images/             README 用スクリーンショット
 └── zenn/               記事化用の作業ログ
@@ -58,6 +62,7 @@ docs/
 | `NFR-` | 非機能要件 | `NFR-01` |
 | `CON-` | 制約条件 | `CON-01` |
 | `SPEC-<領域>-` | 仕様 | `SPEC-CS-03` |
+| `ADR-` | 設計判断の記録 | `ADR-0001` |
 
 **既存 ID は再利用しない。** 廃止する場合は項目を残して「廃止」と明記し、欠番にする。
 

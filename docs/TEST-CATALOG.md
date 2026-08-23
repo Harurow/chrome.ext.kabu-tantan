@@ -3,7 +3,7 @@
 > **このファイルは `npm run docs:tests` で自動生成される。手で編集しない。**
 > 説明文を変えたい場合は `scripts/test-catalog.mjs` を編集する。
 
-テスト総数: **29**
+テスト総数: **38**
 
 テストの方針・手法は [TESTING.md](TESTING.md) を参照。
 
@@ -43,6 +43,26 @@ chrome-extension:// のオプションページを開き、表示・操作・保
 | 6 | オプションページ | 各行のリンクが url0 を新規タブで開く設定になっている |
 | 7 | オプションページ | 外部ホストへ一切リクエストしない |
 | 8 | オプションページ | Material Icons がローカル同梱フォントとして読み込まれリガチャが効く |
+
+## セレクタ定義（半自動検証の土台）
+
+`tests/selector-defs.spec.mjs` — 9 件
+
+ブラウザを起動せず、src/*-cs.js の menuSelectors と scripts/selector-check/targets.mjs の対応、および検証ツールの中断時の後始末を検証する。セレクタ文字列の二重管理を機械的に禁じる（NFR-13）。
+
+対応する仕様: SPEC-SC, SPEC-CS
+
+| # | グループ | テスト |
+| --- | --- | --- |
+| 1 | セレクタ定義 | 5本の Content Script すべてから menuSelectors を取り出せる |
+| 2 | セレクタ定義 | 全エントリが文字列の title と selector を持つ |
+| 3 | セレクタ定義 | 楽天証券は url を、TradingView は key を持つ |
+| 4 | セレクタ定義 | targets.mjs と menuSelectors が key ?? title で1対1に対応する |
+| 5 | セレクタ定義 | targets.mjs のどの対象も selector フィールドを持たない |
+| 6 | 検証ツールの中断 | SIGINT で終了コード 130 になり一時プロファイルが残らない |
+| 7 | 検証ツールの中断 | SIGTERM で終了コード 143 になり一時プロファイルが残らない |
+| 8 | 検証ツールの中断 | SIGHUP で終了コード 129 になり一時プロファイルが残らない |
+| 9 | 検証ツールの中断 | 端末での Ctrl+C（readline 経由）でも一時プロファイルが残らない |
 
 ## Service Worker / 共有モジュール
 

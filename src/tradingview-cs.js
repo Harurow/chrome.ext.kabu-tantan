@@ -16,7 +16,7 @@ const attach = () => {
   bodyObserver.observe(body, { childList: true })
 
   // canvasを監視し属性が変わったら追加したボタンの状態を更新させる
-  const canvas = $('div.chart-gui-wrapper canvas[aria-hidden!="true"]')[0]
+  const canvas = $(selectorOf('chart-canvas'))[0]
   if (canvas) {
     const canvasObserver = new MutationObserver(canvasObserverCallback)
     canvasObserver.observe(canvas, { attributes: true })
@@ -34,7 +34,7 @@ const attach = () => {
  */
 const bodyObserverCallback = () => {
   // オーバーラップレイヤーを監視しコンテキストメニューの構築を監視する
-  const overlapManagerRoot = $('div#overlap-manager-root')[0]
+  const overlapManagerRoot = $(selectorOf('overlap-root'))[0]
   if (!overlapManagerRoot) {
     return false
   }
@@ -62,12 +62,12 @@ const bodyObserverCallback = () => {
 const attachMenu = () => {
   // コンテキストメニューから銘柄コード(数値4桁)を取得する
   // 銘柄コードが取得できたらメニューを追加する
-  const overlapManagerRoot = $('div#overlap-manager-root')
+  const overlapManagerRoot = $(selectorOf('overlap-root'))
   if (overlapManagerRoot.length !== 1 || $('tr[data-kabu-tantan]').length > 0) {
     return
   }
 
-  const ctxMenu = $('div.menu-Tx5xMZww.context-menu.menuWrap-Kq3ruQo8 > div > div[data-name="menu-inner"] > table', overlapManagerRoot)
+  const ctxMenu = $(selectorOf('context-menu'), overlapManagerRoot)
   // 選択された銘柄リストからコードを取得
   const firstMenuItemText = $('tr:first td:eq(1) div span:first', ctxMenu).text()
 
@@ -230,7 +230,7 @@ const updateVisible = (element, condition) => {
  */
 const createKabuLinkMenu = async () => {
   // TradingViewへのメニュー挿入位置
-  const container = $('div.container-hw_3o_pb')
+  const container = $(selectorOf('toolbar-container'))
 
   const buttonsWrapper =
     $('<div>', {
@@ -377,7 +377,7 @@ const createKabuLinkMenu = async () => {
  * @returns 取得した銘柄コード、取得できない場合はnull
  */
 const getTickerCode = () => {
-  const canvas = $('div.chart-gui-wrapper canvas[aria-hidden!="true"]')
+  const canvas = $(selectorOf('chart-canvas'))
   if (canvas) {
     const ariaLabel = canvas.attr('aria-label')
     if (ariaLabel) {
@@ -397,3 +397,40 @@ const getTickerCode = () => {
 
   return { code: null, type: null }
 }
+
+/**
+ * 改変情報（検出用セレクタ）
+ * TradingView は DOM がハッシュ付きクラス名で頻繁に変わるため、
+ * 検出用セレクタは1箇所にまとめて `key` で引く。
+ * ここが唯一の情報源で、`npm run check:selectors` もこの値を読む。
+ * @type { { key: string, title: string, selector: string }[] }
+ */
+const menuSelectors = [
+  {
+    key: 'chart-canvas',
+    title: 'チャート canvas',
+    selector: 'div.chart-gui-wrapper canvas[aria-hidden!="true"]'
+  },
+  {
+    key: 'toolbar-container',
+    title: 'ツールバー挿入先',
+    selector: 'div.container-hw_3o_pb'
+  },
+  {
+    key: 'overlap-root',
+    title: 'オーバーレイレイヤー',
+    selector: 'div#overlap-manager-root'
+  },
+  {
+    key: 'context-menu',
+    title: '右クリックメニュー',
+    selector: 'div.menu-Tx5xMZww.context-menu.menuWrap-Kq3ruQo8 > div > div[data-name="menu-inner"] > table'
+  }
+]
+
+/**
+ * key に対応する検出用セレクタを取得する
+ * @param { string } key
+ * @returns { string }
+ */
+const selectorOf = (key) => menuSelectors.find((menuSelector) => menuSelector.key === key).selector

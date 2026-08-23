@@ -27,6 +27,12 @@ const FILE_INFO = {
     title: 'Content Script（楽天証券 / SBI証券）',
     detail: 'context.route() で対象オリジンにフィクスチャ HTML を返し、実際の注入を検証する。',
     specs: 'SPEC-CS, SPEC-MF'
+  },
+  'selector-defs.spec.mjs': {
+    title: 'セレクタ定義（半自動検証の土台）',
+    detail: 'ブラウザを起動せず、src/*-cs.js の menuSelectors と scripts/selector-check/targets.mjs の対応、および検証ツールの中断時の後始末を検証する。' +
+      'セレクタ文字列の二重管理を機械的に禁じる（NFR-13）。',
+    specs: 'SPEC-SC, SPEC-CS'
   }
 }
 

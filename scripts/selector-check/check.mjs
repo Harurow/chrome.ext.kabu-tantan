@@ -1,0 +1,337 @@
+/**
+ * 1対象の検証と判定 (SPEC-SC-09, 10, 11, 12)。
+ *
+ * ここが持ってよいのは「件数・判定・例外メッセージ」だけ。
+ * ページ本文・URL・認証情報は取得も記録もしない (SPEC-SC-14 / NFR-12)。
+ */
+
+/** 判定 */
+export const OK = 'ok'
+export const BROKEN = 'broken'
+export const UNREACHED = 'unreached'
+export const SKIPPED = 'skipped'
+
+/** 遷移後の既定待機（Content Script の固定待機 500/1500ms + 描画待ち） */
+const DEFAULT_SETTLE_MS = 2000
+
+/** jQuery が入っていないフレームを踏んだときの目印（セレクタ破損と区別する） */
+class JQueryMissingError extends Error {}
+
+/**
+ * 同梱 jQuery を検証用に読み込む初期化スクリプトを作る (SPEC-SC-09)。
+ *
+ * `addInitScript` で入れるので対象サイトの CSP に阻まれず、外部からも取得しない (CON-07)。
+ * ただし jQuery 4 は document-start（`documentElement` が未生成）で評価すると例外になるため、
+ * **本体の評価は初回利用時まで遅らせる**。
+ * 読み込み後は `noConflict(true)` でサイト側の `$` / `jQuery` を元に戻す (NFR-01)。
+ *
+ * @param { string } jquerySource `src/third-party/jquery.min.js` の中身
+ */
+export const createBootstrapScript = (jquerySource) => `
+window.__kabuCheckLoad = function () {
+${jquerySource}
+  window.__kabuCheck$ = window.jQuery.noConflict(true)
+}
+window.__kabuCheckJq = function () {
+  if (typeof window.__kabuCheck$ !== 'function') {
+    window.__kabuCheckLoad()
+  }
+  return window.__kabuCheck$
+}
+`
+
+/**
+ * 出力してよい形に文字列を落とす。
+ * URL（セッションIDを含む）を潰し、120文字で切る (SPEC-SC-14)。
+ * @param { unknown } value
+ */
+export const sanitize = (value) => String(value ?? '')
+  .replace(/https?:\/\/\S+/g, '<url>')
+  .replace(/\s+/g, ' ')
+  .trim()
+  .slice(0, 120)
+
+/**
+ * 同梱 jQuery でセレクタを評価して件数を返す (SPEC-SC-09)。
+ * @param { import('@playwright/test').Frame } frame
+ * @param { string } selector
+ */
+const countAsync = async (frame, selector) => {
+  const result = await frame.evaluate((s) => {
+    if (typeof window.__kabuCheckJq !== 'function') {
+      return { missing: true }
+    }
+    try {
+      return { count: window.__kabuCheckJq()(s).length }
+    } catch (err) {
+      return { error: String(err && err.message ? err.message : err) }
+    }
+  }, selector)
+
+  if (result.missing) {
+    throw new JQueryMissingError('検証用 jQuery が注入されていない')
+  }
+  if (result.error !== undefined) {
+    throw new Error(result.error)
+  }
+  return result.count
+}
+
+/** ページ識別セレクタは1つでもヒットすれば到達とみなす (SPEC-SC-04) */
+const countPageAsync = async (frame, pageSelectors) => {
+  let total = 0
+  for (const selector of pageSelectors ?? []) {
+    total += await countAsync(frame, selector)
+  }
+  return total
+}
+
+/** URL 部分一致で対象フレームを集める（`reach: 'tab'`） */
+const collectFrames = (context, urlPart) => {
+  const frames = []
+  for (const page of context.pages()) {
+    if (page.isClosed()) continue
+    for (const frame of page.frames()) {
+      if (frame.url().includes(urlPart)) {
+        frames.push({ page, frame })
+      }
+    }
+  }
+  return frames
+}
+
+/** 結果の器を作る。ここに無いフィールドは結果ファイルに出さない（ホワイトリスト） */
+const createResult = (site, target, entry) => ({
+  site: site.site,
+  siteLabel: site.label,
+  key: target.key,
+  title: entry.title,
+  selector: entry.selector,
+  status: SKIPPED,
+  reason: '',
+  pageHits: null,
+  hits: null,
+  injectedHits: null,
+  notes: [],
+  extra: []
+})
+
+/**
+ * 判定を決める (SPEC-SC-10)
+ */
+const judge = (result, target) => {
+  if (result.pageHits > 0 && result.hits > 0) {
+    result.status = OK
+  } else if (result.pageHits > 0 && result.hits === 0) {
+    result.status = BROKEN
+  } else if (result.pageHits === 0 && result.hits === 0) {
+    result.status = UNREACHED
+  } else {
+    // 識別 0 件・検出 1 件以上は論理的に起こりえない = 識別セレクタが誤っている (SPEC-SC-05)
+    result.status = OK
+    result.notes.push('ページ識別セレクタの見直しが必要')
+  }
+
+  if (result.status === BROKEN && target.requiresUserData) {
+    result.notes.push('利用者データ（お気に入り・保有銘柄）が 0 件でも同じ結果になる。登録状況を確認すること')
+  }
+  if (result.status === OK && result.hits > 0 && result.injectedHits === 0) {
+    result.notes.push('セレクタはヒットするが注入が 0 件。待機時間・設定・例外を疑う')
+  }
+}
+
+/** SPEC-SC-12 SBI証券ポートフォリオの追加検査 */
+const inspectVscInitializedAsync = async (frame, result) => {
+  const hasClass = await frame.evaluate(() => document.body.classList.contains('vsc-initialized'))
+  // 「外したセレクタ」は元のセレクタから機械的に作る（文字列を書き写さない。NFR-13）
+  const stripped = result.selector.replace(/^body\.vsc-initialized\s+/, '')
+  const strippedHits = stripped === result.selector ? null : await countAsync(frame, stripped)
+
+  let conclusion
+  if (strippedHits === null) {
+    conclusion = 'セレクタが `body.vsc-initialized` で始まっていない（この検査は不要になった）'
+  } else if (hasClass && result.hits > 0 && strippedHits > 0) {
+    conclusion = '現状は動く。ただし他拡張が付けるクラスに依存している'
+  } else if (!hasClass && result.hits === 0 && strippedHits > 0) {
+    conclusion = '`body.vsc-initialized` への依存が原因。セレクタから外すべき'
+  } else if (!hasClass && result.hits === 0 && strippedHits === 0) {
+    conclusion = 'SBI 側の DOM 変更。別途調査'
+  } else {
+    conclusion = '想定した組み合わせに当てはまらない。件数を見て判断する'
+  }
+
+  result.extra.push(
+    { label: '`body.vsc-initialized`', value: hasClass ? '付与されている' : '付与されていない' },
+    { label: '`body.vsc-initialized` を外したセレクタ', value: strippedHits === null ? '—' : `${strippedHits} 件` },
+    { label: '結論', value: conclusion }
+  )
+}
+
+/**
+ * TradingView のチャートが認識している銘柄の**接頭辞だけ**を調べる (SPEC-SC-11)。
+ * `aria-label` の全文は取り出さない (NFR-12)。
+ * @returns { string | null } 一致した接頭辞
+ */
+const detectSymbolPrefixAsync = async (frame, selector) => frame.evaluate(({ s, prefixes }) => {
+  if (typeof window.__kabuCheckJq !== 'function') return null
+  const label = window.__kabuCheckJq()(s).attr('aria-label')
+  if (!label) return null
+  return prefixes.find((prefix) => label.startsWith(prefix)) ?? null
+}, { s: selector, prefixes: ['TSE_DLY:', 'TSE:', 'BATS:'] })
+
+/** チャート中央で右クリックしてコンテキストメニューを開く (SPEC-SC-11 / CON-10 の許容操作) */
+const openContextMenuAsync = async (page, frame, chartSelector) => {
+  const box = await frame.evaluate((s) => {
+    const element = window.__kabuCheckJq()(s)[0]
+    if (!element) return null
+    const rect = element.getBoundingClientRect()
+    return { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
+  }, chartSelector)
+
+  if (!box || box.width === 0 || box.height === 0) {
+    return false
+  }
+
+  // 価格軸・時間軸を避けるためチャート領域の中央を狙う
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2, { button: 'right' })
+  await page.waitForTimeout(500)
+  return true
+}
+
+/**
+ * 1対象を検証する。
+ * 例外は必ず内部で捕捉し、呼び出し側は次の対象へ進める (FR-15)。
+ */
+export const checkTargetAsync = async (runner, site, target, entry, resolved) => {
+  const result = createResult(site, target, entry)
+
+  let page = runner.page
+  let frame = runner.lastFrame
+
+  try {
+    if (target.reach === 'goto') {
+      const url = typeof target.url === 'function' ? target.url({ session: runner.session, entry }) : target.url
+      page = runner.page
+      try {
+        await page.goto(url, { waitUntil: 'domcontentloaded' })
+      } catch (err) {
+        result.status = UNREACHED
+        result.reason = 'ページを開けなかった'
+        result.notes.push(`遷移に失敗した: ${sanitize(err.message)}`)
+        return result
+      }
+      frame = page.mainFrame()
+      await page.waitForTimeout(target.settleMs ?? DEFAULT_SETTLE_MS)
+    } else if (target.reach === 'tab') {
+      const candidates = collectFrames(runner.context, target.frameUrl)
+      if (candidates.length === 0) {
+        result.status = SKIPPED
+        result.reason = '対象のタブが開かれていない'
+        return result
+      }
+
+      // 同じ URL のページが複数ある（SBI の ETGate など）ため、
+      // ページ識別セレクタ → 検出用セレクタ の順にヒットするフレームを選ぶ
+      let picked = null
+      let fallback = null
+      for (const candidate of candidates) {
+        try {
+          if (await countPageAsync(candidate.frame, target.pageSelectors) > 0) {
+            picked = candidate
+            break
+          }
+          if (!fallback && await countAsync(candidate.frame, entry.selector) > 0) {
+            fallback = candidate
+          }
+        } catch {
+          // このフレームは評価できない。次の候補を見る
+        }
+      }
+
+      const chosen = picked ?? fallback
+      if (!chosen) {
+        result.status = SKIPPED
+        result.reason = '対象のページが開かれていない（識別セレクタ・検出用セレクタともにヒットしない）'
+        return result
+      }
+
+      page = chosen.page
+      frame = chosen.frame
+      await page.waitForTimeout(target.settleMs ?? 0)
+    } else {
+      // reach: 'after' — 直前の対象で使ったフレームをそのまま見る
+      if (!frame) {
+        result.status = SKIPPED
+        result.reason = '前段の対象に到達できていない'
+        return result
+      }
+      page = runner.page
+    }
+
+    runner.page = page
+    runner.lastFrame = frame
+
+    if (target.action === 'context-menu') {
+      const chart = resolved.get('chart-canvas')
+      const opened = chart ? await openContextMenuAsync(page, frame, chart.selector) : false
+      if (!opened) {
+        result.notes.push('チャート領域を特定できず右クリックできなかった')
+      }
+    }
+
+    result.pageHits = await countPageAsync(frame, target.pageSelectors)
+    result.hits = await countAsync(frame, entry.selector)
+    result.injectedHits = await countAsync(frame, target.injected ?? site.injected)
+
+    judge(result, target)
+
+    if (target.extra === 'vsc-initialized') {
+      await inspectVscInitializedAsync(frame, result)
+    }
+    if (target.extra === 'tv-symbol') {
+      const prefix = await detectSymbolPrefixAsync(frame, entry.selector)
+      result.notes.push(prefix
+        ? `\`aria-label\` は \`${prefix}\` で始まる`
+        : '`aria-label` が `TSE:` / `TSE_DLY:` のいずれでも始まらない')
+    }
+  } catch (err) {
+    if (err instanceof JQueryMissingError) {
+      result.status = UNREACHED
+      result.reason = '検証できなかった'
+      result.notes.push(sanitize(err.message))
+    } else {
+      // セレクタ評価の例外は破損として扱う (SPEC-SC-09)
+      result.status = BROKEN
+      result.reason = 'セレクタの評価に失敗した'
+      result.notes.push(sanitize(err.message))
+    }
+  }
+
+  return result
+}
+
+/**
+ * TradingView の後始末と米国株の補足検査 (SPEC-SC-11 手順 7・8)。
+ * 結果には接頭辞の判定だけを残す。
+ */
+export const finishTradingViewAsync = async (runner, resolved, results) => {
+  const chart = resolved.get('chart-canvas')
+  const chartResult = results.find((result) => result.key === 'chart-canvas')
+  if (!chart || !chartResult || chartResult.status === SKIPPED) {
+    return
+  }
+
+  try {
+    // 開いたメニューは選択せずに閉じる (CON-10)
+    await runner.page.keyboard.press('Escape')
+    await runner.page.goto('https://jp.tradingview.com/chart/?symbol=BATS%3AAAPL', { waitUntil: 'domcontentloaded' })
+    await runner.page.waitForTimeout(5000)
+
+    const prefix = await detectSymbolPrefixAsync(runner.page.mainFrame(), chart.selector)
+    chartResult.notes.push(prefix === 'BATS:'
+      ? '米国株（BATS）でも `aria-label` は `BATS:` で始まる'
+      : '米国株（BATS）で `aria-label` が `BATS:` で始まらない')
+  } catch (err) {
+    chartResult.notes.push(`米国株の補足検査に失敗: ${sanitize(err.message)}`)
+  }
+}

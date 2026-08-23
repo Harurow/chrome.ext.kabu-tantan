@@ -169,15 +169,6 @@ footer {
 
 footer address {
   display: inline-block;
-  padding-left: 0.6em;
-  font-size: 12px;
-  font-style: normal;
-  line-height: 20px;
-  color: #212121;
-}
-
-footer address a {
-  color: #212121;
 }
 
 footer small {
