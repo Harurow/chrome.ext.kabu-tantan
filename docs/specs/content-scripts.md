@@ -17,11 +17,15 @@ $(() => {
 | --- | --- | --- | --- |
 | `rakuten-cs.js` | 500ms | `attachAsync` | なし |
 | `rakuten-scr-cs.js` | 500ms | `attachAsync` | あり（ページ送り） |
-| `sbi-cs.js` | 500ms | `attachAsync` | なし |
+| `sbi-cs.js` | 500ms | `attach`（※） | なし |
 | `sbi-scr-cs.js` | **1500ms** | `attachAsync` | あり（ページ送り） |
 | `tradingview-cs.js` | 500ms | `attach` | あり（`body` / オーバーレイ / canvas） |
 
 固定待機はサイト側の描画完了を待つため。SBIスクリーナーは React 製で描画が遅く 1500ms。
+
+※ `sbi-cs.js` のエントリポイントだけ `async` でありながら `Async` 接尾辞が無い
+（命名規則からの逸脱。`CLAUDE.md`「命名規則」）。改名は利用者から見える変更が無いため別タスクとする。
+仕様書には**実際の名前**を書く。
 
 **5本すべて、エントリポイントの先頭に切断状態の門（`isExtensionAlive()`）を置く**（SPEC-CS-19）。
 門を通らなければ DOM も監視も一切作らない。
@@ -490,10 +494,10 @@ FR-07「やらないこと」に従い、**ラベル・開き方・未ログイ�
 | 1 | `TSE:7203` を表示して「株Link」を押す | 有効にした情報サイトが**すべて**並ぶ（現行と同じ一覧。判定基準2） |
 | 2 | 1 の並びをオプションページの並び順と見比べる | 一致する（判定基準3） |
 | 3 | 同じ状態でチャートを右クリックし、入れ子の情報サイト項目と 1 を見比べる | **同じ集合・同じ順序**（判定基準4） |
-| 4 | `NASDAQ:AAPL`（未ログインでは `BATS:AAPL`）を表示して「株Link」を押す | `url3` を持つサイトだけが並ぶ。2026-08-23 実測では **5件**（判定基準1） |
+| 4 | `NASDAQ:AAPL`（未ログインでは `BATS:AAPL`）を表示して「株Link」を押す | `url3` を持つサイトだけが並ぶ。`url3` を持つのは6サイトだが自サイト（`tradingview.com/chart`）が除外され、2026-08-23 実測では **5件**（判定基準1。除外は SPEC-CS-18 の 2・4） |
 | 5 | 4 の各項目をクリックする | すべて新しいタブでその銘柄のページが開く。**何も開かない項目が 0 件**（判定基準1） |
 | 6 | 4 の状態で右クリックの入れ子と見比べる | 同じ集合・同じ順序（判定基準4） |
-| 7 | 米国株を表示し、オプションで `url3` を持つ5サイトをすべて無効にして「株Link」を押す（未ログイン） | メニューも背景も出ない。ページのクリックが吸われない |
+| 7 | 米国株を表示し、TradingView で並ぶ5サイト（`url3` を持つのは6サイトだが `tradingview.com/chart` は除外される。SPEC-CS-18 の 2・4）をオプションですべて無効にして「株Link」を押す（未ログイン） | メニューも背景も出ない。ページのクリックが吸われない |
 
 ### 既知の制限（ボタンの消失）
 
@@ -930,11 +934,11 @@ const isExtensionAlive = () =>
 
 | Content Script | 切断状態で走る拡張 API | 1.11.0 での症状 | 門の位置 |
 | --- | --- | --- | --- |
-| `tradingview-cs.js` | `sendMessage` 5箇所 ＋ storage | 右クリックのたびに3行を追加 → 例外 → 3行を除去。ボタンでは背景レイヤーが残る | **6箇所**（`attach()` の先頭 / オーバーレイ監視コールバック / SPEC-CS-11 条件1 / SPEC-CS-12 手順2 / `openBrokerAsync()` / `openUrlAsync()`） |
+| `tradingview-cs.js` | `sendMessage` 6箇所（`makeBrokerItemsAsync()` ×2 / `queryBrokerAsync()` ×2 / `openBrokerAsync()` / `openUrlAsync()`） ＋ storage | 右クリックのたびに3行を追加 → 例外 → 3行を除去。ボタンでは背景レイヤーが残る | **6箇所**（`attach()` の先頭 / オーバーレイ監視コールバック / SPEC-CS-11 条件1 / SPEC-CS-12 手順2 / `openBrokerAsync()` / `openUrlAsync()`） |
 | `rakuten-scr-cs.js` | 起動時に storage 1回。`MutationObserver` のコールバックは**キャッシュ済みの `keys`** を使い API を呼ばない | 例外は出ない。ただしページ送りのたびに `span.x-kabu-root` を追加し続ける（判定基準2 に抵触） | 2箇所（`attachAsync` の先頭 / 監視コールバック） |
 | `sbi-scr-cs.js` | 同上 | 同上 | 同上 |
 | `rakuten-cs.js` | 起動時に storage 1回のみ | 通常は無症状（切断状態のタブでは既に実行済み）。**拡張機能をページ読み込み直後 500ms 以内に再読み込みすると例外になる**（開発中に踏む） | 1箇所（`attachAsync` の先頭） |
-| `sbi-cs.js` | 同上（待機は 500ms） | 同上 | 同上 |
+| `sbi-cs.js` | 同上（待機は 500ms） | 同上 | 1箇所（`attach()` の先頭。**`attachAsync` ではない**。SPEC-CS-01） |
 
 ### 起動時の門（`attach()` / `attachAsync()` の先頭）
 

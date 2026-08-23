@@ -8,6 +8,8 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { spawn } from 'node:child_process'
 import { test, expect } from '@playwright/test'
+import { lint } from 'markdownlint-cli2/markdownlint/promise'
+import jsoncParse from 'markdownlint-cli2/parsers/jsonc'
 import { loadMenuSelectors, indexByKey, rootDir } from '../scripts/selector-check/load-selectors.mjs'
 import { sites } from '../scripts/selector-check/targets.mjs'
 import {
@@ -17,6 +19,8 @@ import {
   describeElements,
   isSuspiciousToken,
   formatTitle,
+  sanitize,
+  URL_PLACEHOLDER,
   MAX_STAGES,
   MAX_TOKEN,
   MAX_TEXT,
@@ -400,5 +404,88 @@ test.describe('手がかり', () => {
     expect(empty).toContain('| 主要コンテナ | （0件） |')
     expect(empty).toContain(TITLE_WITHHELD)
     expect(empty).toContain(TRACKING_UNAVAILABLE)
+  })
+})
+
+/**
+ * 結果ファイルの書式 (SPEC-SC-13, 14)。
+ *
+ * `npm run check:selectors` の生成物 `docs/SELECTOR-CHECK.md` は `lint:md` の対象。
+ * 生成物が markdownlint に落ちると、検証を走らせた直後に `npm run check` が
+ * 落ちてコミットゲートで詰まる。生成側の消毒がそれを起こさないことを固定する。
+ */
+test.describe('結果ファイルの書式', () => {
+  /** `.markdownlint-cli2.jsonc` を唯一の情報源にする（設定を二重管理しない） */
+  const markdownlintConfig = () => jsoncParse(
+    fs.readFileSync(path.join(rootDir, '.markdownlint-cli2.jsonc'), 'utf8')
+  ).config
+
+  test('消毒した URL・伏せ字を含む結果ファイルがインライン HTML を漏らさない', async () => {
+    // Playwright の page.goto / jQuery のセレクタ例外は、失敗メッセージに URL を含むのが普通。
+    // これらは check.mjs / diagnostics.mjs で sanitize() を通ってから結果ファイルに載る
+    const gotoError = 'page.goto: net::ERR_ABORTED at https://member.rakuten-sec.co.jp/app/info.do?eventType=init&BV_SessionID=@@@@0123456789.1234567890@@@@'
+    const stageError = 'Syntax error, unrecognized expression: https://member.rakuten-sec.co.jp/app/'
+
+    const report = renderReport(reportInput([
+      {
+        ...baseResult,
+        key: '遷移に失敗した対象',
+        title: '遷移に失敗した対象',
+        status: 'unreached',
+        pageHits: 0,
+        hits: 0,
+        reason: 'ページを開けなかった',
+        // 備考セル（バッククォートで包まれない）に載る。check.mjs の組み立てと同じ
+        notes: [`遷移に失敗した: ${sanitize(gotoError)}`],
+        diagnostics: {
+          // 題名・記述子は伏せ字（`<withheld>`）になる形を入れる
+          title: TITLE_WITHHELD,
+          headings: describeElements([{ tag: 'div', id: 'form_BV_SessionID_kJqRnB', classes: [] }]),
+          containers: describeElements([{ tag: 'div', id: 'str-main', classes: ['550e8400-e29b-41d4-a716-446655440000'] }]),
+          tracking: {
+            source: 'ページ識別セレクタ',
+            mode: 'prefix',
+            rows: [],
+            // 段階が 0 件のときは素の行として出る（バッククォートの外）
+            omitted: false,
+            unavailable: `段階の評価に失敗した: ${sanitize(stageError)}`
+          }
+        }
+      },
+      {
+        ...baseResult,
+        key: '追跡が途中で失敗した対象',
+        title: '追跡が途中で失敗した対象',
+        status: 'broken',
+        pageHits: 1,
+        hits: 0,
+        notes: [`手がかりを採れなかった: ${sanitize(gotoError)}`],
+        diagnostics: {
+          title: '楽天証券｜国内株式・株価検索',
+          headings: describeElements([{ tag: 'h1', id: 'logo', classes: [] }]),
+          containers: describeElements([{ tag: 'div', id: 'str-header', classes: [] }]),
+          tracking: {
+            source: '検出用セレクタ',
+            mode: 'prefix',
+            rows: [{ selector: 'div#line1', hits: 1 }],
+            // 段階表がある場合も、失敗の文言は素の行として表の後に出る
+            omitted: true,
+            unavailable: `段階の評価に失敗した: ${sanitize(stageError)}`
+          }
+        }
+      }
+    ]))
+
+    // 検査対象が本当に含まれていること（含まれていなければテストが素通りしてしまう）
+    expect(report).toContain(URL_PLACEHOLDER)
+    expect(report).toContain(TOKEN_WITHHELD)
+    // 消毒が効いていること（URL の実体は残らない）
+    expect(report).not.toContain('rakuten-sec.co.jp')
+
+    // 実際に markdownlint を通す。MD033 の allowed_elements は <br> だけなので、
+    // `<url>` や `<withheld>` がバッククォートの外に出れば必ずここで落ちる
+    const { content } = await lint({ strings: { content: report }, config: markdownlintConfig() })
+    const violations = content.map((v) => `${v.lineNumber}: ${v.ruleNames.join('/')} ${v.errorDetail ?? ''}`.trim())
+    expect(violations, report).toEqual([])
   })
 })

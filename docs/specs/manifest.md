@@ -10,7 +10,7 @@
 | `name` | `__MSG_app_title__`（= 株リンク） |
 | `description` | `__MSG_app_description__` |
 | `default_locale` | `ja` |
-| `version` | `1.11.0` |
+| `version` | `package.json` と同じ値（SPEC-MF-02）。**この表に値を書き写さない** |
 | `options_page` | `options.html` |
 
 - 要件: FR-01, FR-11, CON-01
@@ -19,6 +19,9 @@
 ## SPEC-MF-02 バージョンの二重管理
 
 `src/manifest.json` と `package.json` の `version` は常に一致させる。
+
+> SPEC-MF-01 の表に実際のバージョン値を書き写さない。過去に書き写した値が 1.11.0 のまま
+> 古くなっていた。値の情報源は `src/manifest.json` と `package.json` だけにする。
 
 - 要件: NFR-06
 - 検証: `validate`（不一致で exit 1）

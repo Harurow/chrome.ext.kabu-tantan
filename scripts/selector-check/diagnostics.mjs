@@ -33,16 +33,24 @@ const IGNORED_TAGS = ['script', 'style', 'link', 'meta', 'noscript', 'template']
 /** 拡張機能自身が注入した要素の目印 (SPEC-CS-13) */
 const EXTENSION_CLASS_PREFIXES = ['x-kabu-', 'ktt-tv-']
 
+/** URL を潰した跡に残す文言 (SPEC-SC-14) */
+export const URL_PLACEHOLDER = '[url]'
+
 /**
  * 出力してよい形に文字列を落とす。
  * URL（セッションIDを含む）を潰し、120文字で切る (SPEC-SC-14)。
  *
  * 手がかり（題名・記述子）と既存の例外メッセージの両方がこれを通る。
  * `check.mjs` から再輸出しているので、呼び出し側の import はどちらでもよい。
+ *
+ * 置換先を `<url>` ではなく `[url]` にしてあるのは、消毒後の文字列が
+ * バッククォートの外（結果表の備考セル・追跡の失敗行）にも埋め込まれるため。
+ * `<url>` だと markdownlint の MD033（インライン HTML）に当たり、
+ * 生成した `docs/SELECTOR-CHECK.md` が `npm run lint:md` で落ちる。
  * @param { unknown } value
  */
 export const sanitize = (value) => String(value ?? '')
-  .replace(/https?:\/\/\S+/g, '<url>')
+  .replace(/https?:\/\/\S+/g, URL_PLACEHOLDER)
   .replace(/\s+/g, ' ')
   .trim()
   .slice(0, MAX_TEXT)

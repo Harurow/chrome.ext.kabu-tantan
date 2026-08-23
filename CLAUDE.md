@@ -239,6 +239,7 @@ Playwright で拡張機能を実際に Chromium へロードして検証する�
 | `tests/service-worker.spec.mjs` | `getTickerCode` / `compareVersion` / `makeUrl` / `externalUrls` の整合性 |
 | `tests/options.spec.mjs` | オプションページの表示・保存・並び替え・外部リクエスト有無 |
 | `tests/content-script.spec.mjs` | 楽天・SBI へのメニュー注入（フィクスチャ HTML を実オリジンで差し替え） |
+| `tests/selector-defs.spec.mjs` | `menuSelectors` の定義・`check:selectors` の中断処理・手がかりの消毒と書式 |
 
 テストの一覧は [docs/TEST-CATALOG.md](docs/TEST-CATALOG.md)（`npm run docs:tests` で自動生成）。
 **テストを増減したらこれを再生成すること。**

@@ -43,7 +43,8 @@ const REGRESSION = {
   外部ホスト: 'CDN・外部フォント・外部画像への依存が再混入していないかの検出',
   誤マッチ: '米国株の正規表現から先頭アンカー ^ が失われていないかの検出',
   リガチャ: 'Material Icons のサブセット失敗（アイコン名が文字列のまま出る）の検出',
-  compareVersion: 'バージョン比較が文字列比較に戻っていないかの検出'
+  compareVersion: 'バージョン比較が文字列比較に戻っていないかの検出',
+  'インライン HTML': 'セレクタ検証の生成物が markdownlint（MD033）で落ち、npm run check を止める問題の検出'
 }
 
 const { stdout } = await execFileAsync(
