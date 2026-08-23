@@ -221,3 +221,14 @@ const makeUrl = (urlTemplate, code, exchange) => {
   }
   return result
 }
+
+/**
+ * 拡張機能が生きている(このタブが切断されていない)かを判定する
+ * 拡張機能を更新・再読み込みするとそれ以前のタブのContent Scriptは本体から切り離され、
+ * chrome.runtime / chrome.storage を触るとTypeErrorになる(SPEC-CS-19)
+ * ・存在確認だけを行う(判定自体が例外にならないようにメッセージ送信やstorage読み出しはしない)
+ * ・chrome.runtime.id はService Workerが休止していても残るので、休止と切断を取り違えない
+ * @returns { boolean }
+ */
+const isExtensionAlive = () =>
+  typeof chrome !== 'undefined' && chrome.runtime != null && chrome.runtime.id != null

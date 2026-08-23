@@ -15,6 +15,12 @@ let chartContextMenuAt = 0
  * ページを改変するエントリポイント
  */
 const attach = () => {
+  // 切断状態(拡張機能の更新・再読み込み後の古いタブ)では何もしない(SPEC-CS-19)
+  // 監視も張らない(注入できず、他社サイト上で無駄に走るだけ。NFR-01)
+  if (!isExtensionAlive()) {
+    return
+  }
+
   // bodyを監視し子要素にオーバーラップレイヤーができるのを監視する
   const body = $('body')[0]
   const bodyObserver = new MutationObserver(() => {
@@ -59,6 +65,12 @@ const bodyObserverCallback = () => {
   }
 
   const overlapManagerRootObserver = new MutationObserver((mutions) => {
+    // 切断状態では監視を外す(復帰手段が無く、監視を続けても無駄に走るだけ。SPEC-CS-19)
+    if (!isExtensionAlive()) {
+      overlapManagerRootObserver.disconnect()
+      return
+    }
+
     mutions.forEach((mution) => {
       if (mution.type === 'childList') {
         if (mution.addedNodes.length > 0) {
@@ -80,6 +92,11 @@ const bodyObserverCallback = () => {
  * 条件を1つでも満たさない場合はDOMを一切変更しない
  */
 const attachMenu = () => {
+  // 切断状態(拡張機能の更新・再読み込み後の古いタブ)では何もしない(SPEC-CS-19)
+  if (!isExtensionAlive()) {
+    return
+  }
+
   // オーバーラップレイヤーが1つだけ、かつ未追加であること
   const overlapManagerRoot = $(selectorOf('overlap-root'))
   if (overlapManagerRoot.length !== 1 || $('tr[data-kabu-tantan]').length > 0) {
@@ -448,7 +465,7 @@ const updateVisible = (element, condition) => {
  * ・楽天証券 : 楽天証券にログインしてる時だけ有効なボタン
  * ・内藤証券 : 内藤証券にログインし、国内株マーケットの個別銘柄を開いている時だけ有効なボタン
  */
-const createKabuLinkMenu = async () => {
+const createKabuLinkMenu = () => {
   // TradingViewへのメニュー挿入位置
   const container = $(selectorOf('toolbar-container'))
 
@@ -461,135 +478,219 @@ const createKabuLinkMenu = async () => {
     <span>株Link</span>
   </div>`)
     .appendTo(buttonsWrapper)
-    .click(async (e) => {
-    // 銘柄コードを取得
-      const { code, type } = getTickerCode()
-
-      // 銘柄コードが取得できなかったので株Linkを追加しない
-      if (code == null) {
-        return
-      }
-
-      // 株Linkをクリックした場合、メニューを表示
-      // キー入力された場合はキャンセル扱い
-
-      // body要素
-      const body = $('body')
-
-      // メニュー表示中にキーボードを押すとキャンセル
-      const keydown = (e) => {
-        e.preventDefault()
-        clearMenu()
-      }
-
-      // メニューをクリア
-      const clearMenu = () => {
-        body[0].removeEventListener('keydown', keydown)
-        background.remove()
-      }
-
-      // キーボードイベントを追加
-      body[0].addEventListener('keydown', keydown)
-
-      // 背景
-      const background = $('<div>', {
-        class: 'ktt-tv-menuBack'
-      })
-        .click((e) => {
-          // 背景クリックはキャンセル
-          clearMenu()
-        })
-        .appendTo(body)
-
-      // メニューの全体
-      const menuBody = $(`
-      <div class="${tvMimicClasses.menuWrap}" style="position: fixed; left: ${e.clientX}px; top: ${e.clientY}px;">
-        <div class="${tvMimicClasses.scrollWrap}" style="overflow-y: auto;">
-          <div class="${tvMimicClasses.menuBox}">
-            <table>
-              <tbody>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>`)
-
-      // メニュー項目を構築する
-      const createMenuItem = (title) => $(`
-      <tr data-role="menuitem" class="${tvMimicClasses.accessible} ${tvMimicClasses.item}" tabindex="-1">
-        <td class="${tvMimicClasses.iconCell}" data-icon-cell="true">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 28 28" width="28" height="28"></svg>
-        </td>
-        <td>
-          <div class="${tvMimicClasses.content}">
-            <span class="${tvMimicClasses.label}" data-label="true">${title}</span>
-          </div>
-        </td>
-      </tr>`)
-
-      // メニュー項目の追加先要素
-      const tbody = $('tbody', menuBody)
-
-      // 証券会社のメニューを追加したか
-      let isAppendedSecMenuItem = false
-
-      // 楽天証券にログインしている時は楽天証券のURLが取得できる
-      const rakutenResponse = await chrome.runtime.sendMessage({ type: 'rakuten-sec:info', data: { code, type } })
-
-      // 楽天証券メニューを追加
-      if (rakutenResponse.data.rakutenUrl) {
-        createMenuItem('楽天証券を開く')
-          .click(async (e) => {
-            // 楽天証券のページを開く
-            const response = await chrome.runtime.sendMessage({ type: 'rakuten-sec:open', data: { code, type } })
-            if (response.data.rakutenUrl === null) {
-              alert('楽天証券にログインしてください')
-            }
-          })
-          .appendTo(tbody)
-        isAppendedSecMenuItem = true
-      }
-
-      // 内藤証券にログインしている時は内藤証券のURLが取得できる
-      const naitoResponse = await chrome.runtime.sendMessage({ type: 'naito-sec:info', data: { code, type } })
-
-      // 内藤証券メニューを追加
-      if (naitoResponse.data.naitoUrl) {
-        createMenuItem('内藤証券を開く')
-          .click(async (e) => {
-            // 内藤証券のページを開く
-            const response = await chrome.runtime.sendMessage({ type: 'naito-sec:open', data: { code, type } })
-            if (response.data.naitoUrl === null) {
-              alert('内藤証券にログインしてください')
-            }
-          })
-          .appendTo(tbody)
-        isAppendedSecMenuItem = true
-      }
-
-      // 証券会社メニューがある場合はセパレータを追加
-      if (isAppendedSecMenuItem) {
-        $(`<tr class="${tvMimicClasses.separatorRow}"><td><div class="${tvMimicClasses.separatorLine}"></div></td><td><div class="${tvMimicClasses.separatorLine}"></div></td></tr>`)
-          .appendTo(tbody)
-      }
-
-      // 有効になってる外部連携リンクをメニューに追加する
-      const keys = await getEnableLinkKeysAsync()
-      keys.forEach((key) => {
-        if (key.indexOf('tradingview.com') !== 0) {
-          const item = externalUrlsMap[key]
-          createMenuItem(`${item.title}で開く`)
-            .click(() => {
-              const item = externalUrlsMap[key]
-              const url = makeUrl(type === 'us' ? item.url3 : item.url1, code)
-              chrome.runtime.sendMessage({ type: 'open-url', data: { url } })
-            })
-            .appendTo(tbody)
-        }
-      })
-
-      menuBody.appendTo(background)
+    .click((e) => {
+      // jQueryはハンドラの返り値のPromiseを見ない
+      // 捕まえないと未処理の拒否になるため、非同期処理は別関数に閉じて自前で握る
+      openKabuLinkMenuAsync(e.clientX, e.clientY).catch(() => {})
     })
+}
+
+/**
+ * 「株Link」ボタンのメニューを開く(SPEC-CS-12)
+ * 問い合わせが終わるまでDOMを一切変更しない
+ * (背景を先に敷くと、失敗したときに透明な全画面レイヤーが残りページのクリックを吸う。NFR-14)
+ * @param {number} x メニューを出すx座標
+ * @param {number} y メニューを出すy座標
+ */
+const openKabuLinkMenuAsync = async (x, y) => {
+  // 銘柄コードが取得できない場合はメニューを出さない
+  const { code, type } = getTickerCode()
+  if (code == null) {
+    return
+  }
+
+  // 切断状態(拡張機能の更新・再読み込み後の古いタブ)では何もしない(SPEC-CS-19)
+  if (!isExtensionAlive()) {
+    return
+  }
+
+  // 証券会社の応答と情報サイトの項目を得る(この時点ではDOMを作らない)
+  // 門を通った後に切断される場合に備えて網(try)も張る
+  // 注意: Promise.allなので片方が失敗するとメニューごと出ない
+  // 現状はSWがネットワークを叩かない(storageとcookieだけ)ため実害が無い前提
+  // 将来queryBrokerAsync側にネットワーク取得が入ったらallSettledに分けること
+  let brokers
+  let linkItems
+  try {
+    [brokers, linkItems] = await Promise.all([
+      queryBrokerAsync(code, type),
+      makeLinkItemsAsync(code, type)
+    ])
+  } catch {
+    return
+  }
+
+  const hasBroker = brokers.hasRakuten || brokers.hasNaito
+
+  // 遷移先が1つも無い場合はメニューも背景も出さない
+  // (米国株で url3 を持つサイトを全て無効にし、かつ証券会社が未ログインだと起こりうる)
+  if (!hasBroker && linkItems.length === 0) {
+    return
+  }
+
+  // body要素
+  const body = $('body')
+
+  // メニュー表示中にキーボードを押すとキャンセル
+  const keydown = (e) => {
+    e.preventDefault()
+    clearMenu()
+  }
+
+  // メニューをクリア
+  const clearMenu = () => {
+    body[0].removeEventListener('keydown', keydown)
+    background.remove()
+  }
+
+  // キーボードイベントを追加
+  body[0].addEventListener('keydown', keydown)
+
+  // 背景
+  const background = $('<div>', {
+    class: 'ktt-tv-menuBack'
+  })
+    .click(() => {
+      // 背景クリックはキャンセル
+      clearMenu()
+    })
+    .appendTo(body)
+
+  // メニューの全体
+  const menuBody = $(`
+  <div class="${tvMimicClasses.menuWrap}" style="position: fixed; left: ${x}px; top: ${y}px;">
+    <div class="${tvMimicClasses.scrollWrap}" style="overflow-y: auto;">
+      <div class="${tvMimicClasses.menuBox}">
+        <table>
+          <tbody>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>`)
+
+  // メニュー項目の追加先要素
+  const tbody = $('tbody', menuBody)
+
+  // 楽天証券メニューを追加(ラベル・開き方・未ログイン時のalertは右クリック側と揃えない。SPEC-CS-12)
+  if (brokers.hasRakuten) {
+    makeButtonMenuItem('楽天証券を開く')
+      .click(() => {
+        // jQueryはハンドラの返り値のPromiseを見ないため、拒否は必ずここで握る
+        openBrokerAsync('rakuten-sec:open', 'rakutenUrl', '楽天証券', code, type).catch(() => {})
+      })
+      .appendTo(tbody)
+  }
+
+  // 内藤証券メニューを追加
+  if (brokers.hasNaito) {
+    makeButtonMenuItem('内藤証券を開く')
+      .click(() => {
+        // jQueryはハンドラの返り値のPromiseを見ないため、拒否は必ずここで握る
+        openBrokerAsync('naito-sec:open', 'naitoUrl', '内藤証券', code, type).catch(() => {})
+      })
+      .appendTo(tbody)
+  }
+
+  // 証券会社と情報サイトの両方がある場合だけセパレータを追加する
+  // (情報サイトが0件のときに末尾へ区切り線だけが残らないようにする)
+  if (hasBroker && linkItems.length > 0) {
+    makeMenuSeparator().appendTo(tbody)
+  }
+
+  // 有効になってる外部連携リンクをメニューに追加する
+  // 並び順・絞り込み・未知キーの扱いは右クリックメニューと同じ関数に任せる(FR-07)
+  linkItems.forEach((item) => {
+    makeButtonMenuItem(item.title)
+      .click(() => {
+        // URLはメニューの組み立て時に確定している
+        // jQueryはハンドラの返り値のPromiseを見ないため、拒否は必ずここで握る
+        openUrlAsync(item.url).catch(() => {})
+      })
+      .appendTo(tbody)
+  })
+
+  menuBody.appendTo(background)
+}
+
+/**
+ * 「株Link」ボタン用のメニュー項目を作成する
+ * @param {string} title 表示する文言(externalUrlsまたは固定文言)
+ * @returns {JQuery<HTMLElement>}
+ */
+const makeButtonMenuItem = (title) => $(`
+  <tr data-role="menuitem" class="${tvMimicClasses.accessible} ${tvMimicClasses.item}" tabindex="-1">
+    <td class="${tvMimicClasses.iconCell}" data-icon-cell="true">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 28 28" width="28" height="28"></svg>
+    </td>
+    <td>
+      <div class="${tvMimicClasses.content}">
+        <span class="${tvMimicClasses.label}" data-label="true">${title}</span>
+      </div>
+    </td>
+  </tr>`)
+
+/**
+ * 「株Link」ボタン用に証券会社へ問い合わせる
+ * 応答(URLが得られるか)だけを返し、DOMは作らない(SPEC-CS-12)
+ * 内藤証券は米国株ではURLが返らないが、現行の振る舞いを変えないため問い合わせ自体は行う
+ * @param {string} code 銘柄コード
+ * @param {string} type 'jp' または 'us'
+ * @returns {Promise<{ hasRakuten: boolean, hasNaito: boolean }>}
+ */
+const queryBrokerAsync = async (code, type) => {
+  // 楽天証券にログインしている時は楽天証券のURLが取得できる
+  const rakutenResponse = await chrome.runtime.sendMessage({ type: 'rakuten-sec:info', data: { code, type } })
+
+  // 内藤証券にログインしている時は内藤証券のURLが取得できる
+  const naitoResponse = await chrome.runtime.sendMessage({ type: 'naito-sec:info', data: { code, type } })
+
+  return {
+    hasRakuten: Boolean(rakutenResponse.data.rakutenUrl),
+    hasNaito: Boolean(naitoResponse.data.naitoUrl)
+  }
+}
+
+/**
+ * 証券会社のページを開く(「株Link」ボタンのメニュー用)
+ * ログインしていない場合はURLが返らないのでalertで知らせる(現行の振る舞いのまま)
+ * @param {string} messageType 送るメッセージのtype
+ * @param {string} urlField 応答のURLフィールド名
+ * @param {string} label 未ログイン時に出す証券会社名
+ * @param {string} code 銘柄コード
+ * @param {string} type 'jp' または 'us'
+ */
+const openBrokerAsync = async (messageType, urlField, label, code, type) => {
+  // メニューを開いた後に拡張機能が更新された場合は何もしない(SPEC-CS-19)
+  if (!isExtensionAlive()) {
+    return
+  }
+
+  try {
+    const response = await chrome.runtime.sendMessage({ type: messageType, data: { code, type } })
+    if (response.data[urlField] === null) {
+      alert(`${label}にログインしてください`)
+    }
+  } catch {
+    // 応答が得られない場合は何もしない(NFR-14)
+  }
+}
+
+/**
+ * 情報サイトのURLを新しいタブで開く(「株Link」ボタンのメニュー用)
+ * @param {string} url 組み立て済みのURL
+ */
+const openUrlAsync = async (url) => {
+  // メニューを開いた後に拡張機能が更新された場合は何もしない(SPEC-CS-19)
+  if (!isExtensionAlive()) {
+    return
+  }
+
+  try {
+    await chrome.runtime.sendMessage({ type: 'open-url', data: { url } })
+  } catch {
+    // 応答が得られない場合は何もしない(NFR-14)
+  }
 }
 
 /**

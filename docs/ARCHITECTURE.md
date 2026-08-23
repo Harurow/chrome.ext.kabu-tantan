@@ -43,13 +43,17 @@ flowchart TD
 ```json
 "js": [
   "third-party/jquery.min.js",  // $ を定義
-  "urls.js",                    // externalUrls / externalUrlsMap / exchanges / getEnableLinkKeysAsync / makeUrl
+  "urls.js",                    // externalUrls / externalUrlsMap / exchanges / getEnableLinkKeysAsync / makeUrl / isExtensionAlive
   "linkMenu.js",                // createMenu（urls.js に依存）
   "rakuten-cs.js"               // 上記すべてを使う
 ]
 ```
 
 Service Worker だけは `importScripts('./urls.js')` で読み込む。
+
+**5本の Content Script すべてが読むのは `urls.js` だけ**（`linkMenu.js` は TradingView に読み込まれない）。
+全 Content Script で共有したいものは `urls.js` に置く。
+`isExtensionAlive()`（切断状態の判定。SPEC-CS-19）をここに置いているのはこの理由による。
 
 この暗黙の依存は壊れても実行時まで気づけないため、`npm run validate` が読み込み順を検証する。
 ESLint 側は `eslint.config.mjs` の `sharedGlobals` でこれらをグローバル宣言している。
@@ -192,7 +196,7 @@ npm test   # 差し替え後は必ず実行する
 | `src/tradingview-cs.css` | TradingView のみ |
 | `src/manifest.json` | 拡張機能全体（権限、Content Script 注入先） |
 | `src/third-party/*` | 全体。差し替え後は `npm test` 必須 |
-| `src/*-cs.js` の `menuSelectors` | `scripts/selector-check/`（定義を読み出す）。値の変更に追随は不要だが、**`title` を変えたら `targets.mjs` も直す** |
+| `src/*-cs.js` の `menuSelectors` | `scripts/selector-check/`（定義を読み出す）。値の変更に追随は不要だが、**`title` を変えたら `targets.mjs` も直す**。**エントリを増減したら `targets.mjs` の対象も増減する**（`npm test` が1対1を検査する） |
 
 ## Material Icons のサブセット
 

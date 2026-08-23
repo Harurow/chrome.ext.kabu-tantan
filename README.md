@@ -149,7 +149,7 @@ npm run approve     # レビュー承認を記録する（コミットに必須�
 
 ### テスト
 
-拡張機能を実際に Chromium へロードして検証する Playwright テストが **29件**あります。
+拡張機能を実際に Chromium へロードして検証する Playwright テストが **47件**あります。
 証券会社へのログインは不要です（`context.route()` で対象オリジンにフィクスチャを返すため）。
 
 内訳と、それぞれが何を守っているかは [docs/TEST-CATALOG.md](docs/TEST-CATALOG.md) を参照してください。

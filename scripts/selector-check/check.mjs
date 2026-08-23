@@ -5,6 +5,12 @@
  * ページ本文・URL・認証情報は取得も記録もしない (SPEC-SC-14 / NFR-12)。
  */
 
+import { attachDiagnosticsAsync, sanitize } from './diagnostics.mjs'
+
+// 消毒（URL を潰し 120 文字で切る）の実装は diagnostics.mjs にある。
+// 手がかりの整形と同じ関数を通す必要があるため、ここからは再輸出だけを行う (SPEC-SC-14)
+export { sanitize }
+
 /** 判定 */
 export const OK = 'ok'
 export const BROKEN = 'broken'
@@ -39,17 +45,6 @@ window.__kabuCheckJq = function () {
   return window.__kabuCheck$
 }
 `
-
-/**
- * 出力してよい形に文字列を落とす。
- * URL（セッションIDを含む）を潰し、120文字で切る (SPEC-SC-14)。
- * @param { unknown } value
- */
-export const sanitize = (value) => String(value ?? '')
-  .replace(/https?:\/\/\S+/g, '<url>')
-  .replace(/\s+/g, ' ')
-  .trim()
-  .slice(0, 120)
 
 /**
  * 同梱 jQuery でセレクタを評価して件数を返す (SPEC-SC-09)。
@@ -113,7 +108,9 @@ const createResult = (site, target, entry) => ({
   hits: null,
   injectedHits: null,
   notes: [],
-  extra: []
+  extra: [],
+  // ⚠️/❌ のときだけ手がかりが入る (SPEC-SC-20)
+  diagnostics: null
 })
 
 /**
@@ -307,8 +304,23 @@ export const checkTargetAsync = async (runner, site, target, entry, resolved) =>
     }
   }
 
+  // ⚠️/❌ の対象からだけ原因切り分けの手がかりを採る (SPEC-SC-20)。
+  // 1対象につき1回だけで、判定はこの内容で変えない
+  if (frame && (result.status === BROKEN || result.status === UNREACHED)) {
+    await attachDiagnosticsAsync(frame, result, trackingSourceOf(result, target, entry))
+  }
+
   return result
 }
+
+/**
+ * プレフィックス追跡の対象セレクタを決める (SPEC-SC-21)。
+ * ❌ はページに着いているので検出用セレクタを、
+ * ⚠️ は祖先ごと存在しないのでページ識別セレクタ（先頭1つ）を追う。
+ */
+const trackingSourceOf = (result, target, entry) => (result.status === BROKEN
+  ? { source: '検出用セレクタ', selector: entry.selector }
+  : { source: 'ページ識別セレクタ', selector: (target.pageSelectors ?? [])[0] ?? '' })
 
 /**
  * TradingView の後始末と米国株の補足検査 (SPEC-SC-11 手順 7・8)。

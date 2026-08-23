@@ -395,7 +395,9 @@ const skip = (site, target, entry, reason) => ({
   hits: null,
   injectedHits: null,
   notes: [],
-  extra: []
+  extra: [],
+  // 未実施は手がかりを採らない (SPEC-SC-20)
+  diagnostics: null
 })
 
 /* ------------------------------------------------------------------ *

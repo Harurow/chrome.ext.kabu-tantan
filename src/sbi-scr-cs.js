@@ -6,8 +6,19 @@ $(() => {
  * ページを改変するエントリポイント
  */
 const attachAsync = async () => {
+  // 切断状態(拡張機能の更新・再読み込み後の古いタブ)では何もしない(SPEC-CS-19)
+  if (!isExtensionAlive()) {
+    return
+  }
+
   // 利用するURLリスト
-  const keys = await getEnableLinkKeysAsync()
+  // 門を通った後に拡張機能が更新される場合に備えて網(try)も張る
+  let keys
+  try {
+    keys = await getEnableLinkKeysAsync()
+  } catch {
+    return
+  }
 
   // ページ変更の対応のために監視する
   const target = $('div#root div.App div.Screener div.resultpane')[0]
@@ -16,6 +27,12 @@ const attachAsync = async () => {
   }
 
   const observer = new MutationObserver(() => {
+    // 切断状態では注入を止め、監視も外す(復帰手段が無く、監視を続けても無駄に走るだけ。SPEC-CS-19)
+    if (!isExtensionAlive()) {
+      observer.disconnect()
+      return
+    }
+
     // ページ変更対応
     mutationObserverCallback(keys)
   })

@@ -6,8 +6,19 @@ $(() => {
  * ページを改変するエントリポイント
  */
 const attachAsync = async () => {
+  // 切断状態(拡張機能の更新・再読み込み後の古いタブ)では何もしない(SPEC-CS-19)
+  if (!isExtensionAlive()) {
+    return
+  }
+
   // 利用するURLリスト
-  const keys = await getEnableLinkKeysAsync()
+  // 門を通った後に拡張機能が更新される場合に備えて網(try)も張る
+  let keys
+  try {
+    keys = await getEnableLinkKeysAsync()
+  } catch {
+    return
+  }
 
   // 設定に従い一つづつ試す
   menuSelectors

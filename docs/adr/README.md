@@ -7,6 +7,8 @@
 | [0001](0001-selector-check-design.md) | セレクタ検証ツールの設計判断 | 採択 |
 | [0002](0002-tradingview-dom-repair.md) | TradingView の DOM 改修への追随（2026-08 の破損） | 採択 |
 | [0003](0003-tradingview-submenu.md) | TradingView の右クリックメニューを入れ子にする | 採択 |
+| [0004](0004-selector-check-diagnostics.md) | セレクタ検証ツールが残す「手がかり」の範囲 | 採択（1.12.0 で実装） |
+| [0005](0005-disconnected-tab-guard.md) | 切断状態のタブでサイトを乱さないための守り方 | 採択（1.12.0 で実装） |
 
 ## 書き方
 

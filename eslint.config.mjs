@@ -10,6 +10,7 @@ const sharedGlobals = {
   externalUrlsMap: 'readonly',
   getEnableLinkKeysAsync: 'readonly',
   makeUrl: 'readonly',
+  isExtensionAlive: 'readonly',
   exchanges: 'readonly',
   // linkMenu.js が提供
   createMenu: 'readonly',
