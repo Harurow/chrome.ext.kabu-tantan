@@ -139,15 +139,21 @@ URL による絞り込みは**行わない**。両セレクタを常に試す。
 | 対象 | セレクタ |
 | --- | --- |
 | 個別銘柄 | `div#main div.mgt15 div.trHead01 table.tbl01 tr.vaT td.tdL H3 span.fm01 span.normal` |
-| ポートフォリオ | `body.vsc-initialized div.middleArea2 div.middleAreaM2 table table table tr td.mtext:nth-of-type(2)` |
+| ポートフォリオ | `div.middleArea2 div.middleAreaM2 table table table tr td.mtext:nth-of-type(2)` |
 
-> `body.vsc-initialized` は SBI 側ではなく**ブラウザ拡張が付けるクラス**に見える。
-> 環境によっては付かず、ポートフォリオで動作しない可能性がある。
-> SPEC-SC-12 が実サイトで実測して白黒をつける（2026-08-23 時点で**未実施**）。
+> ポートフォリオのセレクタは 1.12.1 まで `body.vsc-initialized` と空白で始まっていた。
+> これは SBI証券が出力するクラスではなく、**Video Speed Controller（別の Chrome 拡張）が
+> `<body>` に付けるクラス**で、当該拡張を入れていない環境では常に 0 件になっていた（CON-11）。
+> **1.12.2 で先頭の `body.vsc-initialized` と直後の空白だけを削った。以降は 1 文字も変えていない。**
+> 削った文字列は 2026-08-23 の実サイト実測で 24 件ヒットしている（`docs/SELECTOR-CHECK.md`）。
+> 同種の混入が他に無いことの点検と再発防止は SPEC-CS-21。
 
-- 要件: FR-03
-- 検証: `auto`（ポートフォリオ）／`半自動`（`npm run check:selectors`。2ページの検出用セレクタの生存と
-  `body.vsc-initialized` の追加検査）／`manual`（個別銘柄の見た目・動作）
+- 要件: FR-03, FR-21, CON-11
+- 検証: `auto`（`SBI証券 Content Script › ポートフォリオの銘柄コードにリンクメニューを注入する`。
+  **フィクスチャ `SBI_PORTFOLIO_HTML` は素の `<body>`**（1.12.1 までの `<body class="vsc-initialized">`
+  から当該クラスを外した）。付けたままだと依存が残っていてもテストが通り、FR-21 判定基準1 を担保できない）／
+  `半自動`（`npm run check:selectors -- --only=sbi`。ポートフォリオが ✅ かつ「注入」が 1 件以上）／
+  `manual`（**株リンク以外の拡張機能を入れていない Chrome** での目視。FR-21 判定基準1・2）
 
 ## SPEC-CS-10 SBI銘柄スクリーニング
 
@@ -581,7 +587,7 @@ FR-07「やらないこと」に従い、**ラベル・開き方・未ログイ�
 - `menuSelectors` は `tradingview-cs.js` 内で実際に使われる。検証専用の定数ではない（FR-12「やらないこと」）
 
 - 要件: FR-04, FR-12, NFR-13
-- 検証: `auto`（SPEC-SC-16 の `セレクタ定義` 5件）／
+- 検証: `auto`（SPEC-SC-16 の `セレクタ定義` 7件）／
   `半自動`（`npm run check:selectors -- --only=tradingview` で**4対象すべてが ✅** になること）
 
 ## SPEC-CS-16 TradingView の模倣用クラス定義
@@ -1032,6 +1038,7 @@ TradingView だけ、起動時に DOM を追加する処理（`createKabuLinkMen
 | 1 | 結果画面の URL が `/app/info_jp_prc_search.do` と一致せず、URL 絞り込みで弾かれている | 開発者がアドレスバーを読む（下記） | `rakuten-cs.js` の `menuSelectors[].url`（エントリを**足す**） |
 | 2 | 結果が iframe に描画され、`all_frames` が無いため注入されない | DevTools の Elements で `iframe` の有無を見る。SPEC-SC-20 の「主要コンテナ」に `iframe` / `frameset` が出るかを見る | `manifest.json`（SPEC-MF-06）。**注入先が広がるので影響範囲を要検討** |
 | 3 | 検証ツールがログイン画面・エラー画面に飛ばされている（ツール側の問題。拡張は無罪） | SPEC-SC-22 の題名がログイン系・エラー系 | `scripts/selector-check/targets.mjs` の到達方法（SPEC-SC-06） |
+| 3b | 検証ツールが**エラーではない別のページ**（検索フォーム・国内株式トップ）に着いている | 題名は対象ページ風だが、ページ名が2度出るなど不自然。**ツールは判別できない**（SPEC-SC-18） | 同上。判別できないので人が実ページを見る |
 | 4 | 結果画面の骨格が個別銘柄と別物 | SPEC-SC-21 のプレフィックス追跡が `div#line1` の段階で 0 件 | `rakuten-cs.js` の `menuSelectors`（エントリを**足す**） |
 | 5 | 見出しの構造だけが違う | 同追跡が `div#line1` は 1 件、`h1.hdg-l1-01-title` で 0 件 | 同上 |
 | 6 | 「株価検索の結果画面」が存在せず、個別銘柄ページへ遷移する仕様になった | アドレスバーが `info_jp_prc_stock.do` になる | **FR-20 を取り下げる**（analyst の判断。architect は決めない） |
@@ -1053,6 +1060,11 @@ TradingView だけ、起動時に DOM を追加する処理（`createKabuLinkMen
 | 結果画面のパス（`.do` まで） | 楽天証券にログインし、株価検索で銘柄を検索してアドレスバーを読む | **パス部分だけ**を仕様に書き写す。`;BV_SessionID=…` 以降とクエリは**書き写さない** |
 | 結果が iframe か | DevTools の Elements で確認する | フレームの有無だけ |
 
+> **FR-22 実装後、このページの記号は ⚠️ から ❌ に変わる**（題名がエラー画面の目印に当たらないため
+> 「到達した」と判断される。SPEC-SC-24）。**❌ になったこと自体は仮説1〜6 のどれの裏づけにもならない。**
+> 到達判定は「エラー画面ではない」ことしか示さず、仮説 3b（別の正常ページに着いている）を排除できない。
+> 切り分けは引き続き下表の目視で行う。
+
 ### 修正時の制約（退行防止。FR-20 判定基準4）
 
 - `menuSelectors` の**既存12エントリを書き換えない**。必要ならエントリを足す
@@ -1065,3 +1077,73 @@ TradingView だけ、起動時に DOM を追加する処理（`createKabuLinkMen
 - 要件: FR-20, FR-02, FR-12
 - 検証: `半自動`（`npm run check:selectors -- --only=rakuten` で当該ページが ✅、他11ページが ✅ のまま）／
   `manual`（株価検索の結果画面で銘柄コードにホバーしてメニューが出て、選ぶと新しいタブで開くこと）
+
+---
+
+## SPEC-CS-21 検出用セレクタが依存してよいクラス（CON-11 の点検とガード）
+
+> 点検は 2026-08-23 に実施（下表）。機械的ガード（G1・G2）は 1.12.2 で実装済み。
+> 判断の記録は [ADR-0007](../adr/0007-con11-audit-scope.md)。
+
+### 点検の範囲
+
+**`src/*-cs.js` の `menuSelectors` に載る検出用セレクタ 20 件だけ**を対象とする。
+
+| 対象 | 含める | 理由 |
+| --- | --- | --- |
+| `menuSelectors[].selector`（5ファイル・20件） | ✓ | 壊れると機能が消える。0 件でも画面上は「何も起きない」だけで気づけない |
+| `src/*.css` のセレクタ | — | 壊れても見た目が崩れるだけで機能は残る（FR-12 の検証対象と同じ線引き）。`tradingview-cs.css` の `html.theme-dark` は TradingView 自身のテーマクラスで、機械判定に掛けると誤検知にしかならない（CON-03） |
+| `tvMimicClasses`（模倣用クラス。SPEC-CS-16） | — | 同上 |
+| `scripts/selector-check/targets.mjs` の `pageSelectors` | — | ツール側のページ識別セレクタ。壊れても拡張機能の動作は変わらない（SPEC-SC-04）。ただし他拡張クラスが混ざると検証ツールが恒久的に ⚠️ を出し続けるため、⚠️ が続く対象では `targets.mjs` 側を疑う |
+
+### 点検結果（2026-08-23 / 1.12.1 の全 20 件）
+
+| ファイル | 件数 | セレクタの起点 | 他拡張由来の混入 | 判定の根拠 |
+| --- | --- | --- | --- | --- |
+| `src/rakuten-cs.js` | 12 | `form` / `form#form` / `div#table_possess_data` / `table#poss-tbl-sp` / `div#str-main-inner` / `div#daily-ranking` ほか / `div#line1` | 無し | 楽天証券の命名（`hdg-` / `tbl-` / `str-` 接頭辞、`mbody`、`nobr`）で一貫する。`body` / `html` を起点にするものが無い |
+| `src/rakuten-scr-cs.js` | 1 | `div#resultpanel` | 無し | スクリーナー画面（`resulttablebox` / `datarow`）の命名で一貫する |
+| `src/sbi-cs.js` | 2 | `div#main` / **`body.vsc-initialized`** | **1件** | ポートフォリオのみ。Video Speed Controller が付けるクラス（`657f366` で混入。1.12.2 で除去済み。SPEC-CS-09） |
+| `src/sbi-scr-cs.js` | 1 | `div#root` | 無し | React アプリの構造（`div.App` / `div.Screener` / `div.ResultListMainDiv`） |
+| `src/tradingview-cs.js` | 4 | `div.chart-gui-wrapper` / `div.container-OH8c8Nc3` / `div#overlap-manager-root` / `div.context-menu` | 無し | ハッシュ付きクラスは TradingView 自身の生成物（CON-08）。実サイトで 4 件とも ✅（2026-08-23） |
+
+**混入は `body.vsc-initialized` の 1 件のみ。** 他の 19 件は再点検不要とし、以後は下記のガードで守る。
+
+### 機械的ガード
+
+| # | 規則 | 実装 | 判定 |
+| --- | --- | --- | --- |
+| G1 | 検出用セレクタは **`body` / `html` を起点にしない**（`body` / `html` にクラス・属性・`id` を付けた条件を含まない） | `tests/selector-defs.spec.mjs` 19 | カンマ区切りの断片ごとに先頭を `/^\s*(body\|html)\b/i` で弾き、加えてセレクタ全体を `/(^\|[\s>+~,(])(body\|html)[.#[:]/i` で弾く（起点でなくても `body.foo` のように条件を付けた形を含む） |
+| G2 | 検出用セレクタに**既知の他拡張クラス**が現れない | `tests/selector-defs.spec.mjs` 20 | 小文字化した文字列に否定リスト7件のいずれかが**部分一致**しないこと |
+
+- **主は G1。** 他拡張が印を付ける場所は `<body>` / `<html>` に集中する（CON-11）。
+  対象5サイトの検出用セレクタはどれも `body` / `html` を起点にする必要が無い
+- **従は G2。** 名前の列挙は原理的に網羅できないため、G1 の補助として置く。初期値は次の 7 件。
+  実例を観測したら足す
+
+  ```js
+  const FOREIGN_EXTENSION_CLASSES = [
+    'vsc-initialized',   // Video Speed Controller（実際に混入していた）
+    'grammarly-',        // Grammarly
+    'gsc-',              // Google 系ウィジェット
+    '__web-inspector',   // DevTools 系
+    'translated-ltr',    // Google 翻訳
+    'translated-rtl',    // Google 翻訳
+    'darkreader'         // Dark Reader
+  ]
+  ```
+
+- G1 に当たるセレクタが本当に必要になったら、テストを 1 箇所直す。
+  **そのとき「本当にサイト側のクラスか」を必ず確認する**（CON-11 / CON-03）
+
+### 実 DOM からセレクタを起こすときの手順（人が行う）
+
+| # | 手順 |
+| --- | --- |
+| 1 | **株リンクだけを入れた Chrome**（他の拡張機能を無効にしたプロファイル）で対象ページを開く |
+| 2 | その状態の DOM でセレクタを組み立てる |
+| 3 | `<body>` / `<html>` に付いたクラスは使わない（G1） |
+| 4 | サイトの他ページにも同じクラスが出るかを見る。1ページにしか無いクラスは疑う |
+
+- 要件: CON-11, FR-21, FR-03, FR-02, FR-04
+- 検証: `auto`（`セレクタ定義 › …` 19・20。`npm test`）／
+  `manual`（新しいセレクタを足すときに上記手順を踏むこと）

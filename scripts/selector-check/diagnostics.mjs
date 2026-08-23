@@ -1,5 +1,5 @@
 /**
- * ⚠️/❌ の対象から原因切り分けの手がかりを採る (SPEC-SC-20, 21, 22)。
+ * ⚠️/❌ の対象から原因切り分けの手がかりを採り、到達したかを判定する (SPEC-SC-20, 21, 22, 24)。
  *
  * **採ってよいのは「到達先の題名（消毒後）」「要素のタグ名・`id`・`class` 名」
  * 「セレクタ文字列と件数」だけ**（SPEC-SC-14 のホワイトリスト）。
@@ -87,6 +87,9 @@ export const TITLE_WITHHELD = '題名にセッション情報らしき文字列�
 /** 記述子のトークンを記録しないときに残す文言 (SPEC-SC-20) */
 export const TOKEN_WITHHELD = '<withheld>'
 
+/** 題名を持たないページ（フレーム・エラー画面）の目印 (SPEC-SC-22) */
+export const TITLE_EMPTY = '（題名なし）'
+
 /**
  * 文字列が「疑わしい」か判定する (SPEC-SC-20, 22)。
  * 題名なら1つでも当たれば**丸ごと記録しない**。
@@ -107,12 +110,104 @@ export const isSuspiciousToken = (value) => {
 export const formatTitle = (title) => {
   const text = String(title ?? '').trim()
   if (text === '') {
-    return '（題名なし）'
+    return TITLE_EMPTY
   }
   if (isSuspiciousToken(text)) {
     return TITLE_WITHHELD
   }
   return sanitize(text)
+}
+
+/* ------------------------------------------------------------------ *
+ * 到達判定 (SPEC-SC-24)
+ * ------------------------------------------------------------------ */
+
+/**
+ * 題名が対象ページのものでないと分かる目印 (SPEC-SC-24)。
+ *
+ * **`SUSPICIOUS_PATTERNS` とは分ける。** あちらは「記録してよいか」、こちらは「到達したか」の判断で、
+ * 混ぜると片方を緩めた影響がもう片方に出る (ADR-0006 の 3)。
+ *
+ * 実測に基づくのは目印1（楽天証券の4ページ）だけで、残りは未観測の備え。
+ * **実例を観測したらここに足す。**
+ */
+const UNREACHED_TITLE_PATTERNS = [
+  // 1. 実測: エラー画面（`エラー | 楽天証券[PC]`。2026-08-23）
+  /^エラー(\s|[|｜]|$)/,
+  // 2. 未観測: ログイン画面へ飛ばされる経路への備え
+  /^(ログイン|ログアウト)(\s|[|｜]|$)/,
+  // 3. 未観測: メンテナンス画面
+  /メンテナンス/,
+  // 4. 未観測: 英語 UI（TradingView）への備え
+  /^(error|not found|404|sign ?in|log ?in)\b/i
+]
+
+/** 到達判定の記録文言。ツール自身が持つ固定文言だけを出す (SPEC-SC-24) */
+export const REACH_NOT_EVALUATED = 'セレクタを評価できなかったため題名を見ていない'
+export const REACH_NOT_CONSULTED = 'ページ識別セレクタ・検出用セレクタのいずれかがヒットしたため題名を見ていない'
+export const REACH_REACHED = '到達したとみなす（題名が未到達の目印に当たらない）'
+export const REACH_UNREACHED = '未到達とみなす（題名が未到達の目印に当たる）'
+export const REACH_UNKNOWN = '未到達とみなす（題名から判断できない）'
+
+/**
+ * 到達先の題名から「到達したか」を判定する (SPEC-SC-24)。
+ *
+ * 目印は**否定リスト**であって「対象ページに着いた」ことの証明ではない。
+ * 反証が無ければ到達とみなす＝破損側に倒すのは、誤 ❌ が終了コード 1 で目立つのに対し
+ * 誤 ⚠️ は終了コード 2 に埋もれて誰も気づかないため (ADR-0006 の 2)。
+ * ただし題名が空・不記録のときは「反証が無い」のではなく「判断材料が無い」ので ⚠️ のままにする。
+ *
+ * ブラウザに触らない純関数。実データでの検算を自動テストにできる (SPEC-SC-16 の 21・22)。
+ * @param { string } formattedTitle `formatTitle()` を通した題名
+ * @returns { { reached: boolean, reason: string } }
+ */
+export const judgeReach = (formattedTitle) => {
+  const title = String(formattedTitle ?? '').trim()
+
+  if (title === '' || title === TITLE_EMPTY || title === TITLE_WITHHELD) {
+    return { reached: false, reason: REACH_UNKNOWN }
+  }
+  if (UNREACHED_TITLE_PATTERNS.some((pattern) => pattern.test(title))) {
+    return { reached: false, reason: REACH_UNREACHED }
+  }
+  return { reached: true, reason: REACH_REACHED }
+}
+
+/**
+ * 到達判定の適用条件まで含めて、再分類するかと記録する文言を決める (SPEC-SC-24)。
+ *
+ * 上から順に当てはめる。
+ *
+ * | # | 条件 | `reclassify` | 文言 |
+ * | --- | --- | --- | --- |
+ * | 1 | `pageHits` / `hits` のどちらかが数値でない | `false` | `REACH_NOT_EVALUATED` |
+ * | 2 | 両方が数値で、どちらかが 1 件以上 | `false` | `REACH_NOT_CONSULTED` |
+ * | 3〜5 | ともに 0 件 → `judgeReach()` の結果 | 3 のみ `true` | `REACH_REACHED` / `REACH_UNREACHED` / `REACH_UNKNOWN` |
+ *
+ * 1 と 2 を分けるのは、**件数を数えられなかった対象に「識別セレクタがヒットした」と書かない**ため。
+ * 検証用 jQuery 未注入・セレクタ評価の例外はどちらも件数が `null` になり、
+ * 2 の文言では事実に反する (ADR-0006 の 6-1)。
+ *
+ * 返り値が `reached` ではなく `reclassify` なのは、1・2 では「到達したか」を判断していないから。
+ * `false` は「再分類しない」だけを意味し、記号を ⚠️ に戻したり ❌ を取り消したりはしない。
+ *
+ * ブラウザに触らない純関数 (SPEC-SC-16 の 24)。
+ * @param { { pageHits: number | null, hits: number | null, title: string } } counts
+ * @returns { { reclassify: boolean, reason: string } }
+ */
+export const decideReach = ({ pageHits, hits, title }) => {
+  // 1. 件数を数えられていない（jQuery 未注入・評価例外）。題名を見ても破損とは言えない
+  if (!Number.isInteger(pageHits) || !Number.isInteger(hits)) {
+    return { reclassify: false, reason: REACH_NOT_EVALUATED }
+  }
+  // 2. どちらかがヒットしている。判定は SPEC-SC-10 の表だけで決まる
+  if (pageHits !== 0 || hits !== 0) {
+    return { reclassify: false, reason: REACH_NOT_CONSULTED }
+  }
+
+  // 3〜5. ともに 0 件のときだけ題名を材料にする
+  const { reached, reason } = judgeReach(title)
+  return { reclassify: reached, reason }
 }
 
 /* ------------------------------------------------------------------ *
@@ -384,33 +479,66 @@ const trackPrefixAsync = async (frame, selector) => {
 }
 
 /**
- * ⚠️/❌ の対象に手がかりを付ける (SPEC-SC-20, 21, 22, 23)。
+ * ⚠️/❌ の対象から**事実**（題名・見出し・主要コンテナ）を採る (SPEC-SC-20)。
  *
- * - 追跡するセレクタは ❌ なら検出用セレクタ、⚠️ ならページ識別セレクタの先頭1つ
- * - 採取が失敗しても**判定は変えない**（手がかりは補助情報。ADR-0004 の 4）
+ * 到達判定 (SPEC-SC-24) はここで採った題名を材料にするため、
+ * **採取 → 到達判定と再分類 → プレフィックス追跡** の順に呼ぶ必要がある。
+ * この順序を守るために、1.12.1 まで1本だった `attachDiagnosticsAsync()` を
+ * 採取（本関数）と追跡（`attachTrackingAsync()`）に割ってある (ADR-0006 の 4)。
+ *
+ * 採取が失敗しても**判定は変えない**（手がかりは補助情報。ADR-0004 の 4）。
+ * `result.diagnostics` は失敗すると `null` のままで、追跡も行われない。
  *
  * @param { import('@playwright/test').Frame } frame
- * @param { object } result 判定済みの結果（`diagnostics` と `notes` を書き足す）
- * @param { { source: string, selector: string } } tracking 追跡するセレクタとその素性
+ * @param { object } result 暫定判定済みの結果（`diagnostics` と `notes` を書き足す）
  */
-export const attachDiagnosticsAsync = async (frame, result, tracking) => {
+export const collectFactsAsync = async (frame, result) => {
   try {
     const rawInfo = await collectRawAsync(frame)
+
+    result.diagnostics = {
+      title: formatTitle(rawInfo.title),
+      // 到達判定は check.mjs が `decideReach()` の結果で必ず上書きする (SPEC-SC-24)。
+      // 初期値は「まだ何も判断していない」に最も近い文言にしておく
+      reach: REACH_NOT_EVALUATED,
+      headings: describeElements(rawInfo.headings),
+      containers: describeElements(rawInfo.containers),
+      // 追跡は判定が確定してから行う
+      tracking: { source: '', mode: 'prefix', rows: [], omitted: false, unavailable: null }
+    }
+  } catch (err) {
+    // 判定・終了コードには影響させない (ADR-0004 の 4)
+    result.notes.push(`手がかりを採れなかった: ${sanitize(err && err.message ? err.message : err)}`)
+  }
+}
+
+/**
+ * **確定した判定**に応じてプレフィックス追跡を行う (SPEC-SC-21)。
+ *
+ * 追跡するセレクタは ❌ なら検出用セレクタ、⚠️ ならページ識別セレクタの先頭1つ。
+ * 到達判定による再分類 (SPEC-SC-24) より後に呼ばないと、
+ * 再分類された ❌ でページ識別セレクタを追ってしまう。
+ *
+ * @param { import('@playwright/test').Frame } frame
+ * @param { object } result `collectFactsAsync()` を通した結果
+ * @param { { source: string, selector: string } } tracking 追跡するセレクタとその素性
+ */
+export const attachTrackingAsync = async (frame, result, tracking) => {
+  if (!result.diagnostics) {
+    return
+  }
+
+  try {
     const tracked = tracking.selector
       ? await trackPrefixAsync(frame, tracking.selector)
       : { mode: 'prefix', stages: [], omitted: false, rows: [], unavailable: '追跡できるセレクタが無い' }
 
-    result.diagnostics = {
-      title: formatTitle(rawInfo.title),
-      headings: describeElements(rawInfo.headings),
-      containers: describeElements(rawInfo.containers),
-      tracking: {
-        source: tracking.source,
-        mode: tracked.mode,
-        rows: tracked.rows,
-        omitted: tracked.omitted,
-        unavailable: tracked.unavailable
-      }
+    result.diagnostics.tracking = {
+      source: tracking.source,
+      mode: tracked.mode,
+      rows: tracked.rows,
+      omitted: tracked.omitted,
+      unavailable: tracked.unavailable
     }
 
     const summary = tracked.unavailable ?? summarizeTracking(tracked, tracked.rows)
@@ -419,6 +547,8 @@ export const attachDiagnosticsAsync = async (frame, result, tracking) => {
     }
   } catch (err) {
     // 判定・終了コードには影響させない (ADR-0004 の 4)
-    result.notes.push(`手がかりを採れなかった: ${sanitize(err && err.message ? err.message : err)}`)
+    const message = `手がかりを採れなかった: ${sanitize(err && err.message ? err.message : err)}`
+    result.diagnostics.tracking.unavailable = message
+    result.notes.push(message)
   }
 }

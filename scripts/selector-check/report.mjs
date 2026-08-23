@@ -49,15 +49,17 @@ const descriptorList = (items) => ((items ?? []).length === 0
  * 出すのは題名（消毒済み）・要素の記述子・セレクタ文字列・件数だけ (SPEC-SC-14)。
  */
 const renderDiagnostics = (result) => {
-  const { title, headings, containers, tracking } = result.diagnostics
+  const { title, reach, headings, containers, tracking } = result.diagnostics
   const lines = [
     `### ${cell(result.title)}の手がかり`,
     '',
     '| 項目 | 内容 |',
     '| --- | --- |',
-    `| 到達先の題名 | ${cell(title)} |`,
-    `| 見出し | ${descriptorList(headings)} |`,
-    `| 主要コンテナ | ${descriptorList(containers)} |`,
+    row('到達先の題名', cell(title)),
+    // 到達判定の行は必ず1行出す (SPEC-SC-24 / FR-22 判定基準6)
+    row('到達判定', cell(reach)),
+    row('見出し', descriptorList(headings)),
+    row('主要コンテナ', descriptorList(containers)),
     ''
   ]
 
@@ -139,15 +141,6 @@ export const renderReport = ({ generatedAt, version, browserVersion, sites, resu
     }
     lines.push('')
 
-    for (const result of rows.filter((r) => r.extra.length > 0)) {
-      lines.push(`### ${cell(result.title)}の追加検査`, '')
-      lines.push('| 項目 | 結果 |', '| --- | --- |')
-      for (const item of result.extra) {
-        lines.push(`| ${cell(item.label)} | ${cell(item.value)} |`)
-      }
-      lines.push('')
-    }
-
     for (const result of rows.filter((r) => r.diagnostics)) {
       lines.push(...renderDiagnostics(result))
     }
@@ -175,8 +168,8 @@ export const renderReport = ({ generatedAt, version, browserVersion, sites, resu
   lines.push('## 判定の読み方', '')
   lines.push('| 記号 | 意味 |', '| --- | --- |')
   lines.push('| ✅ | ページ識別セレクタがヒットし、検出用セレクタも1件以上ヒットした |')
-  lines.push('| ❌ | ページには到達したが検出用セレクタが 0 件。**サイト改修でセレクタが壊れた疑い** |')
-  lines.push('| ⚠️ | ページ識別セレクタも検出用セレクタもヒットしない。ページを開けていない／ページ構造が変わった |')
+  lines.push('| ❌ | **ページに到達したと判断できるのに**検出用セレクタが 0 件。サイト改修でセレクタが壊れた疑い |')
+  lines.push('| ⚠️ | ページに到達したと判断できない（題名が未到達の目印に当たる／題名から判断できない）。ページを開けていない |')
   lines.push('| — | 未実施（`--only` で除外・ログインしていない・対象のタブが開かれていない） |')
   lines.push('')
   lines.push('「注入」は拡張機能が実際に挿入した要素の数（参考値。判定には使わない）。', '')

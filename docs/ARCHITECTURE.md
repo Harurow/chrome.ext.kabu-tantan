@@ -79,9 +79,16 @@ scripts/selector-check/load-selectors.mjs
 1. 検出用セレクタは `const menuSelectors = [ … ]` という名前の配列に置く（1ファイル1箇所）
 2. トップレベルで実行するのは `$(() => …)` の登録だけ。DOM・ネットワークに触れない
 3. 各要素は `{ title, selector }` を持つ（楽天は `url`、TradingView は `key` を追加で持つ）
+4. **検出用セレクタは `body` / `html` を起点にしない**（`body` / `html` に付いたクラス・属性を条件に使わない）。
+   他の Chrome 拡張が印を付ける場所であり、サイト側のクラスと誤認すると
+   その拡張を入れている環境でしか動かないセレクタになる（CON-11、SPEC-CS-21）
+5. 検出用セレクタに**既知の他拡張クラス**（`vsc-initialized` など）を含めない（同上）
 
 読み込み順を `npm run validate` で守るのと同じ発想で、この契約は `npm test`
 （`tests/selector-defs.spec.mjs`）で守る。
+
+実 DOM を見てセレクタを起こすときは、**株リンクだけを入れた Chrome** で開くこと。
+他の拡張が付けたクラスをサイト側のものと取り違えた実例がある（`657f366` の `body.vsc-initialized`）。
 
 > 見た目を合わせるための**模倣用クラス**（TradingView の `item-WSeXSXQB` 等）は
 > `menuSelectors` に入れない。壊れても機能は消えないため検証対象外（FR-12）。

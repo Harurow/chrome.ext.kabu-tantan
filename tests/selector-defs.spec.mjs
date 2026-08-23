@@ -10,8 +10,9 @@ import { spawn } from 'node:child_process'
 import { test, expect } from '@playwright/test'
 import { lint } from 'markdownlint-cli2/markdownlint/promise'
 import jsoncParse from 'markdownlint-cli2/parsers/jsonc'
-import { loadMenuSelectors, indexByKey, rootDir } from '../scripts/selector-check/load-selectors.mjs'
+import { loadMenuSelectors, indexByKey, resolveSite, rootDir } from '../scripts/selector-check/load-selectors.mjs'
 import { sites } from '../scripts/selector-check/targets.mjs'
+import { checkTargetAsync, BROKEN, UNREACHED } from '../scripts/selector-check/check.mjs'
 import {
   planPrefixTracking,
   summarizeTracking,
@@ -19,14 +20,22 @@ import {
   describeElements,
   isSuspiciousToken,
   formatTitle,
+  judgeReach,
+  decideReach,
   sanitize,
   URL_PLACEHOLDER,
   MAX_STAGES,
   MAX_TOKEN,
   MAX_TEXT,
+  TITLE_EMPTY,
   TITLE_WITHHELD,
   TOKEN_WITHHELD,
-  TRACKING_UNAVAILABLE
+  TRACKING_UNAVAILABLE,
+  REACH_NOT_EVALUATED,
+  REACH_NOT_CONSULTED,
+  REACH_REACHED,
+  REACH_UNREACHED,
+  REACH_UNKNOWN
 } from '../scripts/selector-check/diagnostics.mjs'
 import { renderReport } from '../scripts/selector-check/report.mjs'
 
@@ -91,6 +100,50 @@ test.describe('セレクタ定義', () => {
       expect(Object.keys(site), `${site.label}`).not.toContain('selector')
       for (const target of site.targets) {
         expect(Object.keys(target), `${site.label}: ${target.key}`).not.toContain('selector')
+      }
+    }
+  })
+
+  // --- CON-11 のガード（SPEC-CS-21 の G1・G2） -----------------------------
+  // 他の拡張機能が `<body>` / `<html>` に付けるクラスを検出用セレクタに取り込むと、
+  // その拡張を入れていない環境では常に 0 件になる（`body.vsc-initialized` の実例）。
+  // 画面上は「何も起きない」だけで気づけないため、ここで機械的に止める。
+
+  test('どの検出用セレクタも body / html を起点にしない', () => {
+    // 起点の判定。カンマ区切りの断片ごとに先頭トークンを見る
+    const startsAtRoot = /^\s*(body|html)\b/i
+    // 起点でなくても `body.foo` / `html[dir]` のように条件を付けた時点で同じ危険がある
+    const qualifiedRoot = /(^|[\s>+~,(])(body|html)[.#[:]/i
+
+    for (const site of sites) {
+      for (const entry of loadMenuSelectors(site.source)) {
+        const where = `${site.source}: ${entry.title}`
+        for (const fragment of entry.selector.split(',')) {
+          expect(startsAtRoot.test(fragment), `${where} の断片 "${fragment.trim()}"`).toBe(false)
+        }
+        expect(qualifiedRoot.test(entry.selector), `${where}`).toBe(false)
+      }
+    }
+  })
+
+  test('どの検出用セレクタにも既知の他拡張クラスが現れない', () => {
+    // 名前の列挙は原理的に網羅できない。上の G1（位置で弾く）の補助として置く。
+    // 実例を観測したらここに足す
+    const FOREIGN_EXTENSION_CLASSES = [
+      'vsc-initialized', // Video Speed Controller（実際に混入していた）
+      'grammarly-', // Grammarly
+      'gsc-', // Google 系ウィジェット
+      '__web-inspector', // DevTools 系
+      'translated-ltr', // Google 翻訳
+      'translated-rtl', // Google 翻訳
+      'darkreader' // Dark Reader
+    ]
+
+    for (const site of sites) {
+      for (const entry of loadMenuSelectors(site.source)) {
+        for (const name of FOREIGN_EXTENSION_CLASSES) {
+          expect(entry.selector.toLowerCase(), `${site.source}: ${entry.title}`).not.toContain(name)
+        }
       }
     }
   })
@@ -196,7 +249,6 @@ const baseResult = {
   hits: 1,
   injectedHits: 0,
   notes: [],
-  extra: [],
   diagnostics: null
 }
 
@@ -358,7 +410,9 @@ test.describe('手がかり', () => {
       hits: 0,
       notes: ['先頭の `div#line1` が 0 件'],
       diagnostics: {
-        title: '楽天証券｜ログイン',
+        // 目印1（`/^エラー(\s|[|｜]|$)/`）に当たる実測値。判定は実装と揃える（SPEC-SC-23 / 24）
+        title: 'エラー | 楽天証券[PC]',
+        reach: REACH_UNREACHED,
         headings: ['h1#logo'],
         containers: ['div#str-header', 'div#str-main'],
         tracking: {
@@ -372,7 +426,8 @@ test.describe('手がかり', () => {
     }]))
 
     expect(report).toContain('### 国内株式・株価検索の手がかり')
-    expect(report).toContain('| 到達先の題名 | 楽天証券｜ログイン |')
+    // セル内の `|` は `\|` に置き換えて出る（report.mjs の cell()）
+    expect(report).toContain('| 到達先の題名 | エラー \\| 楽天証券[PC] |')
     expect(report).toContain('| 見出し | `h1#logo` |')
     expect(report).toContain('| 主要コンテナ | `div#str-header`, `div#str-main` |')
     expect(report).toContain('プレフィックス追跡（ページ識別セレクタ）')
@@ -388,6 +443,7 @@ test.describe('手がかり', () => {
       hits: 0,
       diagnostics: {
         title: TITLE_WITHHELD,
+        reach: REACH_UNKNOWN,
         headings: [],
         containers: [],
         tracking: {
@@ -404,6 +460,168 @@ test.describe('手がかり', () => {
     expect(empty).toContain('| 主要コンテナ | （0件） |')
     expect(empty).toContain(TITLE_WITHHELD)
     expect(empty).toContain(TRACKING_UNAVAILABLE)
+  })
+
+  // --- 到達判定 (SPEC-SC-24 / FR-22) --------------------------------------
+
+  test('judgeReach() が 2026-08-23 の実データを分ける', () => {
+    // 実データ: ツールがエラー画面に飛ばされた4ページ（⚠️ のまま）
+    expect(judgeReach('エラー | 楽天証券[PC]'))
+      .toEqual({ reached: false, reason: REACH_UNREACHED })
+
+    // 実データ: 到達できているのに ⚠️ になっていたページ（⚠️ → ❌ に再分類される）
+    expect(judgeReach('国内株式トップ | 株価検索 | 国内株式トップ | 国内株式 | 楽天証券[PC]'))
+      .toEqual({ reached: true, reason: REACH_REACHED })
+
+    // 実データ: SBI証券のポートフォリオ
+    expect(judgeReach('ポートフォリオ｜SBI証券').reached).toBe(true)
+
+    // 未観測の備え（ログイン画面・メンテナンス・英語 UI）
+    expect(judgeReach('ログイン｜楽天証券').reached).toBe(false)
+    expect(judgeReach('システムメンテナンスのお知らせ').reached).toBe(false)
+    expect(judgeReach('Sign in — TradingView').reached).toBe(false)
+
+    // 目印は前方一致で見る。語を含むだけの正常な題名を未到達にしない
+    expect(judgeReach('エラーコードの調べ方｜楽天証券').reached).toBe(true)
+    expect(judgeReach('ログイン履歴｜SBI証券').reached).toBe(true)
+  })
+
+  test('題名が空・不記録のときは到達とみなさない', () => {
+    // 「反証が無い」のではなく「判断材料が無い」ので ⚠️ のままにする (ADR-0006 の 2)
+    for (const title of [TITLE_EMPTY, TITLE_WITHHELD, '', '   ']) {
+      expect(judgeReach(title), JSON.stringify(title))
+        .toEqual({ reached: false, reason: REACH_UNKNOWN })
+    }
+
+    // formatTitle() の出力をそのまま渡しても同じ結論になる
+    expect(judgeReach(formatTitle('')).reached).toBe(false)
+    expect(judgeReach(formatTitle('楽天証券;BV_SessionID=abc')))
+      .toEqual({ reached: false, reason: REACH_UNKNOWN })
+  })
+
+  test('decideReach() が5値を返し分ける', () => {
+    const reached = '国内株式トップ | 株価検索 | 楽天証券[PC]'
+
+    // 1. 件数を数えられなかった（検証用 jQuery 未注入・セレクタ評価の例外）。
+    //    ここが「識別セレクタがヒットした」と出ていたのが 1.12.2 の誤り (ADR-0006 の 6-1)
+    for (const counts of [
+      { pageHits: null, hits: null },   // 遷移前に評価できなかった
+      { pageHits: 0, hits: null },      // 識別は数えられたが検出用の評価で例外
+      { pageHits: null, hits: 0 },      // 識別の評価で例外
+      { pageHits: undefined, hits: 0 },
+      { pageHits: 0, hits: Number.NaN },
+      { pageHits: '0', hits: 0 }        // 数値でなければ件数として扱わない
+    ]) {
+      const decided = decideReach({ ...counts, title: reached })
+      expect(decided, JSON.stringify(counts)).toEqual({ reclassify: false, reason: REACH_NOT_EVALUATED })
+      // 事実に反する文言（識別がヒットした）を出さない
+      expect(decided.reason).not.toBe(REACH_NOT_CONSULTED)
+    }
+
+    // 2. 両方が数値で、どちらかが 1 件以上 → 題名を見ない
+    for (const counts of [
+      { pageHits: 1, hits: 1 },   // ✅
+      { pageHits: 1, hits: 0 },   // ❌（識別はヒットした）
+      { pageHits: 0, hits: 24 }   // 識別セレクタが誤っている (SPEC-SC-05)
+    ]) {
+      expect(decideReach({ ...counts, title: reached }), JSON.stringify(counts))
+        .toEqual({ reclassify: false, reason: REACH_NOT_CONSULTED })
+    }
+
+    // 3. ともに 0 件で、どの目印にも当たらない → ⚠️ → ❌ に再分類する（ここだけ true）
+    expect(decideReach({ pageHits: 0, hits: 0, title: reached }))
+      .toEqual({ reclassify: true, reason: REACH_REACHED })
+
+    // 4. ともに 0 件で、目印に当たった → ⚠️ のまま
+    expect(decideReach({ pageHits: 0, hits: 0, title: 'エラー | 楽天証券[PC]' }))
+      .toEqual({ reclassify: false, reason: REACH_UNREACHED })
+
+    // 5. ともに 0 件で、題名が空・不記録 → 判断材料が無いので ⚠️ のまま
+    for (const title of [TITLE_EMPTY, TITLE_WITHHELD, '']) {
+      expect(decideReach({ pageHits: 0, hits: 0, title }), JSON.stringify(title))
+        .toEqual({ reclassify: false, reason: REACH_UNKNOWN })
+    }
+
+    // 5値がすべて別の文言であること（読み手が区別できる）
+    expect(new Set([REACH_NOT_EVALUATED, REACH_NOT_CONSULTED, REACH_REACHED, REACH_UNREACHED, REACH_UNKNOWN]).size)
+      .toBe(5)
+  })
+
+  // 再分類の配線 (SPEC-SC-24)。`decideReach()` の判断ではなく
+  // 「呼ばれた時点の記号」で再分類が起きるかを、`checkTargetAsync()` を通して確かめる。
+  // ブラウザは使わず、Playwright の Frame を模したスタブを渡す
+
+  /**
+   * Frame のスタブ。`evaluate(fn, arg)` を **引数の形** で分岐する。
+   * - 文字列 → セレクタの件数（`countAsync` / `countStageAsync`）
+   * - `{ ignoredTags }` → 題名・見出し・主要コンテナ（`collectRawAsync`）
+   * @param { { hits: Record<string, number>, title: string, throwOn?: string } } stub
+   */
+  const stubFrame = ({ hits, title, throwOn }) => ({
+    evaluate: async (_fn, arg) => {
+      if (arg && typeof arg === 'object') {
+        return { title, headings: [], containers: [] }
+      }
+      if (arg === throwOn) {
+        return { error: 'Syntax error, unrecognized expression' }
+      }
+      return { count: hits[arg] ?? 0 }
+    }
+  })
+
+  /** 楽天証券の1対象を、リポジトリの実データ（targets.mjs + menuSelectors）のまま検証に流す */
+  const runTargetAsync = async (stub) => {
+    const site = sites.find((item) => item.site === 'rakuten')
+    const { target, entry } = resolveSite(site).find((item) => item.target.key === '国内株式・個別銘柄')
+    const frame = stubFrame(stub)
+    const runner = {
+      page: { waitForTimeout: async () => {} },
+      // reach を 'after' に差し替えて遷移を省く。判定の配線はそのまま通る
+      lastFrame: frame,
+      session: ''
+    }
+    return {
+      entry,
+      result: await checkTargetAsync(runner, site, { ...target, reach: 'after' }, entry, new Map())
+    }
+  }
+
+  const RECLASSIFIED_NOTE = 'ページ識別セレクタは 0 件だが、題名から到達と判断した'
+
+  test('識別・検出がともに 0 件の ⚠️ は題名から ❌ に再分類され、根拠が1行付く', async () => {
+    const { entry, result } = await runTargetAsync({
+      hits: {},   // 識別・検出・注入すべて 0 件
+      title: '国内株式トップ | 株価検索 | 楽天証券[PC]'
+    })
+
+    expect(result.status).toBe(BROKEN)
+    expect(result.pageHits).toBe(0)
+    expect(result.hits).toBe(0)
+    expect(result.diagnostics.reach).toBe(REACH_REACHED)
+    expect(result.notes).toContain(RECLASSIFIED_NOTE)
+    // 再分類後は検出用セレクタを追う (SPEC-SC-21)
+    expect(result.diagnostics.tracking.source).toBe('検出用セレクタ')
+    expect(entry.selector).toContain('div#line1')
+  })
+
+  test('セレクタ評価の例外で ❌ になった対象には再分類の根拠を付けない', async () => {
+    // 識別・検出は 0 件で数えられたが、注入の評価で例外 → judge() を通らずに ❌ になる経路。
+    // `pageHits` / `hits` が 0 のまま残るため decideReach() は条件3（再分類）を返すが、
+    // 呼ばれた時点で ⚠️ ではないので **何も再分類していない**。根拠の1行を付けてはならない
+    const { result } = await runTargetAsync({
+      hits: {},
+      title: '国内株式トップ | 株価検索 | 楽天証券[PC]',
+      throwOn: 'span.x-kabu-root'
+    })
+
+    expect(result.status).toBe(BROKEN)
+    expect(result.status).not.toBe(UNREACHED)
+    expect(result.pageHits).toBe(0)
+    expect(result.hits).toBe(0)
+    expect(result.injectedHits).toBeNull()
+    expect(result.reason).toBe('セレクタの評価に失敗した')
+    expect(result.notes).not.toContain(RECLASSIFIED_NOTE)
+    expect(result.notes.join(' ')).toContain('Syntax error')
   })
 })
 
@@ -440,6 +658,7 @@ test.describe('結果ファイルの書式', () => {
         diagnostics: {
           // 題名・記述子は伏せ字（`<withheld>`）になる形を入れる
           title: TITLE_WITHHELD,
+          reach: REACH_UNKNOWN,
           headings: describeElements([{ tag: 'div', id: 'form_BV_SessionID_kJqRnB', classes: [] }]),
           containers: describeElements([{ tag: 'div', id: 'str-main', classes: ['550e8400-e29b-41d4-a716-446655440000'] }]),
           tracking: {
@@ -461,7 +680,9 @@ test.describe('結果ファイルの書式', () => {
         hits: 0,
         notes: [`手がかりを採れなかった: ${sanitize(gotoError)}`],
         diagnostics: {
+          // ページ識別セレクタがヒットした ❌ なので、題名は見ずに判定している
           title: '楽天証券｜国内株式・株価検索',
+          reach: REACH_NOT_CONSULTED,
           headings: describeElements([{ tag: 'h1', id: 'logo', classes: [] }]),
           containers: describeElements([{ tag: 'div', id: 'str-header', classes: [] }]),
           tracking: {
@@ -487,5 +708,60 @@ test.describe('結果ファイルの書式', () => {
     const { content } = await lint({ strings: { content: report }, config: markdownlintConfig() })
     const violations = content.map((v) => `${v.lineNumber}: ${v.ruleNames.join('/')} ${v.errorDetail ?? ''}`.trim())
     expect(violations, report).toEqual([])
+  })
+
+  test('手がかり節に到達判定の行が必ず1行出る', async () => {
+    /** 到達判定だけを変えた手がかりを作る */
+    const diagnostics = (title, reach) => ({
+      title,
+      reach,
+      headings: ['h1.hdg-l1-01-title'],
+      containers: ['div#str-main'],
+      tracking: {
+        source: reach === REACH_REACHED ? '検出用セレクタ' : 'ページ識別セレクタ',
+        mode: 'prefix',
+        rows: [{ selector: 'div#line1', hits: 0 }],
+        omitted: false,
+        unavailable: null
+      }
+    })
+
+    const report = renderReport(reportInput([
+      {
+        // 題名が未到達の目印に当たった対象（⚠️ のまま）
+        ...baseResult,
+        key: 'エラー画面に飛ばされた対象',
+        title: 'エラー画面に飛ばされた対象',
+        status: 'unreached',
+        pageHits: 0,
+        hits: 0,
+        diagnostics: diagnostics('エラー | 楽天証券[PC]', REACH_UNREACHED)
+      },
+      {
+        // 識別 0 件でも題名から到達と判断して再分類した対象（⚠️ → ❌）
+        ...baseResult,
+        key: '題名から到達と判断した対象',
+        title: '題名から到達と判断した対象',
+        status: 'broken',
+        pageHits: 0,
+        hits: 0,
+        notes: ['ページ識別セレクタは 0 件だが、題名から到達と判断した'],
+        diagnostics: diagnostics('国内株式トップ | 株価検索 | 楽天証券[PC]', REACH_REACHED)
+      }
+    ]))
+
+    // ⚠️ と ❌ の両方にちょうど1行ずつ出る (FR-22 判定基準6)
+    const rows = report.split('\n').filter((line) => line.startsWith('| 到達判定 |'))
+    expect(rows).toHaveLength(2)
+    expect(rows[0]).toContain(REACH_UNREACHED)
+    expect(rows[1]).toContain(REACH_REACHED)
+
+    // 再分類の根拠は備考にも残る（❌ の行を「識別セレクタはヒットした」と誤読させない）
+    expect(report).toContain('ページ識別セレクタは 0 件だが、題名から到達と判断した')
+    // 判定の読み方も到達判定に合わせた文面になっている
+    expect(report).toContain('| ❌ | **ページに到達したと判断できるのに**検出用セレクタが 0 件。サイト改修でセレクタが壊れた疑い |')
+
+    const { content } = await lint({ strings: { content: report }, config: markdownlintConfig() })
+    expect(content.map((v) => `${v.lineNumber}: ${v.ruleNames.join('/')}`), report).toEqual([])
   })
 })

@@ -66,6 +66,6 @@ const menuSelectors = [
   },
   {
     title: 'ポートフォリオ',
-    selector: 'body.vsc-initialized div.middleArea2 div.middleAreaM2 table table table tr td.mtext:nth-of-type(2)'
+    selector: 'div.middleArea2 div.middleAreaM2 table table table tr td.mtext:nth-of-type(2)'
   }
 ]

@@ -1,11 +1,11 @@
 /**
- * 1対象の検証と判定 (SPEC-SC-09, 10, 11, 12)。
+ * 1対象の検証と判定・再分類 (SPEC-SC-09, 10, 11, 24)。
  *
  * ここが持ってよいのは「件数・判定・例外メッセージ」だけ。
  * ページ本文・URL・認証情報は取得も記録もしない (SPEC-SC-14 / NFR-12)。
  */
 
-import { attachDiagnosticsAsync, sanitize } from './diagnostics.mjs'
+import { collectFactsAsync, attachTrackingAsync, decideReach, sanitize } from './diagnostics.mjs'
 
 // 消毒（URL を潰し 120 文字で切る）の実装は diagnostics.mjs にある。
 // 手がかりの整形と同じ関数を通す必要があるため、ここからは再輸出だけを行う (SPEC-SC-14)
@@ -22,6 +22,12 @@ const DEFAULT_SETTLE_MS = 2000
 
 /** jQuery が入っていないフレームを踏んだときの目印（セレクタ破損と区別する） */
 class JQueryMissingError extends Error {}
+
+/** 到達判定で ⚠️ → ❌ に再分類した根拠 (SPEC-SC-24) */
+const RECLASSIFIED_NOTE = 'ページ識別セレクタは 0 件だが、題名から到達と判断した'
+
+/** 利用者データが 0 件でも同じ観測になる対象への注意書き (SPEC-SC-10 の補足規則) */
+const USER_DATA_NOTE = '利用者データ（お気に入り・保有銘柄）が 0 件でも同じ結果になる。登録状況を確認すること'
 
 /**
  * 同梱 jQuery を検証用に読み込む初期化スクリプトを作る (SPEC-SC-09)。
@@ -108,15 +114,18 @@ const createResult = (site, target, entry) => ({
   hits: null,
   injectedHits: null,
   notes: [],
-  extra: [],
   // ⚠️/❌ のときだけ手がかりが入る (SPEC-SC-20)
   diagnostics: null
 })
 
 /**
- * 判定を決める (SPEC-SC-10)
+ * 判定を決める (SPEC-SC-10)。
+ *
+ * ここで決まるのは**暫定判定**で、⚠️ は後段の到達判定で ❌ に変わりうる (SPEC-SC-24)。
+ * そのため `requiresUserData` の注意書きはここでは付けない。
+ * 付ける場所は再分類まで終わった後の1箇所（`noteUserData()`）。
  */
-const judge = (result, target) => {
+const judge = (result) => {
   if (result.pageHits > 0 && result.hits > 0) {
     result.status = OK
   } else if (result.pageHits > 0 && result.hits === 0) {
@@ -129,39 +138,9 @@ const judge = (result, target) => {
     result.notes.push('ページ識別セレクタの見直しが必要')
   }
 
-  if (result.status === BROKEN && target.requiresUserData) {
-    result.notes.push('利用者データ（お気に入り・保有銘柄）が 0 件でも同じ結果になる。登録状況を確認すること')
-  }
   if (result.status === OK && result.hits > 0 && result.injectedHits === 0) {
     result.notes.push('セレクタはヒットするが注入が 0 件。待機時間・設定・例外を疑う')
   }
-}
-
-/** SPEC-SC-12 SBI証券ポートフォリオの追加検査 */
-const inspectVscInitializedAsync = async (frame, result) => {
-  const hasClass = await frame.evaluate(() => document.body.classList.contains('vsc-initialized'))
-  // 「外したセレクタ」は元のセレクタから機械的に作る（文字列を書き写さない。NFR-13）
-  const stripped = result.selector.replace(/^body\.vsc-initialized\s+/, '')
-  const strippedHits = stripped === result.selector ? null : await countAsync(frame, stripped)
-
-  let conclusion
-  if (strippedHits === null) {
-    conclusion = 'セレクタが `body.vsc-initialized` で始まっていない（この検査は不要になった）'
-  } else if (hasClass && result.hits > 0 && strippedHits > 0) {
-    conclusion = '現状は動く。ただし他拡張が付けるクラスに依存している'
-  } else if (!hasClass && result.hits === 0 && strippedHits > 0) {
-    conclusion = '`body.vsc-initialized` への依存が原因。セレクタから外すべき'
-  } else if (!hasClass && result.hits === 0 && strippedHits === 0) {
-    conclusion = 'SBI 側の DOM 変更。別途調査'
-  } else {
-    conclusion = '想定した組み合わせに当てはまらない。件数を見て判断する'
-  }
-
-  result.extra.push(
-    { label: '`body.vsc-initialized`', value: hasClass ? '付与されている' : '付与されていない' },
-    { label: '`body.vsc-initialized` を外したセレクタ', value: strippedHits === null ? '—' : `${strippedHits} 件` },
-    { label: '結論', value: conclusion }
-  )
 }
 
 /**
@@ -280,11 +259,8 @@ export const checkTargetAsync = async (runner, site, target, entry, resolved) =>
     result.hits = await countAsync(frame, entry.selector)
     result.injectedHits = await countAsync(frame, target.injected ?? site.injected)
 
-    judge(result, target)
+    judge(result)
 
-    if (target.extra === 'vsc-initialized') {
-      await inspectVscInitializedAsync(frame, result)
-    }
     if (target.extra === 'tv-symbol') {
       const prefix = await detectSymbolPrefixAsync(frame, entry.selector)
       result.notes.push(prefix
@@ -304,13 +280,74 @@ export const checkTargetAsync = async (runner, site, target, entry, resolved) =>
     }
   }
 
-  // ⚠️/❌ の対象からだけ原因切り分けの手がかりを採る (SPEC-SC-20)。
-  // 1対象につき1回だけで、判定はこの内容で変えない
+  // ⚠️/❌ の対象からだけ原因切り分けの手がかりを採る (SPEC-SC-20)。1対象につき1回だけ。
+  // 順序は「facts 採取 → 到達判定と再分類 → プレフィックス追跡」で固定する (SPEC-SC-24)。
+  // 追跡するセレクタは**確定した判定**で決まるため、再分類を追跡より前に置く必要がある
   if (frame && (result.status === BROKEN || result.status === UNREACHED)) {
-    await attachDiagnosticsAsync(frame, result, trackingSourceOf(result, target, entry))
+    await collectFactsAsync(frame, result)
+    const reclassified = reclassifyByReach(result)
+    await attachTrackingAsync(frame, result, trackingSourceOf(result, target, entry))
+
+    // 備考の並びは「追跡の要約 → 再分類の根拠 → 利用者データの注意書き」＝事実 → 判断 → 注意 (SPEC-SC-24)。
+    // 再分類そのものは追跡より前に済ませる必要があるため、根拠の1行だけをここまで遅らせる
+    if (reclassified) {
+      result.notes.push(RECLASSIFIED_NOTE)
+    }
   }
 
+  noteUserData(result, target)
+
   return result
+}
+
+/**
+ * ❌ に確定した対象にだけ利用者データの注意書きを付ける (SPEC-SC-10 の補足規則)。
+ *
+ * ❌ に確定する経路は `judge()` / 再分類 (SPEC-SC-24) / セレクタ評価の例外 の3つある。
+ * **経路を問わず1回だけ**付けるために、すべての経路が合流するここ1箇所で行う。
+ *
+ * 再分類の経路でこそ効く。`requiresUserData: true` の4対象はページ識別セレクタ自体がデータ表なので、
+ * 登録が 0 件だと識別・検出がともに 0 件になり、題名は正常なページのものになる＝再分類にそのまま当たる。
+ */
+const noteUserData = (result, target) => {
+  if (result.status === BROKEN && target.requiresUserData) {
+    result.notes.push(USER_DATA_NOTE)
+  }
+}
+
+/**
+ * 到達判定の結果を書き戻し、⚠️ → ❌ を再分類する (SPEC-SC-24)。
+ *
+ * 「識別 0 件」だけで未到達と決めない。ページ識別セレクタは検出用セレクタの祖先なので
+ * 両者は相関し、根元から壊れると識別も必ず 0 件になる (SPEC-SC-05)。
+ * 適用条件の判断と文言の選択は純関数 `decideReach()` に閉じてあり、**ここは書き戻すだけ**。
+ *
+ * 再分類した対象に `ページ識別セレクタの見直しが必要` は付けない。
+ * 付けると破損のたびに誤った指摘が出る (SPEC-SC-05)。
+ *
+ * @returns { boolean } 再分類したか（根拠の1行は追跡の後に足すため呼び出し側へ返す）
+ */
+const reclassifyByReach = (result) => {
+  if (!result.diagnostics) {
+    return false
+  }
+
+  const { reclassify, reason } = decideReach({
+    pageHits: result.pageHits,
+    hits: result.hits,
+    title: result.diagnostics.title
+  })
+  result.diagnostics.reach = reason
+
+  // 再分類は「⚠️ を ❌ に変える」操作なので、呼ばれた時点で ⚠️ の対象にだけ効かせる。
+  // セレクタ評価の例外で既に ❌ になっている対象は `judge()` を通っておらず
+  // `pageHits` / `hits` が 0 のまま残るため、条件3に当たって
+  // 「何も再分類していないのに根拠が付く」ことがあった (SPEC-SC-24)
+  if (reclassify && result.status === UNREACHED) {
+    result.status = BROKEN
+    return true
+  }
+  return false
 }
 
 /**

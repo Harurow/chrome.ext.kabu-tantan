@@ -26,7 +26,7 @@ const RAKUTEN_FAVORITES_HTML = page$('お気に入り', `<body>
 
 // sbi-cs.js: menuSelectors「ポートフォリオ」
 const SBI_PORTFOLIO_URL = 'https://site1.sbisec.co.jp/ETGate/?_ControlID=WPLETpfR001Control'
-const SBI_PORTFOLIO_HTML = page$('ポートフォリオ', `<body class="vsc-initialized">
+const SBI_PORTFOLIO_HTML = page$('ポートフォリオ', `<body>
   <div class="middleArea2"><div class="middleAreaM2">
     <table><tbody><tr><td>
       <table><tbody><tr><td>

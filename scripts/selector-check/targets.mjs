@@ -120,10 +120,8 @@ export const sites = [
         key: 'ポートフォリオ',
         reach: 'tab',
         frameUrl: 'sbisec.co.jp/ETGate',
-        // `body.vsc-initialized` は含めない。含めると SPEC-SC-12 の切り分けができなくなる
         pageSelectors: ['div.middleArea2 div.middleAreaM2'],
-        settleMs: 500,
-        extra: 'vsc-initialized'
+        settleMs: 500
       }
     ]
   },
