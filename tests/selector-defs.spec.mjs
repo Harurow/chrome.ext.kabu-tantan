@@ -443,7 +443,8 @@ test.describe('手がかり', () => {
       hits: 0,
       diagnostics: {
         title: TITLE_WITHHELD,
-        reach: REACH_UNKNOWN,
+        // 識別が 1 件ヒットしているので、実装は題名を見ない (SPEC-SC-24 の条件2)
+        reach: REACH_NOT_CONSULTED,
         headings: [],
         containers: [],
         tracking: {
@@ -555,12 +556,19 @@ test.describe('手がかり', () => {
    * Frame のスタブ。`evaluate(fn, arg)` を **引数の形** で分岐する。
    * - 文字列 → セレクタの件数（`countAsync` / `countStageAsync`）
    * - `{ ignoredTags }` → 題名・見出し・主要コンテナ（`collectRawAsync`）
-   * @param { { hits: Record<string, number>, title: string, throwOn?: string } } stub
+   *
+   * `jqueryMissing: true` は検証用 jQuery が入っていないフレームを模す。
+   * 件数を数える経路だけが `{ missing: true }` を返し、題名の採取（素の DOM API）は成立する
+   * ＝実サイトで `addInitScript` の効かないフレームを踏んだときと同じ観測になる。
+   * @param { { hits: Record<string, number>, title: string, throwOn?: string, jqueryMissing?: boolean } } stub
    */
-  const stubFrame = ({ hits, title, throwOn }) => ({
+  const stubFrame = ({ hits, title, throwOn, jqueryMissing }) => ({
     evaluate: async (_fn, arg) => {
       if (arg && typeof arg === 'object') {
         return { title, headings: [], containers: [] }
+      }
+      if (jqueryMissing) {
+        return { missing: true }
       }
       if (arg === throwOn) {
         return { error: 'Syntax error, unrecognized expression' }
@@ -621,7 +629,48 @@ test.describe('手がかり', () => {
     expect(result.injectedHits).toBeNull()
     expect(result.reason).toBe('セレクタの評価に失敗した')
     expect(result.notes).not.toContain(RECLASSIFIED_NOTE)
-    expect(result.notes.join(' ')).toContain('Syntax error')
+    // 例外由来の ❌ は「接頭辞の無い消毒済み例外メッセージ」で他の2経路と読み分ける (ADR-0006 の 6-4)。
+    // 接頭辞が付くと読み分けが成り立たなくなるため、要素の完全一致で固定する
+    expect(result.notes).toContain('Syntax error, unrecognized expression')
+  })
+
+  test('検証用 jQuery が未注入の対象は ⚠️ のままで、❌ の読み分けを壊さない', async () => {
+    // ADR-0006 の 6-4：❌ の経路（`judge()` / 再分類 / セレクタ評価の例外）は
+    // **備考に接頭辞なしの例外メッセージが載るか**で読み分ける。
+    // 接頭辞なしで積まれるメッセージはもう1つ（`検証用 jQuery が注入されていない`）あり、
+    // その読み分けは「こちらは必ず ⚠️ に落ちて ❌ の行には現れない」ことに依存している。
+    // 未注入では件数を数え切れないため `decideReach()` の条件1（`REACH_NOT_EVALUATED`）に落ち、
+    // 再分類されない ── この性質が破れたら 6-4 の (a) は成り立たず (b) を採り直す判断が要る
+    const { result } = await runTargetAsync({
+      hits: {},
+      // 題名は正常なページのもの。題名だけ見れば「到達」だが、件数が無いので判断に使わない
+      title: '国内株式トップ | 株価検索 | 楽天証券[PC]',
+      jqueryMissing: true
+    })
+
+    // セレクタ破損（❌）ではなく未到達（⚠️）に落ちる (SPEC-SC-09)
+    expect(result.status).toBe(UNREACHED)
+    expect(result.status).not.toBe(BROKEN)
+    expect(result.reason).toBe('検証できなかった')
+
+    // 件数を1つも数え切れていない = `decideReach()` の条件1
+    expect(result.pageHits).toBeNull()
+    expect(result.hits).toBeNull()
+    expect(result.injectedHits).toBeNull()
+    expect(result.diagnostics.reach).toBe(REACH_NOT_EVALUATED)
+    // 題名を見た他の文言に化けていないこと（事実に反する根拠を出さない。ADR-0006 の 6-1）
+    expect(result.diagnostics.reach).not.toBe(REACH_REACHED)
+    expect(result.diagnostics.reach).not.toBe(REACH_NOT_CONSULTED)
+
+    // 備考には接頭辞の無い例外メッセージがそのまま載る（要素の完全一致で固定する）
+    expect(result.notes).toContain('検証用 jQuery が注入されていない')
+    // 再分類は起きていないので根拠の1行は付かない
+    expect(result.notes).not.toContain(RECLASSIFIED_NOTE)
+
+    // 追跡も未注入で行えないが、こちらは専用の固定文言なので読み分けの目印を汚さない
+    expect(result.notes).toContain(TRACKING_UNAVAILABLE)
+    // ⚠️ の対象はページ識別セレクタを追う (SPEC-SC-21)
+    expect(result.diagnostics.tracking.source).toBe('ページ識別セレクタ')
   })
 })
 

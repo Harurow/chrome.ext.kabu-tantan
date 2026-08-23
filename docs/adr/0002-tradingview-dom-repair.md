@@ -5,7 +5,7 @@
 | 状態 | 採択（2026-08-23）。**実装済み（1.10.1）** |
 | 対象 | FR-04, FR-07, FR-12, NFR-13, CON-02, CON-03 |
 | 仕様 | [SPEC-CS-11 / 12 / 15 / 16](../specs/content-scripts.md), [SPEC-TC-07](../specs/ticker-code.md), [SPEC-EL-09](../specs/external-links.md) |
-| 発端 | `npm run check:selectors` が TradingView の4対象中2対象を破損と判定（[SELECTOR-CHECK.md](../SELECTOR-CHECK.md)）。lead が実 DOM を確認 |
+| 発端 | `npm run check:selectors` が TradingView の4対象中2対象を破損と判定（1回目版 `git show 6fb2511:docs/SELECTOR-CHECK.md`。**1.10.1 で修正済みのため現在の結果ファイルには残っていない**）。lead が実 DOM を確認 |
 
 ---
 

@@ -145,7 +145,8 @@ URL による絞り込みは**行わない**。両セレクタを常に試す。
 > これは SBI証券が出力するクラスではなく、**Video Speed Controller（別の Chrome 拡張）が
 > `<body>` に付けるクラス**で、当該拡張を入れていない環境では常に 0 件になっていた（CON-11）。
 > **1.12.2 で先頭の `body.vsc-initialized` と直後の空白だけを削った。以降は 1 文字も変えていない。**
-> 削った文字列は 2026-08-23 の実サイト実測で 24 件ヒットしている（`docs/SELECTOR-CHECK.md`）。
+> 削った文字列は 2026-08-23 の実サイト実測で 24 件ヒットしている
+> （3回目版 `git show e0d3c5e:docs/SELECTOR-CHECK.md`。SPEC-SC-13「引用にはリビジョンを添える」）。
 > 同種の混入が他に無いことの点検と再発防止は SPEC-CS-21。
 
 - 要件: FR-03, FR-21, CON-11
@@ -1022,7 +1023,7 @@ TradingView だけ、起動時に DOM を追加する処理（`createKabuLinkMen
 | 事実 | 出所 |
 | --- | --- |
 | 12ページ中このページだけ、利用者の目視でメニューが出ない | 利用者の実機確認 |
-| **同じ検出用セレクタ**を使う「国内株式・個別銘柄」は ✅（識別 1 / ヒット 1 / 注入 1） | `docs/SELECTOR-CHECK.md` |
+| **同じ検出用セレクタ**を使う「国内株式・個別銘柄」は ✅（識別 1 / ヒット 1 / 注入 1） | 3回目版（`git show e0d3c5e:docs/SELECTOR-CHECK.md`） |
 | 検証ツールの判定は ⚠️（識別 0 / ヒット 0）。ツールも到達できていない | 同上 |
 | 楽天証券の Content Script だけが `location.href.indexOf(url) !== -1` でページを絞る（SPEC-CS-07） | `src/rakuten-cs.js` |
 | 楽天証券の注入設定に `all_frames` が無い。iframe 内には注入されない | `src/manifest.json`（SPEC-MF-06） |
