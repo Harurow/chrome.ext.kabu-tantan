@@ -1,0 +1,15 @@
+{
+  // ドキュメントの書式規則。VS Code の markdownlint 拡張とコマンドラインの両方が読む。
+  "config": {
+    "default": true,
+    // 表・URL・コードを含む行は長くなる。折り返しを強制しない
+    "MD013": false,
+    // 表の区切り行は `| --- |` で統一する（MD060 の style 判定ブレ対策）
+    "MD060": { "style": "compact" },
+    // README.md 内で `*` と `-` が混在している（既存の書き方）。統一は別途
+    "MD004": false,
+    // 表のセル内改行に <br> を使う（Markdown 表には他に手段が無い）
+    "MD033": { "allowed_elements": ["br"] }
+  },
+  "ignores": ["node_modules/**", "src/third-party/**", "dist/**", "test-results/**"]
+}

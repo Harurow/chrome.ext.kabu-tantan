@@ -2,7 +2,7 @@
 
 ## 構成
 
-```
+```text
 docs/
 ├── requirements/       要件定義 — 「何を満たすべきか」
 │   ├── background.md       背景・目的・スコープ
@@ -20,8 +20,9 @@ docs/
 │   └── options-page.md     SPEC-OP  オプションページ
 ├── ARCHITECTURE.md     実装構造・同梱ライブラリの更新手順
 ├── WORKFLOW.md         開発フロー・エージェント・コミットゲート
-├── TESTING.md          テスト方針・手法
+├── TESTING.md          テスト方針・3層の切り分け
 ├── TEST-CATALOG.md     テスト一覧（自動生成）
+├── MANUAL-CHECKLIST.md 手動確認チェックリスト（利用者が実施）
 ├── images/             README 用スクリーンショット
 └── zenn/               記事化用の作業ログ
 ```
@@ -29,7 +30,7 @@ docs/
 ## 使い分け
 
 | | 書くもの | 書かないもの |
-|---|---|---|
+| --- | --- | --- |
 | **requirements/** | 満たすべきこと。実現手段は問わない | 実装方法、具体的なセレクタ |
 | **specs/** | **今そうなっている**こと。実装と1対1 | やりたいこと、将来の構想 |
 | **ARCHITECTURE.md** | なぜその作りなのか、変更時の手順 | 個々の機能仕様 |
@@ -39,7 +40,7 @@ docs/
 
 ## 追跡関係
 
-```
+```text
 要件 (FR-xx / NFR-xx / CON-xx)
   └─ 仕様 (SPEC-xx-nn)
        └─ テスト (tests/*.spec.mjs) または 手動確認手順
@@ -52,7 +53,7 @@ docs/
 ## ID 採番規則
 
 | 接頭辞 | 対象 | 例 |
-|--------|------|-----|
+| --- | --- | --- |
 | `FR-` | 機能要件 | `FR-01` |
 | `NFR-` | 非機能要件 | `NFR-01` |
 | `CON-` | 制約条件 | `CON-01` |
@@ -65,7 +66,7 @@ docs/
 `.claude/agents/` に役割を分けて定義してある。詳細は [WORKFLOW.md](WORKFLOW.md)。
 
 | エージェント | 役割 | 書き換えてよい場所 |
-|-------------|------|------------------|
+| --- | --- | --- |
 | `lead` | 全体調整。工程を回す | なし |
 | `analyst` | 利用者と対話して要件を決める | `docs/requirements/` |
 | `architect` | 要件から設計・仕様を起こす | `docs/specs/`, `docs/ARCHITECTURE.md` |

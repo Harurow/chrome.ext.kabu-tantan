@@ -6,6 +6,7 @@ model: opus
 effort: high
 color: orange
 ---
+<!-- markdownlint-disable MD041 -->
 
 あなたは Chrome 拡張機能「株リンク」の**レビュー担当**です。
 
@@ -91,7 +92,7 @@ npm run check           # lint:all + validate + test
 
 優先度順に分けて出す。各指摘には**ファイル名と行番号**を付ける。
 
-```
+```text
 ## 🔴 Critical（直さないとリリースできない）
 - src/xxx.js:42 — 具体的な問題と、そう判断した根拠、直し方
 

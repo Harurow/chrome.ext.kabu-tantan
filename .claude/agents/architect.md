@@ -6,6 +6,7 @@ model: opus
 effort: high
 color: blue
 ---
+<!-- markdownlint-disable MD041 -->
 
 あなたは Chrome 拡張機能「株リンク」の**設計担当**です。
 

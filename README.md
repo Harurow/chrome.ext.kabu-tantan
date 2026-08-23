@@ -24,7 +24,7 @@
 
 対応URL
 
-```
+```text
 https://*.rakuten-sec.co.jp/*
 https://hs.trkd-asia.com/rakutensecscr/*
 ```
@@ -39,7 +39,7 @@ https://hs.trkd-asia.com/rakutensecscr/*
 
 対応URL
 
-```
+```text
 https://*.sbisec.co.jp/ETGate/*
 https://*.sbi.ifis.co.jp/*
 https://graph.sbisec.co.jp/sbiscreener/*
@@ -57,7 +57,7 @@ https://graph.sbisec.co.jp/sbiscreener/*
 
 対応URL
 
-```
+```text
 https://jp.tradingview.com/*
 ```
 
@@ -136,19 +136,20 @@ npm run approve     # レビュー承認を記録する（コミットに必須�
 ### ドキュメント
 
 | | |
-|---|---|
+| --- | --- |
 | 開発ガイド（規約・注意事項） | [CLAUDE.md](CLAUDE.md) |
 | ドキュメント索引 | [docs/README.md](docs/README.md) |
 | 開発フロー・エージェント | [docs/WORKFLOW.md](docs/WORKFLOW.md) |
 | 要件定義 | [docs/requirements/](docs/requirements/) |
 | 仕様書 | [docs/specs/](docs/specs/) |
 | アーキテクチャ | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
-| テスト方針・手動確認手順 | [docs/TESTING.md](docs/TESTING.md) |
+| テスト方針・3層の切り分け | [docs/TESTING.md](docs/TESTING.md) |
 | **テスト一覧（何をテストしているか）** | [docs/TEST-CATALOG.md](docs/TEST-CATALOG.md) |
+| 手動確認チェックリスト | [docs/MANUAL-CHECKLIST.md](docs/MANUAL-CHECKLIST.md) |
 
 ### テスト
 
-拡張機能を実際に Chromium へロードして検証する Playwright テストが **27件**あります。
+拡張機能を実際に Chromium へロードして検証する Playwright テストが **29件**あります。
 証券会社へのログインは不要です（`context.route()` で対象オリジンにフィクスチャを返すため）。
 
 内訳と、それぞれが何を守っているかは [docs/TEST-CATALOG.md](docs/TEST-CATALOG.md) を参照してください。
@@ -157,4 +158,4 @@ npm run approve     # レビュー承認を記録する（コミットに必須�
 
 MIT License — [LICENSE](LICENSE)
 
-ソースは公開しています: https://github.com/Harurow/chrome.ext.kabu-tantan
+ソースは公開しています: <https://github.com/Harurow/chrome.ext.kabu-tantan>

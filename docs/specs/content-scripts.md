@@ -14,7 +14,7 @@ $(() => {
 ```
 
 | Content Script | 待機 | MutationObserver |
-|---------------|------|-----------------|
+| --- | --- | --- |
 | `rakuten-cs.js` | 500ms | なし |
 | `rakuten-scr-cs.js` | 500ms | あり |
 | `sbi-cs.js` | 500ms | なし |
@@ -91,7 +91,7 @@ $(() => {
 `location.href` に `url` が含まれるものだけを適用する。
 
 | 対象 | URL 部分一致 | セレクタ |
-|------|-------------|---------|
+| --- | --- | --- |
 | お気に入り | `/app/info_jp_prc_reg_lst.do;` | `form#form table.tbl-data-01 td.align-C div.mbody nobr` |
 | お気に入り編集 | `/app/info_jp_prc_reg_lst_edit.do;` | `form table.tbl-data-01 td.align-C div.mbody nobr` |
 | 保有商品一覧・すべて | `/app/ass_all_possess_lst.do;` | `div#table_possess_data table.tbl-bold-border tr > td:contains("国内株式") + td` |
@@ -127,7 +127,7 @@ $(() => {
 URL による絞り込みは**行わない**。両セレクタを常に試す。
 
 | 対象 | セレクタ |
-|------|---------|
+| --- | --- |
 | 個別銘柄 | `div#main div.mgt15 div.trHead01 table.tbl01 tr.vaT td.tdL H3 span.fm01 span.normal` |
 | ポートフォリオ | `body.vsc-initialized div.middleArea2 div.middleAreaM2 table table table tr td.mtext:nth-of-type(2)` |
 
@@ -170,6 +170,13 @@ URL による絞り込みは**行わない**。両セレクタを常に試す。
 - クリックで全画面の透明レイヤー `ktt-tv-menuBack` を敷き、その上にメニューを出す
 - 背景クリックまたはキー入力でキャンセルする
 - チャートの `canvas` の属性変化を監視し、銘柄コードが取れないときはボタンを隠す
+- `tradingview.com` で始まるキーは除外する（SPEC-CS-11 と同じ）
+- **米国株でも `url3` の有無で絞り込まない**（SPEC-CS-11 と異なる）。
+  米国株非対応のサイトも項目として並び、クリックすると `makeUrl(undefined, code)` で
+  例外になり何も開かない
+
+> 既知の不整合: 右クリックメニュー（SPEC-CS-11）は `url3` で絞るが、ボタンメニューは絞らない。
+> FR-07「米国株に対応しないサイトは出さない」を満たしていない。修正候補。
 
 - 要件: FR-04, CON-08
 - 検証: `manual`（**自動テスト対象外**）
@@ -177,7 +184,7 @@ URL による絞り込みは**行わない**。両セレクタを常に試す。
 ## SPEC-CS-13 スタイルのクラス接頭辞
 
 | 接頭辞 | 用途 | 定義ファイル |
-|--------|------|------------|
+| --- | --- | --- |
 | `x-kabu-` | 楽天・SBI のメニュー | `src/style.css` |
 | `ktt-tv-` | TradingView のボタン・レイヤー | `src/tradingview-cs.css` |
 

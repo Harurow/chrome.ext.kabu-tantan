@@ -28,7 +28,7 @@ npm run approve       # レビュー承認を記録する（コミットに必�
 ```
 
 > `npm run check` は lint + validate + テスト + **テストカタログの陳腐化検査**を行う。
-
+>
 > **コミットは、テスト全件が通り、かつ reviewer のレビューが通るまでできない。**
 > `.claude/hooks/commit-gate.sh` が機械的にブロックする。詳細は [docs/WORKFLOW.md](docs/WORKFLOW.md)。
 
@@ -42,7 +42,7 @@ npm run approve       # レビュー承認を記録する（コミットに必�
 
 ## アーキテクチャ
 
-```
+```text
 src/                        ← このディレクトリがそのまま拡張機能
 ├── manifest.json           # マニフェスト (v3)
 ├── service_worker.js       # バックグラウンド Service Worker
@@ -79,7 +79,7 @@ docs/
 ```
 
 | レイヤー | ファイル | 役割 |
-|---------|---------|------|
+| --- | --- | --- |
 | Service Worker | `service_worker.js` | コンテキストメニュー管理、メッセージハブ、タブ操作 |
 | 共有モジュール | `urls.js`, `linkMenu.js` | URL 定義・生成、メニュー DOM 生成 |
 | Content Script | `*-cs.js` | 各サイトへのメニュー注入 |
@@ -90,7 +90,7 @@ docs/
 ### ドキュメントの役割分担
 
 | ディレクトリ | 書くもの | 担当エージェント |
-|-------------|---------|----------------|
+| --- | --- | --- |
 | `docs/requirements/` | **満たすべきこと**（FR / NFR / CON） | analyst |
 | `docs/specs/` | **今そうなっていること**（SPEC-xx）。実装と1対1 | architect |
 | `src/`, `tests/` | 実装 | developer |
@@ -103,7 +103,7 @@ docs/
 `.claude/agents/` に役割を分けて定義してある。**役割をまたぐ変更をしない。**
 
 | エージェント | 役割 | 書き換えてよい場所 |
-|-------------|------|------------------|
+| --- | --- | --- |
 | `lead` | 全体調整。工程を回す | なし |
 | `analyst` | 利用者と対話して要件を決める | `docs/requirements/` |
 | `architect` | 要件から設計・仕様を起こす | `docs/specs/`, `docs/ARCHITECTURE.md` |
@@ -123,7 +123,7 @@ docs/
 `chrome.runtime.sendMessage` / `onMessage` で通信する。
 
 | type | 用途 |
-|------|------|
+| --- | --- |
 | `rakuten-sec:info` | 楽天証券のセッションIDから個別銘柄 URL を取得 |
 | `rakuten-sec:open` | 上記 URL を新しいタブで開く |
 | `naito-sec:info` | 内藤証券の個別銘柄 URL を取得 |
@@ -178,7 +178,7 @@ docs/
 ### 命名規則
 
 | 対象 | 規則 | 例 |
-|------|------|-----|
+| --- | --- | --- |
 | 関数（非同期） | `camelCase` + `Async` | `getEnableLinkKeysAsync()` |
 | 定数 | `UPPER_SNAKE_CASE` または `camelCase` | `menuSelectors` |
 | jQuery 要素 | `$` プレフィックス | `$menu` |
@@ -235,7 +235,7 @@ async function attachAsync () {
 Playwright で拡張機能を実際に Chromium へロードして検証する。詳細は [docs/TESTING.md](docs/TESTING.md)。
 
 | ファイル | 対象 |
-|---------|------|
+| --- | --- |
 | `tests/service-worker.spec.mjs` | `getTickerCode` / `compareVersion` / `makeUrl` / `externalUrls` の整合性 |
 | `tests/options.spec.mjs` | オプションページの表示・保存・並び替え・外部リクエスト有無 |
 | `tests/content-script.spec.mjs` | 楽天・SBI へのメニュー注入（フィクスチャ HTML を実オリジンで差し替え） |
@@ -245,7 +245,9 @@ Playwright で拡張機能を実際に Chromium へロードして検証する�
 
 **TradingView は自動テスト対象外。** DOM がハッシュ付きクラス名で頻繁に変わるため、
 フィクスチャ化しても実サイトとの乖離を検出できない。
-変更時は [docs/TESTING.md](docs/TESTING.md) の手動確認手順に従う。
+変更時は [docs/MANUAL-CHECKLIST.md](docs/MANUAL-CHECKLIST.md) に従って利用者に確認を依頼する。
+
+検証の切り分け（自動 / 半自動 / 手動）は [docs/TESTING.md](docs/TESTING.md) を参照。
 
 ## 注意事項
 

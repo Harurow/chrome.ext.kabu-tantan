@@ -24,7 +24,7 @@
 ## SPEC-MSG-02 メッセージ一覧
 
 | type | data (要求) | data (応答) | 動作 |
-|------|------------|------------|------|
+| --- | --- | --- | --- |
 | `rakuten-sec:info` | `{ code, type }` | `{ rakutenUrl: string \| null }` | 楽天証券 URL を返すだけ |
 | `rakuten-sec:open` | `{ code, type }` | `{ rakutenUrl: string \| null }` | URL を返し、かつ新しいタブで開く |
 | `naito-sec:info` | `{ code, type }` | `{ naitoUrl: string \| null }` | 内藤証券 URL を返すだけ |
@@ -41,7 +41,7 @@
 `onMessage` ハンドラは以下を返す。
 
 | type | 戻り値 | 理由 |
-|------|--------|------|
+| --- | --- | --- |
 | `rakuten-sec:*` / `naito-sec:*` | `true` | 非同期で `sendResponse` するためチャネルを保持する |
 | `open-url` | `false` | 応答を待たない |
 | 未知の type | `false` | 何もしない |

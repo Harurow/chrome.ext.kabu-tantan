@@ -16,8 +16,8 @@
   "scripts": {
     "lint": "eslint .",
     "lint:css": "stylelint \"src/**/*.css\"",
-    "lint:all": "npm run lint && npm run lint:css",
-    "fix": "eslint . --fix && stylelint \"src/**/*.css\" --fix",
+    "lint:all": "npm run lint && npm run lint:css && npm run lint:md",
+    "fix": "eslint . --fix && stylelint \"src/**/*.css\" --fix && markdownlint-cli2 --fix \"docs/**/*.md\" \"*.md\" \".claude/**/*.md\"",
     "validate": "node scripts/validate-manifest.mjs",
     "package": "node scripts/package.mjs",
     "test": "playwright test",
@@ -26,11 +26,13 @@
     "check": "npm run lint:all && npm run validate && npm test && npm run docs:tests:check",
     "docs:tests": "node scripts/test-catalog.mjs",
     "approve": "node scripts/approve.mjs",
-    "docs:tests:check": "node scripts/test-catalog.mjs --check"
+    "docs:tests:check": "node scripts/test-catalog.mjs --check",
+    "lint:md": "markdownlint-cli2 \"docs/**/*.md\" \"*.md\" \".claude/**/*.md\""
   },
   "devDependencies": {
     "@playwright/test": "^1.57.0",
     "eslint": "^9.39.5",
+    "markdownlint-cli2": "^0.23.2",
     "neostandard": "^0.13.0",
     "stylelint": "^17.14.1",
     "stylelint-config-recess-order": "^7.8.0",

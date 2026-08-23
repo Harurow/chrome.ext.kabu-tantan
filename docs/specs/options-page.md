@@ -5,7 +5,7 @@
 ## SPEC-OP-01 開き方
 
 | 経路 | 実装 |
-|------|------|
+| --- | --- |
 | 拡張機能アイコンをクリック | `chrome.action.onClicked` → `openOptionsPage()` |
 | 初回インストール / 1.0.9 未満からの更新 | `chrome.runtime.onInstalled` → `openOptionsPage()` |
 | `chrome://extensions` の「拡張機能のオプション」 | `manifest.options_page` |
@@ -101,7 +101,7 @@ linkList.sortable({ axis: 'y', handle: '.handle', distance: 8, update: … })
 ## SPEC-OP-08 保存ボタンの表示制御
 
 | 状態 | クラス |
-|------|--------|
+| --- | --- |
 | 変更なし（初期） | `scale-out`（非表示） |
 | トグル変更 or 並び替え後 | `scale-in`（表示） |
 | 保存完了後 | `scale-out`（非表示） |
@@ -134,7 +134,7 @@ linkList.sortable({ axis: 'y', handle: '.handle', distance: 8, update: … })
 オプションページは**外部ホストへ一切リクエストしない**。
 
 | かつての依存 | 現在 |
-|-------------|------|
+| --- | --- |
 | `fonts.googleapis.com`（Material Icons） | `material-icons.css` + 同梱 woff2 |
 | `static.tradingview.com`（favicon バッジ） | Material Icons の `show_chart` |
 | `img.shields.io`（Zenn バッジ） | テキストリンク |
@@ -147,7 +147,7 @@ linkList.sortable({ axis: 'y', handle: '.handle', distance: 8, update: … })
 Material Icons をサブセット化して同梱する（32KB）。使用アイコンは4種。
 
 | アイコン | 用途 |
-|---------|------|
+| --- | --- |
 | `save` | 保存ボタン |
 | `open_in_new` | サイトを開くリンク |
 | `drag_handle` | 並び替えハンドル |
@@ -161,7 +161,7 @@ Material Icons をサブセット化して同梱する（32KB）。使用アイ�
 ファイル配置:
 
 | ファイル | 位置 | 理由 |
-|---------|------|------|
+| --- | --- | --- |
 | `material-icons.css` | `src/` | **自作の CSS**。Stylelint の検査対象 |
 | `material-icons.woff2` | `src/third-party/` | Google 提供のフォント本体（Apache License 2.0） |
 

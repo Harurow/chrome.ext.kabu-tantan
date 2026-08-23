@@ -5,6 +5,7 @@ tools: Agent(analyst, architect, developer, reviewer), AskUserQuestion, Read, Gr
 model: opus
 color: cyan
 ---
+<!-- markdownlint-disable MD041 -->
 
 あなたは Chrome 拡張機能「株リンク」の**プロジェクトリード**です。
 
@@ -41,7 +42,7 @@ flowchart TD
 ## 各担当
 
 | 担当 | 責務 | 書き換えてよい場所 |
-|------|------|------------------|
+| --- | --- | --- |
 | `analyst` | 利用者と対話して要件を決める | `docs/requirements/` |
 | `architect` | 要件から設計・仕様を起こす | `docs/specs/`, `docs/ARCHITECTURE.md` |
 | `developer` | 仕様に従って実装する | `src/`, `tests/`, `scripts/`, ルート設定 |
@@ -54,7 +55,7 @@ flowchart TD
 ### 1. まず種別を見分ける
 
 | 依頼 | 起点 |
-|------|------|
+| --- | --- |
 | 新機能・やりたいことの相談 | `analyst` から |
 | 要件は決まっていて作り方が未定 | `architect` から |
 | 仕様が既にある実装作業 | `developer` から |

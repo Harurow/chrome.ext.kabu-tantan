@@ -34,7 +34,7 @@ Service Worker のグローバルスコープに入る。
 ## SPEC-SW-03 再構築の契機
 
 | イベント | 動作 |
-|---------|------|
+| --- | --- |
 | `chrome.runtime.onInstalled` | 再構築 |
 | `chrome.runtime.onStartup` | 再構築 |
 | `chrome.storage.onChanged` | 再構築 |
@@ -80,7 +80,7 @@ compareVersion(details.previousVersion, '1.0.9') < 0
 3. セッション ID があれば銘柄ページ URL を組み立てる
 
 | type | URL |
-|------|-----|
+| --- | --- |
 | `jp` | `https://member.rakuten-sec.co.jp/app/info_jp_prc_stock.do;BV_SessionID=<id>?eventType=init&dscrCd=<code>&…` |
 | `us` | `https://member.rakuten-sec.co.jp/app/info_us_prc_stock.do;BV_SessionID=<id>?eventType=init&tickerCd=<code>&…` |
 

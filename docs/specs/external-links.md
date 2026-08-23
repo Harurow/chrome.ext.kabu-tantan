@@ -7,7 +7,7 @@
 `externalUrls` は以下の形の配列。**配列の順序がオプション画面の初期表示順になる。**
 
 | フィールド | 必須 | 用途 |
-|-----------|------|------|
+| --- | --- | --- |
 | `key` | ✓ | 一意識別子。`chrome.storage.sync` に保存される（SPEC-ST-01） |
 | `title` | ✓ | メニュー・オプション画面での表示名 |
 | `url0` | ✓ | サイトのトップページ。オプション画面の「開く」リンク先 |
@@ -34,7 +34,7 @@ storage に残った未知の `key` を無視する（SPEC-ST-03）。
 `makeUrl(urlTemplate, code, exchange)` がプレースホルダを展開する。
 
 | プレースホルダ | 展開結果 | 使用箇所 |
-|---------------|---------|---------|
+| --- | --- | --- |
 | `${code}` | 銘柄コードそのもの | `url1` / `url2` / `url3` |
 | `${code:0}` | 銘柄コードの先頭1文字 | `url1`（株Biz の階層 URL） |
 | `${exchange}` | 取引所コード（`NASDAQ` / `NYSE`） | `url2` のみ |
@@ -61,7 +61,7 @@ storage に残った未知の `key` を無視する（SPEC-ST-03）。
 ## SPEC-EL-06 登録済みサイト一覧（22件）
 
 | # | key | title | url1 | 米国株 |
-|---|-----|-------|------|--------|
+| --- | --- | --- | --- | --- |
 | 1 | `tradingview.com/chart` | TradingView/スーパーチャート | `https://jp.tradingview.com/chart/?symbol=TSE%3A${code}` | ✓ |
 | 2 | `minkabu.jp/stock` | MINKABU/株価情報トップ | `https://minkabu.jp/stock/${code}` | ✓ |
 | 3 | `kabutan.jp/stock` | 株探/基本情報 | `https://kabutan.jp/stock/?code=${code}` | ✓ |

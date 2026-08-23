@@ -7,7 +7,7 @@
 ## 一覧
 
 | ID | ファイル | 対象 | 主な実装 |
-|----|---------|------|---------|
+| --- | --- | --- | --- |
 | `SPEC-MF` | [manifest.md](manifest.md) | 拡張機能の宣言・権限・注入先 | `src/manifest.json` |
 | `SPEC-EL` | [external-links.md](external-links.md) | 遷移先サイト定義と URL 生成 | `src/urls.js` |
 | `SPEC-TC` | [ticker-code.md](ticker-code.md) | 銘柄コードの判定規則 | `src/service_worker.js`, `src/*-cs.js` |
@@ -27,7 +27,7 @@
 ## 検証方法の表記
 
 | 表記 | 意味 |
-|------|------|
+| --- | --- |
 | `auto` | `npm test` で自動検証される。テスト名を併記 |
 | `lint` | `npm run lint:all` で検出される |
 | `validate` | `npm run validate` で検証される |

@@ -28,7 +28,7 @@ flowchart TD
 ### 処理の流れ
 
 | # | きっかけ | 動き |
-|---|---------|------|
+| --- | --- | --- |
 | 1 | 利用者がオプションページで設定を保存 | `chrome.storage.sync` に `enableLinkKeys` を書く |
 | 2 | storage が変わった | Service Worker が `onChanged` で検知し、コンテキストメニューを作り直す |
 | 3 | 対象サイトを開いた | Content Script が storage を読み、銘柄コードにメニューを注入する |
@@ -68,13 +68,13 @@ ESLint 側は `eslint.config.mjs` の `sharedGlobals` でこれらをグロー�
 `urls.js` のプレースホルダは `makeUrl()` が展開する。
 
 | プレースホルダ | 展開結果 |
-|---------------|---------|
+| --- | --- |
 | `${code}` | 銘柄コードそのもの |
 | `${code:0}` | 銘柄コードの先頭1文字（株Biz の階層 URL 用） |
 | `${exchange}` | 取引所コード（`NASDAQ` / `NYSE`）。`url2` でのみ使う |
 
 | フィールド | 用途 |
-|-----------|------|
+| --- | --- |
 | `url0` | トップページ。オプション画面の「開く」リンク |
 | `url1` | 国内株（必須） |
 | `url2` | 米国株・取引所コードあり（任意） |
@@ -97,7 +97,7 @@ Chrome ウェブストア審査ではこの用途を明示する必要がある�
 ## 同梱ライブラリ (`src/third-party/`)
 
 | ファイル | ライブラリ | バージョン | 用途 |
-|---------|-----------|-----------|------|
+| --- | --- | --- | --- |
 | `jquery.min.js` | jQuery | 4.0.0 | 全 Content Script / オプション |
 | `jquery-ui.min.js` | jQuery UI | 1.14.2 | オプション画面の `sortable` のみ |
 | `materialize.min.css` | @materializecss/materialize | 2.3.3 | オプション画面のスタイル（CSS のみ） |
@@ -136,7 +136,7 @@ npm test   # 差し替え後は必ず実行する
 ## ファイル変更時の影響範囲
 
 | 変更ファイル | 影響 |
-|-------------|------|
+| --- | --- |
 | `src/urls.js` | 全 Content Script + Service Worker + オプションページ |
 | `src/linkMenu.js` | 楽天・SBI の Content Script |
 | `src/service_worker.js` | コンテキストメニュー、メッセージ通信全体 |

@@ -6,7 +6,7 @@
 ## 0. 作業前の状態
 
 | 項目 | 状態 |
-|------|------|
+| --- | --- |
 | 最終コミット | `1525309 moomoo証券対応` |
 | `npm run lint` | **212 errors で完全に赤** |
 | `npm audit` | **14件 (high 10 / moderate 4)** |
@@ -134,7 +134,7 @@ html.theme-dark div.apply-common-tooltip.button-hw_3o_pb.ktt-tv-linkButton { ...
 （picomatch, postcss, semver, word-wrap, yaml）で、**配布物には含まれない**。
 実リスクは低いが、まとめて解消した。
 
-```
+```text
 ESLint    8.43   → 9.39.5     (eslint-config-standard → neostandard)
 Stylelint 14.16  → 17.14.1
 npm audit 14件   → 0件
@@ -142,7 +142,7 @@ npm audit 14件   → 0件
 
 **ハマりどころ:** ESLint 10 に上げようとしたら `neostandard` が peer で弾いた。
 
-```
+```text
 npm error Could not resolve dependency:
 npm error peer eslint@"^9.0.0" from neostandard@0.13.0
 ```
@@ -159,7 +159,7 @@ neostandard の ESLint 10 対応は prerelease (`0.14.0-next.1`) のみだった
 
 ここで**依存の落とし穴**を踏んだ。最初に選んだ `stylelint-config-idiomatic-order@10.0.0` は、
 
-```
+```text
 $ npm ls stylelint-order
 ├─┬ stylelint-config-idiomatic-order@10.0.0
 │ └── stylelint-order@6.0.4        ← peer: stylelint ^14 || ^15 || ^16
@@ -184,7 +184,7 @@ $ npm ls stylelint-order
 ### 4-2. 同梱ライブラリ
 
 | ライブラリ | Before | After |
-|-----------|--------|-------|
+| --- | --- | --- |
 | jQuery | 3.7.0 | **4.0.0** |
 | jQuery UI | 1.13.1 | **1.14.2** |
 | Materialize | 1.0.0 (Dogfalo) | **@materializecss/materialize 2.3.3** |
@@ -383,7 +383,7 @@ await context.route('https://member.rakuten-sec.co.jp/app/info_jp_prc_reg_lst.do
 ### ハマったところ
 
 | 症状 | 原因 | 対処 |
-|------|------|------|
+| --- | --- | --- |
 | `Cannot use 'import.meta' outside a module` | `package.json` に `type: module` が無く `.js` が CJS 扱い | テストを `.mjs` にリネーム |
 | `Element is outside of the viewport` | Materialize のスイッチは `input` を視覚的に隠している | `span.lever` をクリックする |
 | アイコン幅の assert が落ちる | `.s1` は Grid のカラム幅で、グリフ幅ではない | `document.fonts.check()` で判定 |
@@ -394,7 +394,7 @@ await context.route('https://member.rakuten-sec.co.jp/app/info_jp_prc_reg_lst.do
 
 ## 9. フォルダ構成とスクリプト整備
 
-```
+```text
 Before                      After
 ├── etc/screen-*.png    →   ├── docs/images/screen-*.png
 ├── src.zip (残骸)      →   ├── (削除、dist/ に出力)
@@ -429,7 +429,7 @@ Before                      After
 ## 10. 作業後の状態
 
 | 項目 | Before | After |
-|------|--------|-------|
+| --- | --- | --- |
 | `npm run lint` | 212 errors | ✅ 0 |
 | `npm run lint:css` | 5 errors | ✅ 0 |
 | `npm audit` | 14件 | ✅ 0件 |

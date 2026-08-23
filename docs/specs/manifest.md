@@ -5,7 +5,7 @@
 ## SPEC-MF-01 基本情報
 
 | 項目 | 値 |
-|------|-----|
+| --- | --- |
 | `manifest_version` | 3 |
 | `name` | `__MSG_app_title__`（= 株リンク） |
 | `description` | `__MSG_app_description__` |
@@ -32,7 +32,7 @@
 `host_permissions` は宣言しない。
 
 | 権限 | 用途 |
-|------|------|
+| --- | --- |
 | `tabs` | 楽天証券・内藤証券のログイン済みタブの URL からセッション情報を読む（SPEC-SW-06/07） |
 | `contextMenus` | 選択文字列に対する右クリックメニューの追加（SPEC-SW-02） |
 | `storage` | 利用サイトと並び順の保存（SPEC-ST-01） |
@@ -65,7 +65,7 @@
 全 5 エントリ。`matches` はすべて `https://` のみ。
 
 | # | matches | all_frames | css | js（この順に読み込む） |
-|---|---------|-----------|-----|----------------------|
+| --- | --- | --- | --- | --- |
 | 0 | `https://*.rakuten-sec.co.jp/*` | false | `style.css` | jquery → `urls.js` → `linkMenu.js` → `rakuten-cs.js` |
 | 1 | `https://hs.trkd-asia.com/rakutensecscr/*` | **true** | `style.css` | jquery → `urls.js` → `linkMenu.js` → `rakuten-scr-cs.js` |
 | 2 | `https://*.sbisec.co.jp/ETGate/*`<br>`https://*.sbi.ifis.co.jp/*` | false | `style.css` | jquery → `urls.js` → `linkMenu.js` → `sbi-cs.js` |
@@ -81,7 +81,7 @@
 ## SPEC-MF-07 CSS の注入先
 
 | CSS | 注入先 |
-|-----|--------|
+| --- | --- |
 | `style.css` | 楽天証券・楽天スクリーナー・SBI証券・SBIスクリーナー |
 | `tradingview-cs.css` | TradingView のみ |
 

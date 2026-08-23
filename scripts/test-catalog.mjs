@@ -87,7 +87,7 @@ for (const [file, rows] of byFile) {
   lines.push(`\`tests/${file}\` — ${rows.length} 件`, '')
   if (info.detail) lines.push(info.detail, '')
   lines.push(`対応する仕様: ${info.specs}`, '')
-  lines.push('| # | グループ | テスト |', '|---|---------|--------|')
+  lines.push('| # | グループ | テスト |', '| --- | --- | --- |')
 
   rows.forEach((r, i) => {
     lines.push(`| ${i + 1} | ${r.group || '—'} | ${r.title} |`)
@@ -104,14 +104,14 @@ for (const [file, rows] of byFile) {
 
 lines.push('## 回帰テストとして重要なもの', '')
 lines.push('壊れたときに気づきにくい問題を固定しているテスト。**消さないこと。**', '')
-lines.push('| テスト | 何を守っているか |', '|--------|----------------|')
+lines.push('| テスト | 何を守っているか |', '| --- | --- |')
 for (const r of regressionRows) {
   lines.push(`| ${r.label} | ${r.why} |`)
 }
 lines.push('')
 
 lines.push('## 対象外', '')
-lines.push('| 対象 | 理由 |', '|------|------|')
+lines.push('| 対象 | 理由 |', '| --- | --- |')
 lines.push('| TradingView (`tradingview-cs.js`) | DOM がハッシュ付きクラス名で毎リリース変わる。フィクスチャ化しても実サイトとの乖離を検出できない (CON-08) |')
 lines.push('| 楽天証券・内藤証券のセッション連携 | ログイン済みタブが前提のため自動化していない (CON-04) |')
 lines.push('| 楽天スーパースクリーナー / SBI銘柄スクリーニング | MutationObserver + iframe 前提で再現コストが見合わない |')

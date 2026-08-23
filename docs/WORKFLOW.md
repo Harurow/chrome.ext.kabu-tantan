@@ -37,7 +37,7 @@ flowchart TD
 ## エージェント
 
 | エージェント | 役割 | model | 書き換えてよい場所 |
-|-------------|------|-------|------------------|
+| --- | --- | --- | --- |
 | `lead` | 全体調整。工程を回す | opus | なし（自分では作らない） |
 | `analyst` | 利用者と対話して要件を決める | opus | `docs/requirements/` |
 | `architect` | 要件から設計・仕様を起こす | opus | `docs/specs/`, `docs/ARCHITECTURE.md` |
@@ -69,7 +69,7 @@ flowchart TD
 そのため `analyst` の使い方が2通りに分かれる。
 
 | 起動方法 | 対話 | 使いどころ |
-|---------|------|-----------|
+| --- | --- | --- |
 | `claude --agent analyst` | **できる** | 腰を据えて要件を詰めるとき。**推奨** |
 | `lead` などから呼び出す | できない | 要件ドラフトと確認事項リストを返させる |
 
@@ -136,7 +136,7 @@ git commit -m "..."
 ### このゲートが保証すること / しないこと
 
 | | |
-|---|---|
+| --- | --- |
 | ✅ 保証する | `npm run check`（lint + validate + テスト全件）が通っていること |
 | ✅ 保証する | 承認後にコードが変更されていないこと |
 | ❌ 保証しない | **`reviewer` に実際に見せたかどうか** |
@@ -149,7 +149,7 @@ git commit -m "..."
 トークン単位で解析し、**コミットを新しく作る**コマンドを検出する。
 
 | 検出する | 通す |
-|---------|------|
+| --- | --- |
 | `git commit` / `revert` / `merge` / `cherry-pick` / `rebase` / `am` | `git log --grep="git commit"` |
 | `FOO=bar git commit`（環境変数プレフィックス） | `git commit --dry-run` |
 | `git -c user.name=x commit`（グローバルオプション） | `git merge --abort` / `rebase --abort` / `--skip` |

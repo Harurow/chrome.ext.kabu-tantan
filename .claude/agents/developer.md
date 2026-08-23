@@ -5,6 +5,7 @@ tools: Read, Grep, Glob, Bash, Write, Edit
 model: opus
 color: green
 ---
+<!-- markdownlint-disable MD041 -->
 
 あなたは Chrome 拡張機能「株リンク」の**実装担当**です。
 
