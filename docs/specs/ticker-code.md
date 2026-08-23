@@ -124,19 +124,64 @@ text.trim().match(/[0-9][0-9ACDFGHJKLMNPRSTUWXY][0-9][0-9ACDFGHJKLMNPRSTUWXY]/g)
 ## SPEC-TC-07 TradingView でのコード取得
 
 チャートの `canvas[aria-hidden!="true"]` の `aria-label` から取得する。
+`aria-label` は `EXCHANGE:CODE の 1 日 チャート` の形（実測値: `TSE:7203 の 1 日 チャート`）。
 
-| プレフィックス | 判定 | 抽出 |
+> 取引所接頭辞の扱いを 1.10.1 で拡張した。設計判断は [ADR-0002](../adr/0002-tradingview-dom-repair.md) の 2。
+
+### 手順
+
+1. `aria-label` の先頭から `/^([A-Z]+)(_DLY)?:/` で取引所トークンを取り出す
+   （`_DLY` は遅延配信の接尾辞。剥がしてから引く）
+2. トークンを `exchanges`（SPEC-EL-09）で引き、`'jp'` / `'us'` / 未登録 を判定する
+3. 市場ごとに続く銘柄コードを取り出す
+
+   | 市場 | 抽出 | 戻り値 |
+   | --- | --- | --- |
+   | `jp` | `[0-9][0-9ACDFGHJKLMNPRSTUWXY][0-9][0-9ACDFGHJKLMNPRSTUWXY]` | `{ code, type: 'jp' }` |
+   | `us` | `[A-Z]{1,5}` | `{ code, type: 'us' }` |
+   | 未登録の取引所 / `aria-label` 無し / 形が合わない | — | `{ code: null, type: null }` |
+
+### 旧との差分
+
+| | 旧（〜1.10.0） | 新（1.10.1〜） |
 | --- | --- | --- |
-| `TSE:` / `TSE_DLY:` | `jp` | 続く4桁 |
-| `BATS:` | `us` | 続く `[A-Z]{1,5}` |
-| その他 | 取得不可 | `{ code: null, type: null }` |
+| `jp` の接頭辞 | `TSE:` / `TSE_DLY:` を直書き | `exchanges` の `jp` 登録 ＋ `_DLY` 剥がし |
+| `us` の接頭辞 | **`BATS:` のみ** | `exchanges` の `us` 登録（`BATS` / `NASDAQ` / `NYSE` / `AMEX` / `CBOE` / `OTC`） |
+| 利用者 | 「株Link」ボタン（SPEC-CS-12）のみ | ボタン ＋ **右クリックメニュー（SPEC-CS-11）** |
+| canvas の選び方 | 最初にヒットした1件 | 変更なし（複数チャートでは左上のチャートになる。SPEC-CS-11 の既知の制限） |
 
-`TSE_DLY` は東証の遅延配信。
+拡張理由: 右クリックメニューの銘柄取得をここに一本化したため（SPEC-CS-11）。
+ログイン済みで `NASDAQ:` / `NYSE:` のまま表示される場合に `BATS:` 限定では取れない。
 
+### 未ログイン時の TradingView の挙動（2026-08-23 実測）
+
+| URL で指定した銘柄 | `aria-label` |
+| --- | --- |
+| `TSE:7203` | `TSE:7203 …`（遅延配信時は `TSE_DLY:7203 …`） |
+| `NASDAQ:AAPL` | **`BATS:AAPL …`** |
+| `NYSE:IBM` | **`BATS:IBM …`** |
+
+**未ログインでは米国株の提供元が BATS に置き換わる。** 旧実装が `BATS:` だけで足りていたのはこのため。
+ログイン済み（特に有料データ契約あり）で `NASDAQ:` / `NYSE:` のまま出るかは**未確認**。
+`exchanges` に両方を登録してあるため、どちらの表記でも銘柄コードを取得できる。
+
+> `code: null` のとき、ボタンは隠れ（SPEC-CS-12）、右クリックメニューは変更されない（SPEC-CS-11）。
+> **エラーは出さない。**
+>
+> Service Worker 側の `getTickerCode(text)`（SPEC-TC-02〜04）は**この変更の対象外**。
+> 選択文字列から `NYSE:AAPL` を解釈する話（FR-14）は別タスクに残す。
+> ただし取引所の一覧は `exchanges`（SPEC-EL-09）に置くため、FR-14 に着手する際は
+> そこを参照すればよく、一覧を二重に持つ必要はない。
+>
 > サイト側 DOM に強く依存する。TradingView の改修で無言のうちに壊れる。
 
 - 要件: FR-04
-- 検証: `manual`（TradingView でチャートを開き「株Link」ボタンが表示されること）
+- 検証: `auto`（表そのものは SPEC-EL-09 の `urls.js: exchanges` で検査。
+  `aria-label` の解析自体は TradingView 上でしか動かないため自動テスト対象外）／
+  `半自動`（`npm run check:selectors -- --only=tradingview` の `chart-canvas` と
+  `tv-symbol` 追加検査。SPEC-SC-11）／
+  `manual`（`docs/MANUAL-CHECKLIST.md` A-1 / A-7。TradingView にログインして `NASDAQ:AAPL` でも
+  「株Link」ボタンが出ること）
 
 ## SPEC-TC-08 コンテキストメニューでの抽出
 

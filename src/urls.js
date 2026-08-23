@@ -163,6 +163,22 @@ const externalUrls = [
 ]
 
 /**
+ * 取引所コード → 市場種別
+ * TradingView のシンボル表記 `EXCHANGE:CODE` の解釈に使う
+ * 遅延配信の接尾辞 `_DLY`(例 TSE_DLY)は引く前に剥がす。ここには載せない
+ * @type { { [key: string]: string } }
+ */
+const exchanges = {
+  TSE: 'jp',
+  BATS: 'us',
+  NASDAQ: 'us',
+  NYSE: 'us',
+  AMEX: 'us',
+  CBOE: 'us',
+  OTC: 'us'
+}
+
+/**
  * URL連想リスト
  * @type { { [key: string]: { key: string, title: string, url1: string, url2?: string, url3?: string } } }
  */

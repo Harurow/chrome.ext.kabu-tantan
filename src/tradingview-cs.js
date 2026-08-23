@@ -2,6 +2,12 @@ $(() => {
   setTimeout(attach, 500)
 })
 
+/** チャート上で contextmenu が発生してから、メニューの拡張を許す猶予(ミリ秒) */
+const chartContextMenuGraceMs = 1500
+
+/** チャート上で最後に contextmenu が発生した時刻。未発生は 0 */
+let chartContextMenuAt = 0
+
 /**
  * ページを改変するエントリポイント
  */
@@ -14,6 +20,16 @@ const attach = () => {
     }
   })
   bodyObserver.observe(body, { childList: true })
+
+  // 右クリックの起点を記録する
+  // TradingView は右クリック以外でも同じメニュー要素を使うため、
+  // チャート上の右クリック直後だけメニューを拡張する
+  // (ウォッチリスト等から開いたメニューはチャートと別銘柄になりうる)
+  // チャート外を右クリックした場合は記録を捨てる
+  // (直前のチャート右クリックが猶予内に残っていても拡張させない)
+  document.addEventListener('contextmenu', (e) => {
+    chartContextMenuAt = $(e.target).closest('div.chart-gui-wrapper').length > 0 ? Date.now() : 0
+  }, true)
 
   // canvasを監視し属性が変わったら追加したボタンの状態を更新させる
   const canvas = $(selectorOf('chart-canvas'))[0]
@@ -58,23 +74,36 @@ const bodyObserverCallback = () => {
 
 /**
  * メニューを解析して拡張する
+ * 条件を1つでも満たさない場合はDOMを一切変更しない
  */
 const attachMenu = () => {
-  // コンテキストメニューから銘柄コード(数値4桁)を取得する
-  // 銘柄コードが取得できたらメニューを追加する
+  // オーバーラップレイヤーが1つだけ、かつ未追加であること
   const overlapManagerRoot = $(selectorOf('overlap-root'))
   if (overlapManagerRoot.length !== 1 || $('tr[data-kabu-tantan]').length > 0) {
     return
   }
 
-  const ctxMenu = $(selectorOf('context-menu'), overlapManagerRoot)
-  // 選択された銘柄リストからコードを取得
-  const firstMenuItemText = $('tr:first td:eq(1) div span:first', ctxMenu).text()
+  // チャート上の右クリックを起点にしたメニューだけを拡張する
+  if (Date.now() - chartContextMenuAt > chartContextMenuGraceMs) {
+    return
+  }
 
-  if (/^[0-9][0-9ACDFGHJKLMNPRSTUWXY][0-9][0-9ACDFGHJKLMNPRSTUWXY]/.test(firstMenuItemText)) {
-    addTokyoTickerAsync(ctxMenu, firstMenuItemText.slice(0, 4))
-  } else if (/^[A-Z]{1,5}/.test(firstMenuItemText)) {
-    addNewyorkTicker(ctxMenu, firstMenuItemText.match(/^[A-Z]{1,5}/g)[0])
+  // 入れ子メニュー等で2件以上ヒットしうるため、先頭の1件だけを対象にする
+  const ctxMenu = $(selectorOf('context-menu'), overlapManagerRoot).first()
+  if (ctxMenu.length === 0) {
+    return
+  }
+
+  // 銘柄コードはメニューの文言ではなくチャートのcanvasから取得する
+  const { code, type } = getTickerCode()
+  if (code == null) {
+    return
+  }
+
+  if (type === 'jp') {
+    addTokyoTickerAsync(ctxMenu, code)
+  } else if (type === 'us') {
+    addNewyorkTicker(ctxMenu, code)
   }
 }
 
@@ -84,12 +113,12 @@ const attachMenu = () => {
  */
 const makeMenuSeparator = () => {
   return $(`
-  <tr class="row-DFIg7eOh" data-kabu-tantan>
+  <tr class="${tvMimicClasses.separatorRow}" data-kabu-tantan>
     <td>
-      <div class="line-DFIg7eOh"></div>
+      <div class="${tvMimicClasses.separatorLine}"></div>
     </td>
     <td>
-      <div class="line-DFIg7eOh"></div>
+      <div class="${tvMimicClasses.separatorLine}"></div>
     </td>
   </tr>`)
 }
@@ -102,19 +131,17 @@ const makeMenuSeparator = () => {
  */
 const makeMenuItem = (title, url) => {
   return $(`
-  <tr class="item-GJX1EXhk interactive-GJX1EXhk normal-GJX1EXhk">
-    <td class="iconCell-GJX1EXhk" data-icon-cell="true"></td>
+  <tr class="${tvMimicClasses.item}">
+    <td class="${tvMimicClasses.iconCell}" data-icon-cell="true"></td>
     <td>
-      <div class="content-GJX1EXhk">
-        <span class="label-GJX1EXhk" data-label="true">
-          <div class="wrapper-NLkHhUu3">
-            <a style="color: var(--tv-color-popup-element-text); width: 100%;" title="${title}" target="_blank" rel="noopener noreferrer" href="${url}">${title}</a>
-          </div>
+      <div class="${tvMimicClasses.content}">
+        <span class="${tvMimicClasses.label}" data-label="true">
+          <a style="color: var(--tv-color-popup-element-text); width: 100%;" title="${title}" target="_blank" rel="noopener noreferrer" href="${url}">${title}</a>
         </span>
       </div>
     </td>
   </tr>
-  <tr class="subMenu-GJX1EXhk">
+  <tr class="${tvMimicClasses.subMenu}">
     <td></td>
   </tr>`)
     .click(() => {
@@ -129,11 +156,14 @@ const makeMenuItem = (title, url) => {
  * @param {string} code
  */
 const addTokyoTickerAsync = async (ctxMenu, code) => {
+  // 区切り線はawaitの前に付ける
+  // 区切り行が持つdata-kabu-tantanが二重追加のガードになるため、
+  // 応答待ちの間にattachMenu()がもう一度通っても追加されない
+  ctxMenu.append(makeMenuSeparator())
+
   const items = await getEnableLinkKeysAsync()
   const rakutenResponse = await chrome.runtime.sendMessage({ type: 'rakuten-sec:info', data: { code, type: 'jp' } })
   const noitoResponse = await chrome.runtime.sendMessage({ type: 'naito-sec:info', data: { code, type: 'jp' } })
-
-  ctxMenu.append(makeMenuSeparator())
 
   // 楽天証券にログインしている時は楽天証券メニューを追加
   if (rakutenResponse.data.rakutenUrl) {
@@ -166,10 +196,11 @@ const addTokyoTickerAsync = async (ctxMenu, code) => {
  * @param {string} code
  */
 const addNewyorkTicker = async (ctxMenu, code) => {
+  // 区切り線はawaitの前に付ける(addTokyoTickerAsyncと同じ理由)
+  ctxMenu.append(makeMenuSeparator())
+
   const items = await getEnableLinkKeysAsync()
   const response = await chrome.runtime.sendMessage({ type: 'rakuten-sec:info', data: { code, type: 'us' } })
-
-  ctxMenu.append(makeMenuSeparator())
 
   // urlがある場合は楽天証券メニューを追加
   if (response.data.rakutenUrl) {
@@ -234,7 +265,7 @@ const createKabuLinkMenu = async () => {
 
   const buttonsWrapper =
     $('<div>', {
-      class: 'buttonsWrapper-hw_3o_pb notAvailableOnMobile-hw_3o_pb withoutBg-hw_3o_pb column-hw_3o_pb'
+      class: tvMimicClasses.buttonsWrapper
     }).appendTo(container)
 
   $(`<div class="ktt-tv-kabuLinkMenu">
@@ -283,9 +314,9 @@ const createKabuLinkMenu = async () => {
 
       // メニューの全体
       const menuBody = $(`
-      <div class="menu-Tx5xMZww context-menu menuWrap-Kq3ruQo8" style="position: fixed; left: ${e.clientX}px; top: ${e.clientY}px;">
-        <div class="scrollWrap-Kq3ruQo8" style="overflow-y: auto;">
-          <div class="menuBox-Kq3ruQo8" data-name="menu-inner">
+      <div class="${tvMimicClasses.menuWrap}" style="position: fixed; left: ${e.clientX}px; top: ${e.clientY}px;">
+        <div class="${tvMimicClasses.scrollWrap}" style="overflow-y: auto;">
+          <div class="${tvMimicClasses.menuBox}">
             <table>
               <tbody>
               </tbody>
@@ -296,13 +327,13 @@ const createKabuLinkMenu = async () => {
 
       // メニュー項目を構築する
       const createMenuItem = (title) => $(`
-      <tr data-role="menuitem" class="accessible-rm8yeqY4 item-GJX1EXhk interactive-GJX1EXhk normal-GJX1EXhk" tabindex="-1">
-        <td class="iconCell-GJX1EXhk" data-icon-cell="true">
+      <tr data-role="menuitem" class="${tvMimicClasses.accessible} ${tvMimicClasses.item}" tabindex="-1">
+        <td class="${tvMimicClasses.iconCell}" data-icon-cell="true">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 28 28" width="28" height="28"></svg>
         </td>
         <td>
-          <div class="content-GJX1EXhk">
-            <span class="label-GJX1EXhk" data-label="true">${title}</span>
+          <div class="${tvMimicClasses.content}">
+            <span class="${tvMimicClasses.label}" data-label="true">${title}</span>
           </div>
         </td>
       </tr>`)
@@ -349,7 +380,7 @@ const createKabuLinkMenu = async () => {
 
       // 証券会社メニューがある場合はセパレータを追加
       if (isAppendedSecMenuItem) {
-        $('<tr class="row-DFIg7eOh"><td><div class="line-DFIg7eOh"></div></td><td><div class="line-DFIg7eOh"></div></td></tr>')
+        $(`<tr class="${tvMimicClasses.separatorRow}"><td><div class="${tvMimicClasses.separatorLine}"></div></td><td><div class="${tvMimicClasses.separatorLine}"></div></td></tr>`)
           .appendTo(tbody)
       }
 
@@ -374,28 +405,40 @@ const createKabuLinkMenu = async () => {
 
 /**
  * 銘柄コードを取得
- * @returns 取得した銘柄コード、取得できない場合はnull
+ * チャートのcanvasのaria-label(`EXCHANGE:CODE の 1 日 チャート`)を解析する
+ * @returns {{ code: string, type: string }} 取得した銘柄コード、取得できない場合はcode/typeともにnull
  */
 const getTickerCode = () => {
+  const notFound = { code: null, type: null }
+
   const canvas = $(selectorOf('chart-canvas'))
-  if (canvas) {
-    const ariaLabel = canvas.attr('aria-label')
-    if (ariaLabel) {
-      if (ariaLabel.startsWith('TSE:') || ariaLabel.startsWith('TSE_DLY:')) {
-        const matched = /(TSE(_DLY)?:)([0-9][0-9ACDFGHJKLMNPRSTUWXY][0-9][0-9ACDFGHJKLMNPRSTUWXY])/.exec(ariaLabel)
-        if (matched) {
-          return { code: matched[3], type: 'jp' }
-        }
-      } else if (ariaLabel.startsWith('BATS:')) {
-        const matched = /(BATS:)([A-Z]{1,5})/.exec(ariaLabel)
-        if (matched) {
-          return { code: matched[2], type: 'us' }
-        }
-      }
+  const ariaLabel = canvas.attr('aria-label')
+  if (!ariaLabel) {
+    return notFound
+  }
+
+  // 取引所トークンを取り出す('_DLY'は遅延配信の接尾辞なので剥がしてから引く)
+  const matched = /^([A-Z]+)(_DLY)?:/.exec(ariaLabel)
+  if (!matched) {
+    return notFound
+  }
+
+  const type = exchanges[matched[1]]
+  const rest = ariaLabel.slice(matched[0].length)
+
+  if (type === 'jp') {
+    const code = /^[0-9][0-9ACDFGHJKLMNPRSTUWXY][0-9][0-9ACDFGHJKLMNPRSTUWXY]/.exec(rest)
+    if (code) {
+      return { code: code[0], type }
+    }
+  } else if (type === 'us') {
+    const code = /^[A-Z]{1,5}/.exec(rest)
+    if (code) {
+      return { code: code[0], type }
     }
   }
 
-  return { code: null, type: null }
+  return notFound
 }
 
 /**
@@ -414,7 +457,7 @@ const menuSelectors = [
   {
     key: 'toolbar-container',
     title: 'ツールバー挿入先',
-    selector: 'div.container-hw_3o_pb'
+    selector: 'div.container-OH8c8Nc3'
   },
   {
     key: 'overlap-root',
@@ -424,7 +467,7 @@ const menuSelectors = [
   {
     key: 'context-menu',
     title: '右クリックメニュー',
-    selector: 'div.menu-Tx5xMZww.context-menu.menuWrap-Kq3ruQo8 > div > div[data-name="menu-inner"] > table'
+    selector: 'div.context-menu table'
   }
 ]
 
@@ -434,3 +477,29 @@ const menuSelectors = [
  * @returns { string }
  */
 const selectorOf = (key) => menuSelectors.find((menuSelector) => menuSelector.key === key).selector
+
+/**
+ * TradingView の見た目に合わせるための模倣用クラス（検証対象外 / 採取日: 2026-08-23）
+ * ハッシュ部分は TradingView のリリースで変わる。壊れても見た目が崩れるだけで機能は落ちない。
+ * 更新手順は docs/ARCHITECTURE.md「TradingView の模倣用クラスを更新する」
+ * @type { Record<string, string> }
+ */
+const tvMimicClasses = {
+  // ツールバーに挿すボタンの器
+  buttonsWrapper: 'buttonsWrapper-OH8c8Nc3 notAvailableOnMobile-OH8c8Nc3 withoutBg-OH8c8Nc3',
+  // メニュー項目
+  item: 'item-WSeXSXQB interactive-WSeXSXQB normal-WSeXSXQB',
+  iconCell: 'iconCell-WSeXSXQB',
+  content: 'content-WSeXSXQB',
+  label: 'label-WSeXSXQB',
+  subMenu: 'subMenu-WSeXSXQB',
+  // 区切り線
+  separatorRow: 'row-tEFkH1Rx',
+  separatorLine: 'line-tEFkH1Rx',
+  // キーボード操作に対応した項目
+  accessible: 'accessible-JcN4DqBB',
+  // 「株Link」ボタンから開く自前メニューの枠
+  menuWrap: 'menu-IqFTXspI context-menu menuWrap-lBIxIwtz',
+  scrollWrap: 'scrollWrap-lBIxIwtz',
+  menuBox: 'menuBox-lBIxIwtz'
+}

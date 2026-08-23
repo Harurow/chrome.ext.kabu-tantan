@@ -108,3 +108,36 @@ Service Worker・Content Script・オプションページが参照する。
 
 - 要件: —
 - 検証: `auto`（メニュー生成テストが間接的に検証）
+
+## SPEC-EL-09 取引所コード定義（`exchanges`）
+
+> 1.10.1 で新設。設計判断は [ADR-0002](../adr/0002-tradingview-dom-repair.md) の 2。
+
+`src/urls.js` に、取引所コードから市場種別を引く定数を置く。
+
+```javascript
+/** 取引所コード → 市場種別。TradingView のシンボル表記 `EXCHANGE:CODE` の解釈に使う */
+const exchanges = {
+  TSE: 'jp',
+  BATS: 'us',
+  NASDAQ: 'us',
+  NYSE: 'us',
+  AMEX: 'us',
+  CBOE: 'us',
+  OTC: 'us'
+}
+```
+
+- 遅延配信の接尾辞 `_DLY`（例 `TSE_DLY` / `NASDAQ_DLY`）は**引く前に剥がす**。表には載せない
+- 表に無いコードは「対応外」。呼び出し側は銘柄コードを取得しない
+- 置き場所を `urls.js` にする理由: Service Worker（`importScripts('./urls.js')`）と
+  全 Content Script（`manifest.json` の `js` 配列で `urls.js` が先）から参照できる唯一の共有ファイル。
+  新しいファイルを足すと manifest の `js` 配列5箇所と読み込み順検査（SPEC-MF）に波及する（CON-02）
+
+**現在の参照元は `tradingview-cs.js` の `getTickerCode()`（SPEC-TC-07）だけ。**
+Service Worker の `getTickerCode(text)`（SPEC-TC-03）は未参照で、FR-14 に着手する際にここを参照する。
+
+- 要件: FR-04（FR-14 の土台）
+- 検証: `auto`（`urls.js: exchanges › 取引所コードは大文字英字のみで、市場種別は jp / us のいずれか`。
+  キーの形・`_DLY` を表に載せていないこと・値が `jp` / `us` のいずれかであることを検査）／
+  `lint`（`eslint.config.mjs` の `sharedGlobals` に `exchanges: 'readonly'` を宣言済み。外すと `no-undef`）

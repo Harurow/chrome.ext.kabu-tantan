@@ -95,6 +95,28 @@ test.describe('urls.js: makeUrl', () => {
   })
 })
 
+test.describe('urls.js: exchanges', () => {
+  // TradingView の `EXCHANGE:CODE` を解釈するための表 (SPEC-EL-09)。
+  // `_DLY` は引く前に剥がす規則なので、表に載っていてはいけない
+  test('取引所コードは大文字英字のみで、市場種別は jp / us のいずれか', async ({ serviceWorker }) => {
+    const report = await serviceWorker.evaluate(() => ({
+      total: Object.keys(exchanges).length,
+      invalidKey: Object.keys(exchanges).filter((key) => !/^[A-Z]+$/.test(key)),
+      withDly: Object.keys(exchanges).filter((key) => key.includes('_DLY')),
+      invalidType: Object.entries(exchanges)
+        .filter(([, type]) => type !== 'jp' && type !== 'us')
+        .map(([key]) => key),
+      tse: exchanges.TSE
+    }))
+
+    expect(report.invalidKey).toEqual([])
+    expect(report.withDly).toEqual([])
+    expect(report.invalidType).toEqual([])
+    expect(report.tse).toBe('jp')
+    expect(report.total).toBeGreaterThan(0)
+  })
+})
+
 test.describe('urls.js: externalUrls の整合性', () => {
   test('key が一意で必須フィールドが揃っている', async ({ serviceWorker }) => {
     const report = await serviceWorker.evaluate(() => {

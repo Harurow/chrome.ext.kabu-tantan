@@ -3,7 +3,7 @@
 > **このファイルは `npm run docs:tests` で自動生成される。手で編集しない。**
 > 説明文を変えたい場合は `scripts/test-catalog.mjs` を編集する。
 
-テスト総数: **38**
+テスト総数: **39**
 
 テストの方針・手法は [TESTING.md](TESTING.md) を参照。
 
@@ -66,7 +66,7 @@ chrome-extension:// のオプションページを開き、表示・操作・保
 
 ## Service Worker / 共有モジュール
 
-`tests/service-worker.spec.mjs` — 14 件
+`tests/service-worker.spec.mjs` — 15 件
 
 Service Worker のグローバルスコープを直接 evaluate して、純粋なロジックを検証する。
 
@@ -86,8 +86,9 @@ Service Worker のグローバルスコープを直接 evaluate して、純粋�
 | 10 | urls.js: makeUrl | ${code} を置換する |
 | 11 | urls.js: makeUrl | ${code:0} は先頭1文字に置換する |
 | 12 | urls.js: makeUrl | ${exchange} は指定時のみ置換する |
-| 13 | urls.js: externalUrls の整合性 | key が一意で必須フィールドが揃っている |
-| 14 | urls.js: externalUrls の整合性 | url1 は必ず ${code} を含む |
+| 13 | urls.js: exchanges | 取引所コードは大文字英字のみで、市場種別は jp / us のいずれか |
+| 14 | urls.js: externalUrls の整合性 | key が一意で必須フィールドが揃っている |
+| 15 | urls.js: externalUrls の整合性 | url1 は必ず ${code} を含む |
 
 ## 回帰テストとして重要なもの
 

@@ -10,7 +10,7 @@
 | `name` | `__MSG_app_title__`（= 株リンク） |
 | `description` | `__MSG_app_description__` |
 | `default_locale` | `ja` |
-| `version` | `1.10.0` |
+| `version` | `1.10.1` |
 | `options_page` | `options.html` |
 
 - 要件: FR-01, FR-11, CON-01

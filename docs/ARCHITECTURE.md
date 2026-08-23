@@ -43,7 +43,7 @@ flowchart TD
 ```json
 "js": [
   "third-party/jquery.min.js",  // $ を定義
-  "urls.js",                    // externalUrls / externalUrlsMap / getEnableLinkKeysAsync / makeUrl
+  "urls.js",                    // externalUrls / externalUrlsMap / exchanges / getEnableLinkKeysAsync / makeUrl
   "linkMenu.js",                // createMenu（urls.js に依存）
   "rakuten-cs.js"               // 上記すべてを使う
 ]
@@ -79,8 +79,28 @@ scripts/selector-check/load-selectors.mjs
 読み込み順を `npm run validate` で守るのと同じ発想で、この契約は `npm test`
 （`tests/selector-defs.spec.mjs`）で守る。
 
-> 見た目を合わせるための**模倣用クラス**（TradingView の `item-GJX1EXhk` 等）は
+> 見た目を合わせるための**模倣用クラス**（TradingView の `item-WSeXSXQB` 等）は
 > `menuSelectors` に入れない。壊れても機能は消えないため検証対象外（FR-12）。
+
+## TradingView の模倣用クラスを更新する
+
+TradingView のメニュー項目・区切り線・ボタンの器に付けているクラス（`tvMimicClasses`。SPEC-CS-16）は、
+TradingView のリリースでハッシュ部分が変わる。**変わっても機能は落ちず、見た目だけがずれる。**
+`npm run check:selectors` は検出しない（FR-12 で対象外）。
+
+手順:
+
+1. <https://jp.tradingview.com/chart/?symbol=TSE%3A7203> を開き、チャート上で右クリックする
+2. DevTools でメニューの実要素を調べ、SPEC-CS-16 の表の各行に対応する現在のクラス名を採取する
+   - メニュー項目 `<tr>` / アイコン `<td>` / ラベル `<span>` / 区切り行 `<tr>` と `<div>` /
+     メニュー外枠・スクロール層・箱
+3. ツールバーの器は「株Link」ボタンの兄弟要素（買/売ボタンの `buttonsWrapper-…`）から採取する
+4. `src/tradingview-cs.js` の `tvMimicClasses` を書き換え、コメントの**採取日**を更新する
+5. `docs/specs/content-scripts.md` の SPEC-CS-16 の表を同じ値に更新する
+6. 手動確認 `docs/MANUAL-CHECKLIST.md` A-9 / A-10 を実施する
+
+**ハッシュを推測で当てない。** 接頭辞（`column-` など）が同じでも別系統の要素があるため、
+後継が見つからないものは**そのクラスを付けない**（付けないほうが、誤ったクラスを当てるより崩れ方が読める）。
 
 ## 銘柄コードの扱い
 
