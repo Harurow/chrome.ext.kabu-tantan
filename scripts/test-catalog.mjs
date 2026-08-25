@@ -24,8 +24,9 @@ const FILE_INFO = {
     specs: 'SPEC-OP, SPEC-ST'
   },
   'content-script.spec.mjs': {
-    title: 'Content Script（楽天証券 / SBI証券）',
-    detail: 'context.route() で対象オリジンにフィクスチャ HTML を返し、実際の注入を検証する。',
+    title: 'Content Script（楽天証券 / SBI証券 / スクリーナー2種）',
+    detail: 'context.route() で対象オリジンにフィクスチャ HTML を返し、実際の注入を検証する。' +
+      '固定待機が明けた後に要素が現れるフィクスチャで、注入の再試行（SPEC-CS-22）も見る。',
     specs: 'SPEC-CS, SPEC-MF'
   },
   'selector-defs.spec.mjs': {
@@ -44,7 +45,11 @@ const REGRESSION = {
   誤マッチ: '米国株の正規表現から先頭アンカー ^ が失われていないかの検出',
   リガチャ: 'Material Icons のサブセット失敗（アイコン名が文字列のまま出る）の検出',
   compareVersion: 'バージョン比較が文字列比較に戻っていないかの検出',
-  'インライン HTML': 'セレクタ検証の生成物が markdownlint（MD033）で落ち、npm run check を止める問題の検出'
+  'インライン HTML': 'セレクタ検証の生成物が markdownlint（MD033）で落ち、npm run check を止める問題の検出',
+  遅れて現れた: '固定待機が明けた後に現れた要素へ注入できなくなる退行の検出（FR-13 / SPEC-CS-22）',
+  後から現れた: 'スクリーナーの常設監視が結果一覧の器に戻り、検索前に開いたタブで注入されなくなる退行の検出（FR-13）',
+  二重注入: '再試行でパスを繰り返す設計になったことによる二重注入の検出（FR-13 判定基準3）',
+  retrySetup: '再試行が止まらず、他社サイト上でタイマーが走り続ける問題の検出（FR-13 判定基準2 / NFR-01）'
 }
 
 const { stdout } = await execFileAsync(
@@ -121,7 +126,7 @@ lines.push('## 対象外', '')
 lines.push('| 対象 | 理由 |', '| --- | --- |')
 lines.push('| TradingView (`tradingview-cs.js`) | DOM がハッシュ付きクラス名で毎リリース変わる。フィクスチャ化しても実サイトとの乖離を検出できない (CON-08) |')
 lines.push('| 楽天証券・内藤証券のセッション連携 | ログイン済みタブが前提のため自動化していない (CON-04) |')
-lines.push('| 楽天スーパースクリーナー / SBI銘柄スクリーニング | MutationObserver + iframe 前提で再現コストが見合わない |')
+lines.push('| 楽天スーパースクリーナー / SBI銘柄スクリーニング の**見た目と実 DOM** | 注入そのものは 1.13.0 で自動化した（常設監視を document.body に上げたためフィクスチャで再現できる）。実 DOM との乖離は `npm run check:selectors` と手動確認 C-2 / C-4 で見る |')
 lines.push('')
 lines.push('これらは変更時に手動確認する。手順は [TESTING.md](TESTING.md) を参照。')
 lines.push('')

@@ -1,3 +1,6 @@
+/** document.bodyの監視コールバックを束ねる時間(ミリ秒)(SPEC-CS-22) */
+const observerDebounceMs = 200
+
 $(() => {
   setTimeout(attachAsync, 500)
 })
@@ -20,27 +23,56 @@ const attachAsync = async () => {
     return
   }
 
-  // ページ変更の対応のために監視する
-  const target = $('div#resultpanel div.pagenavcontrolbox')[0]
+  // 常設監視の設置を再試行する(document.bodyは必ず取れるので実質初回で成功。SPEC-CS-22)
+  retrySetup(() => setupObserver(keys))
+}
+
+/**
+ * ページ変更に追随するための常設監視を張り、初期パスを走らせる(SPEC-CS-08)
+ * 監視対象は結果一覧の器ではなくdocument.bodyにする
+ * 人が検索を実行するまでの時間に上限が無く(FR-15)、器の出現を再試行で待つと間に合わないため
+ * 常設監視は打ち切らない。外すのは切断を検知したときだけ(SPEC-CS-19)
+ * @param { string[] } keys
+ * @returns { boolean } 監視を張れたか
+ */
+const setupObserver = (keys) => {
+  const target = document.body
   if (!target) {
-    return
+    return false
   }
 
+  // 監視範囲が広いぶん発火回数が増えるのでデバウンスで束ねる
+  let timerId = null
   const observer = new MutationObserver(() => {
     // 切断状態では注入を止め、監視も外す(復帰手段が無く、監視を続けても無駄に走るだけ。SPEC-CS-19)
     if (!isExtensionAlive()) {
       observer.disconnect()
+      clearTimeout(timerId)
+      timerId = null
       return
     }
 
-    // ページ変更対応
-    mutationObserverCallback(keys)
+    clearTimeout(timerId)
+    timerId = setTimeout(() => {
+      timerId = null
+
+      // 束ねている間に切断された場合に備えて、DOMを変える直前にも門を置く
+      if (!isExtensionAlive()) {
+        observer.disconnect()
+        return
+      }
+
+      // ページ変更対応
+      mutationObserverCallback(keys)
+    }, observerDebounceMs)
   })
 
-  observer.observe(target, { childList: true })
+  observer.observe(target, { childList: true, subtree: true })
 
   // 初期ページ対応
   mutationObserverCallback(keys)
+
+  return true
 }
 
 /**
@@ -62,6 +94,12 @@ const mutationObserverCallback = (keys) => {
  * @param { string[] } keys
  */
 const attachMenu = (element, keys) => {
+  // 注入済みメニューの内側は対象にしない(二重注入の防止。SPEC-CS-22)
+  // 注入したメニュー項目の<a>が検出用セレクタに再びヒットするため
+  if ($(element).closest('span.x-kabu-root').length > 0) {
+    return
+  }
+
   const text = $(element).text()
   const match = text.trim().match(/[0-9][0-9ACDFGHJKLMNPRSTUWXY][0-9][0-9ACDFGHJKLMNPRSTUWXY]/g)
 

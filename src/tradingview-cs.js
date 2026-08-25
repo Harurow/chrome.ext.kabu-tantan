@@ -40,15 +40,44 @@ const attach = () => {
     chartContextMenuAt = $(e.target).closest('div.chart-gui-wrapper').length > 0 ? Date.now() : 0
   }, true)
 
-  // canvasを監視し属性が変わったら追加したボタンの状態を更新させる
-  const canvas = $(selectorOf('chart-canvas'))[0]
-  if (canvas) {
-    const canvasObserver = new MutationObserver(canvasObserverCallback)
-    canvasObserver.observe(canvas, { attributes: true })
+  // canvas監視とボタンは1単位で設置する(SPEC-CS-22 / ADR-0008 の 4)
+  // 分けると「ボタンはあるが銘柄切替に追随しない」状態が作れてしまう(FR-13 判定基準6)
+  // 両方が揃うまで試し直し、揃わなければ30秒で打ち切る
+  retrySetup(setupKabuLinkMenu)
+}
 
-    // 株リンクメニューを追加
-    createKabuLinkMenu()
+/**
+ * canvasの監視と「株Link」ボタンを設置する(SPEC-CS-12 / SPEC-CS-22)
+ * bodyの監視(オーバーレイレイヤー待ち)は常設監視なので再試行の対象にしない
+ * @returns { boolean } 設置が済んだか
+ */
+const setupKabuLinkMenu = () => {
+  // 設置済み(二重注入の防止。SPEC-CS-22)
+  if ($('.ktt-tv-kabuLinkMenu').length > 0) {
+    return true
   }
+
+  const canvas = $(selectorOf('chart-canvas'))[0]
+  const container = $(selectorOf('toolbar-container'))[0]
+  if (!canvas || !container) {
+    return false
+  }
+
+  // canvasを監視し属性が変わったら追加したボタンの状態を更新させる
+  const canvasObserver = new MutationObserver(() => {
+    // 切断状態では監視を外す(復帰手段が無く、監視を続けても無駄に走るだけ。SPEC-CS-19)
+    if (!isExtensionAlive()) {
+      canvasObserver.disconnect()
+      return
+    }
+    canvasObserverCallback()
+  })
+  canvasObserver.observe(canvas, { attributes: true })
+
+  // 株リンクメニューを追加
+  createKabuLinkMenu(container)
+
+  return true
 }
 
 /**
@@ -464,11 +493,11 @@ const updateVisible = (element, condition) => {
  * 連携ボタンを追加
  * ・楽天証券 : 楽天証券にログインしてる時だけ有効なボタン
  * ・内藤証券 : 内藤証券にログインし、国内株マーケットの個別銘柄を開いている時だけ有効なボタン
+ * 挿入先は呼び出し側で存在を確認済みのものを受け取る(SPEC-CS-22)
+ * 空集合にappendTo()すると黙って何もしないため、失敗が見えなくなる
+ * @param { HTMLElement } container TradingViewへのメニュー挿入位置(toolbar-container)
  */
-const createKabuLinkMenu = () => {
-  // TradingViewへのメニュー挿入位置
-  const container = $(selectorOf('toolbar-container'))
-
+const createKabuLinkMenu = (container) => {
   const buttonsWrapper =
     $('<div>', {
       class: tvMimicClasses.buttonsWrapper

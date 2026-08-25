@@ -232,3 +232,72 @@ const makeUrl = (urlTemplate, code, exchange) => {
  */
 const isExtensionAlive = () =>
   typeof chrome !== 'undefined' && chrome.runtime != null && chrome.runtime.id != null
+
+/** 設置を試し直す間隔(ミリ秒)。現れてから注入までの遅れの上限(SPEC-CS-22) */
+const retrySetupIntervalMs = 500
+
+/** 設置の再試行を打ち切るまでの時間(ミリ秒)。これを過ぎたら対象ページではないとみなす(SPEC-CS-22) */
+const retrySetupTimeoutMs = 30000
+
+/**
+ * 設置(注入・常設監視の開始)を、成功するまで一定間隔で試す(SPEC-CS-22)
+ * ・初回は呼び出し時に同期で1回実行する(現行と同じタイミングで注入が始まる)
+ * ・停止は「成功・打ち切り・切断・例外」の4経路。タイマーが存在する場合はすべて同じ stop() を通る
+ *   (初回の同期呼び出しで成功・例外になった場合は setInterval を張る前に抜けるため止める対象が無い)
+ * ・切断はtickの先頭で判定する。楽天・SBIの4本はkeysをキャッシュするため、
+ *   門を置かないと切断後も拡張APIに触れずに注入できてしまう(SPEC-CS-19 / NFR-14)
+ * @param { () => boolean } setup 設置を試みる。これ以上の再試行が不要なら true
+ * @param { { intervalMs?: number, timeoutMs?: number } } [options] 既定は 500ms / 30000ms
+ */
+const retrySetup = (setup, options) => {
+  const intervalMs = options?.intervalMs ?? retrySetupIntervalMs
+  const timeoutMs = options?.timeoutMs ?? retrySetupTimeoutMs
+  const startedAt = Date.now()
+
+  let timerId = null
+
+  // 停止処理は1本に集約する(タイマーを張った後の4経路はすべてここを通る)
+  const stop = () => {
+    if (timerId !== null) {
+      clearInterval(timerId)
+      timerId = null
+    }
+  }
+
+  /**
+   * 設置を1回試す
+   * @returns { boolean } これ以上試さないなら true
+   */
+  const tryOnce = () => {
+    try {
+      return setup() === true
+    } catch {
+      // 例外は外へ出さない(他社サイトの処理を止めない。NFR-01)
+      // セレクタの誤りなど次のtickで直らない失敗が大半なので、投げ直さず打ち切る
+      return true
+    }
+  }
+
+  // 初回は同期で試す
+  if (tryOnce()) {
+    return
+  }
+
+  timerId = setInterval(() => {
+    // 切断状態(拡張機能の更新・再読み込み後の古いタブ)では止める
+    if (!isExtensionAlive()) {
+      stop()
+      return
+    }
+
+    // 打ち切りは経過時間で見る(タイマーは背景タブで丸められるため回数では持たない)
+    if (Date.now() - startedAt >= timeoutMs) {
+      stop()
+      return
+    }
+
+    if (tryOnce()) {
+      stop()
+    }
+  }, intervalMs)
+}

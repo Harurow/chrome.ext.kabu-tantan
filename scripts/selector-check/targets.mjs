@@ -93,7 +93,7 @@ export const sites = [
         reach: 'tab',
         frameUrl: 'hs.trkd-asia.com/rakutensecscr',
         pageSelectors: ['div#resultpanel div.resulttablebox'],
-        settleMs: 500
+        settleMs: 3000
       }
     ]
   },
@@ -114,14 +114,14 @@ export const sites = [
         reach: 'tab',
         frameUrl: 'sbisec.co.jp/ETGate',
         pageSelectors: ['div#main div.mgt15 div.trHead01 table.tbl01'],
-        settleMs: 500
+        settleMs: 3000
       },
       {
         key: 'ポートフォリオ',
         reach: 'tab',
         frameUrl: 'sbisec.co.jp/ETGate',
         pageSelectors: ['div.middleArea2 div.middleAreaM2'],
-        settleMs: 500
+        settleMs: 3000
       }
     ]
   },
@@ -141,7 +141,7 @@ export const sites = [
         reach: 'tab',
         frameUrl: 'graph.sbisec.co.jp/sbiscreener',
         pageSelectors: ['div#root div.App div.Screener div.resultpane'],
-        settleMs: 500
+        settleMs: 3000
       }
     ]
   },

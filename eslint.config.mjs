@@ -11,6 +11,9 @@ const sharedGlobals = {
   getEnableLinkKeysAsync: 'readonly',
   makeUrl: 'readonly',
   isExtensionAlive: 'readonly',
+  retrySetup: 'readonly',
+  retrySetupIntervalMs: 'readonly',
+  retrySetupTimeoutMs: 'readonly',
   exchanges: 'readonly',
   // linkMenu.js が提供
   createMenu: 'readonly',

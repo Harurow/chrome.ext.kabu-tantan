@@ -16,9 +16,9 @@ $(() => {
 | Content Script | 待機 | エントリポイント | MutationObserver |
 | --- | --- | --- | --- |
 | `rakuten-cs.js` | 500ms | `attachAsync` | なし |
-| `rakuten-scr-cs.js` | 500ms | `attachAsync` | あり（ページ送り） |
+| `rakuten-scr-cs.js` | 500ms | `attachAsync` | あり（`document.body`。SPEC-CS-08） |
 | `sbi-cs.js` | 500ms | `attach`（※） | なし |
-| `sbi-scr-cs.js` | **1500ms** | `attachAsync` | あり（ページ送り） |
+| `sbi-scr-cs.js` | **1500ms** | `attachAsync` | あり（`document.body`。SPEC-CS-10） |
 | `tradingview-cs.js` | 500ms | `attach` | あり（`body` / オーバーレイ / canvas） |
 
 固定待機はサイト側の描画完了を待つため。SBIスクリーナーは React 製で描画が遅く 1500ms。
@@ -30,9 +30,11 @@ $(() => {
 **5本すべて、エントリポイントの先頭に切断状態の門（`isExtensionAlive()`）を置く**（SPEC-CS-19）。
 門を通らなければ DOM も監視も一切作らない。
 
-> 弱点: 固定待機なので、回線やマシンが遅いと注入に失敗する。リトライ機構は無い。
+> 固定待機だけでは、回線やマシンが遅いと注入に失敗する。**1.13.0 で再試行を入れた**（SPEC-CS-22）。
+> 固定待機はそのまま残し、待機が明けた後に**成功するか 30 秒経つまで試し直す**（FR-13）。
+> 上表の「待機」と「エントリポイント」は 1.12.2 から変えていない。
 
-- 要件: FR-02, FR-03, NFR-09, FR-13（未達）, NFR-14
+- 要件: FR-02, FR-03, NFR-09, FR-13, NFR-14
 - 検証: `auto`（楽天・SBI の注入テスト）／`manual`（門は `docs/MANUAL-CHECKLIST.md` G）
 
 ## SPEC-CS-02 メニュー注入の手順
@@ -44,8 +46,15 @@ $(() => {
 3. そのテキストノードを `createMenu()` が返す `<span class="x-kabu-root">` で置換する
 
 テキストノードのみを対象とするため、既存の要素構造・イベントを壊さない。
+置換後の子ノードはテキストノードではないので、**同じ要素を再走査しても 2 度目の置換は起きない**。
 
-- 要件: FR-02, FR-03, CON-03
+> **二重注入のガード（1.13.0 で追加。SPEC-CS-22 / FR-13 判定基準3）:** 手順 1 の前に、
+> 対象要素が `span.x-kabu-root` の内側にあるなら何もしない、を置く（楽天・SBI の4本すべて）。
+> 注入したメニュー項目の `<a>` が検出用セレクタに再びヒットするため
+> （楽天スーパースクリーナーのヒットが 1150 件になるのはこれ）、
+> パスを繰り返す設計では構造的な性質だけに頼らない。
+
+- 要件: FR-02, FR-03, CON-03, FR-13
 - 検証: `auto`（`楽天証券 Content Script › お気に入りの銘柄コードにリンクメニューを注入する`）
 
 ## SPEC-CS-03 メニューの DOM 構造
@@ -123,13 +132,32 @@ $(() => {
 
 - 注入先: `https://hs.trkd-asia.com/rakutensecscr/*`（iframe、`all_frames: true`）
 - セレクタ: `div#resultpanel div.resulttablebox tr.datarow td:nth-of-type(1) a`
-- `div#resultpanel div.pagenavcontrolbox` を `MutationObserver({ childList: true })` で監視し、
-  ページ送りのたびに再注入する
-- 監視対象が見つからなければ何もせず終了する
+- **`document.body` を `MutationObserver({ childList: true, subtree: true })` で監視**し、
+  結果一覧の出現・ページ送りのたびに再注入する（`setupObserver()`）
+- **コールバックは 200ms でデバウンス**する（`observerDebounceMs`）。
+  デバウンスが明けて DOM を変える直前にも切断状態の門を置く（SPEC-CS-19）
+- 監視の設置は `retrySetup()` 経由（SPEC-CS-22）。`document.body` は必ず取れるので実質初回で成功する
+- 常設監視は打ち切らない。外すのは切断を検知したときだけ（SPEC-CS-19）
+- 設置直後に初期パスを 1 回走らせる（`mutationObserverCallback(keys)`）
 - `createMenu(..., nonStyle = true)` で呼び、`ul.x-kabu-body` に `margin-top: -3px` を追加する
 
-- 要件: FR-02
-- 検証: `半自動`（検索を実行した結果一覧のタブを開いたまま `npm run check:selectors`。
+> **1.12.2 まではこうではなかった（1.13.0 で変更。SPEC-CS-22 / FR-13）。** 監視対象は
+> `div#resultpanel div.pagenavcontrolbox`、オプションは `{ childList: true }` のみで、
+> **監視対象が見つからなければ何もせず終了していた**（`return`）。この `return` は廃止した。
+>
+> 理由: 人が検索を実行するのは実行直前で、**ページを開いてから検索するまでの時間に上限が無い**（FR-15）。
+> 器（結果一覧）の出現を再試行（30 秒で打ち切り）で待つと間に合わず、
+> タイマーは背景タブで丸められるため更に不利になる。`document.body` は `$()` の時点で必ず取れるので
+> 空振りが消え、`MutationObserver` は背景タブでも丸められない（ADR-0008 の 3）。
+>
+> 注入パスは冪等なので、パス自身の DOM 変更が次のパスを呼んでも、そのパスは何も注入せず変更も生まない。
+> **本サイトは実測で失敗していない**（注入 50 件）が、SBI銘柄スクリーニングと同じ仕掛けである以上
+> 片方にだけ欠陥を残さない（FR-13 の適用範囲）。
+
+- 要件: FR-02, FR-13
+- 検証: `auto`（`スクリーナー Content Script › 楽天スーパースクリーナー: 後から現れた結果一覧に注入する`。
+  固定待機の後に現れた結果一覧に注入し、2 度目の注入が起きないこと）／
+  `半自動`（検索を実行した結果一覧のタブを開いたまま `npm run check:selectors`。
   検出用セレクタの生存）／`manual`（メニューの見た目・動作）
 
 ## SPEC-CS-09 SBI証券（2セレクタ）
@@ -162,11 +190,23 @@ URL による絞り込みは**行わない**。両セレクタを常に試す。
 
 - 注入先: `https://graph.sbisec.co.jp/sbiscreener/*`（iframe、`all_frames: true`）
 - セレクタ: `div#root div.App div.Screener div.resultpane div.ResultListMainDiv table.leftTable tr td.c.fixedtable:nth-of-type(1)`
-- `div#root div.App div.Screener div.resultpane` を
-  `MutationObserver({ childList: true, subtree: true })` で監視して再注入する
+- **`document.body` を `MutationObserver({ childList: true, subtree: true })` で監視**して再注入する。
+  デバウンス・再試行経由の設置・切断時のみ外すこと・初期パスは SPEC-CS-08 と**同一の作り**
+  （`setupObserver()` / `observerDebounceMs` / `mutationObserverCallback()`）
 
-- 要件: FR-03
-- 検証: `半自動`（検索を実行した結果一覧のタブを開いたまま `npm run check:selectors`。
+> **1.12.2 まではこうではなかった（1.13.0 で変更。SPEC-CS-22 / FR-13）。** 監視対象は
+> `div#root div.App div.Screener div.resultpane` で、無ければ `return` していた。
+> 理由と代償は SPEC-CS-08 の同じ注記（ADR-0008 の 3）。
+>
+> **1.12.2 までの注入 0 件の実測はここに帰着する。** 1500ms の固定待機の時点で `div.resultpane` が無いと
+> 監視を張らずに `return` するため、その後どれだけ検索・ページ送りしても注入されなかった
+> （2026-08-23 / 2026-08-24 の 2 日とも ヒット 50 / 注入 0。FR-12「注入 0 件の切り分け」）。
+> **実サイトでの再確認は済んでいない**（FR-13 判定基準5 の連続 2 回。SPEC-SC-25）。
+
+- 要件: FR-03, FR-13
+- 検証: `auto`（`スクリーナー Content Script › SBI銘柄スクリーニング: 後から現れた結果一覧に注入する`。
+  上記「注入 0 件」の経路の回帰テスト）／
+  `半自動`（検索を実行した結果一覧のタブを開いたまま `npm run check:selectors`。
   検出用セレクタの生存）／`manual`（メニューの見た目・動作）
 
 ## SPEC-CS-11 TradingView: 右クリックメニュー拡張
@@ -356,12 +396,35 @@ URL による絞り込みは**行わない**。両セレクタを常に試す。
 
 ### ボタンの注入（起動時）
 
-`createKabuLinkMenu()` は `attach()` から**1回だけ**呼ばれる（`selectorOf('chart-canvas')` が
-1件以上あるときのみ）。ここで `buttonsWrapper`（模倣用クラス）と `div.ktt-tv-kabuLinkMenu` を
-DOM に追加する。**この関数は chrome API を触らない。**
+> 1.13.0 で**再試行単位**に変えた（SPEC-CS-22 / FR-13）。1.12.2 までは `attach()` の中で
+> `selectorOf('chart-canvas')` が 1 件以上あるときだけ 1 回試し、挿入先（`toolbar-container`）が
+> 0 件なら `appendTo()` が黙って何もしないまま終わっていた。
 
-**挿入先（`toolbar-container`）が 0 件なら `appendTo()` は黙って何もしない。**
-再試行しないため、そのページ読み込みではボタンが生まれない（FR-13 未達。下の「「注入」列を判定条件にしない」）。
+`attach()` は `retrySetup(setupKabuLinkMenu)` を呼ぶ。`setupKabuLinkMenu()` が
+**canvas 監視とボタンの設置を 1 単位**で行い、両方が揃うまで 500ms ごとに試し直す（30 秒で打ち切り）。
+
+| # | `setupKabuLinkMenu()` の手順 | 満たさないとき |
+| --- | --- | --- |
+| 1 | `$('.ktt-tv-kabuLinkMenu').length > 0` なら**設置済み**として `true` を返す（二重注入の防止。FR-13 判定基準3） | 未設置なので手順 2 へ |
+| 2 | `$(selectorOf('chart-canvas'))[0]` と `$(selectorOf('toolbar-container'))[0]` を取る | どちらかが `undefined` なら `false`（再試行に回す） |
+| 3 | canvas を `MutationObserver({ attributes: true })` で監視する | — |
+| 4 | `createKabuLinkMenu(container)` で `buttonsWrapper`（模倣用クラス）と `div.ktt-tv-kabuLinkMenu` を DOM に追加し、`true` を返す | — |
+
+- **canvas 監視とボタンは 1 単位。** 分けると「ボタンはあるが銘柄切替に追随しない」状態が作れてしまい、
+  **FR-13 判定基準6 が落ちたまま判定基準5 を通る**（判定基準5 は注入された要素の数しか見ない）。
+  1 単位にすると「ボタンがあるなら canvas 監視もある」が構造的な不変条件になる（ADR-0008 の 4）
+- `createKabuLinkMenu(container)` は**確認済みの `container` を受け取る**。
+  空集合への `appendTo()` で黙って失敗する経路は無い。**この関数は chrome API を触らない**
+- **本項が解くのは「起動時に一度も作られない」経路だけ。** 下の「既知の制限（ボタンの消失）」
+  （一度作られた後に消える）は解かない（ADR-0008 の 4 の末尾）
+
+> **挿入先が複数ある場合の振る舞いが 1.13.0 で変わった（未確認）。** `container` を
+> `$(selectorOf('toolbar-container'))[0]` で**先頭 1 件**に絞るため、`div.container-OH8c8Nc3` が
+> 2 件以上あるページではボタンが**先頭のツールバーにだけ**付く。1.12.2 までは jQuery の
+> `appendTo(集合)` が要素を複製して**全件**に付けていた。実測は 4 版とも ヒット 1 件のため
+> 現物での差は観測されていない。**手動確認 A-12 の「2つ以上並んでいないか」は重複しか見ず、
+> この逆方向（付くべき 2 つ目が付かない）は検出しない。** 複数ヒットが観測されたら、
+> どちらが正しいかを要件（FR-04）に戻して決める。
 
 切断状態では注入しない。判定は `attach()` の先頭の門（SPEC-CS-01 / SPEC-CS-19）が行う。
 注入時点で門を通していないと、押しても何も起きないボタンが恒久的に残る
@@ -503,21 +566,31 @@ FR-07「やらないこと」に従い、**ラベル・開き方・未ログイ�
 | 3回目版（1.12.1 / `e0d3c5e`） | 1 | 1 | 正常 |
 | 4回目版（1.12.2 / 本コミットの `docs/SELECTOR-CHECK.md`） | 1 | **0** | **セレクタは健全。注入だけが空振り** |
 
-4回目版が 0 件になった理由は `createKabuLinkMenu()` の起動方式にある。
+4回目版が 0 件になった理由は、**1.12.2 までの** `createKabuLinkMenu()` の起動方式にある。
 
-1. `$(() => setTimeout(attach, 500))` で**500ms 後に1回だけ**走る（SPEC-CS-01）
-2. `attach()` は `selectorOf('chart-canvas')` が 0 件なら `createKabuLinkMenu()` を呼ばない
-3. 呼ばれても `appendTo($(selectorOf('toolbar-container')))` は空集合なら黙って何もしない
-4. どちらの空振りも**再試行しない**（FR-13 未達）
+1. `$(() => setTimeout(attach, 500))` で**500ms 後に1回だけ**走った（SPEC-CS-01）
+2. `attach()` は `selectorOf('chart-canvas')` が 0 件なら `createKabuLinkMenu()` を呼ばなかった
+3. 呼ばれても `appendTo($(selectorOf('toolbar-container')))` は空集合なら黙って何もしなかった
+4. どちらの空振りも**再試行しなかった**（FR-13 未達）
+
+**1.13.0 でこの 4 点はすべて解消した**（上の「ボタンの注入（起動時）」）。
+それでも本節を残すのは、実サイトでの再測（FR-13 判定基準5）がまだ済んでいないため。
 
 同じ実行で右クリックメニューは注入 1 件（`tr[data-kabu-tantan]`）。
 そちらは `MutationObserver` でメニューが開くたびに走るため、拡張機能が生きていること・
 設定が空でないこと・銘柄コードが取れることが確定している。
 `src/tradingview-cs.js` は 1.12.0 以降無変更で、**退行ではない**。
 
-したがって「注入 1 件以上」は **FR-13 が未達のうちは安定して満たせない**。
+したがって「注入 1 件以上」は **FR-13 判定基準5 の合格を確認するまで条件にしない**。
 半自動で見るのは `toolbar-container` が ✅ になること（＝挿入先が存在すること）までとし、
 **ボタンが実在するか・見えるかは手動確認 A-1 で見る**（SPEC-SC-09 / SPEC-SC-18 も同じ扱い）。
+
+> **SPEC-CS-22（1.13.0）で前提が変わった。** FR-13 判定基準5 (a) は
+> TradingView の 3 対象が**連続 2 回とも注入 1 件以上**になることを求めており、
+> 再試行が入ったことでそれが満たせるようになった（**実サイトでの確認は未実施**）。
+> **本節の検証欄は FR-13 判定基準5 の合格を確認するまで変えない**
+> （変えるのは FR-13 判定基準5 の合格を確認した後。判定・終了コードに「注入」列を使わない方針
+> （SPEC-SC-09）は FR-12 側の判断であり、本節の変更では動かさない）。
 
 - 要件: FR-04, FR-06, FR-07, FR-09, NFR-05, NFR-14, CON-08
 - 検証: `半自動`（`npm run check:selectors -- --only=tradingview` で `toolbar-container` が ✅。
@@ -556,6 +629,9 @@ FR-07「やらないこと」に従い、**ラベル・開き方・未ログイ�
 - **これとは別に、4回目版（2026-08-24 23:16 / 1.12.2）で注入 0 件が観測された**
   （上の「「注入」列を判定条件にしない」）。こちらは**起動時に一度も作られなかった**場合で、
   「一度作られた後に消える」本項とは別経路。**どちらもリトライ・再注入が無いこと（FR-13）に帰着する。**
+- **SPEC-CS-22（1.13.0）が解いたのは後者だけ。** 「起動時に一度も作られない」は再試行で解けるが、
+  本項（一度作られた後に消える）はタブの寿命いっぱいの常設監視が要り、別タスクのまま残る。
+  **FR-13 の実装後にボタンの消失が再発したら、本項を起点に調査する**（ADR-0008 の 4）
 
 ### 既知の制限（証券会社と情報サイトが心中する）
 
@@ -606,8 +682,9 @@ FR-07「やらないこと」に従い、**ラベル・開き方・未ログイ�
 | `context-menu` | 右クリックメニュー | `div.context-menu table` | `div.menu-Tx5xMZww.context-menu.menuWrap-Kq3ruQo8 > div > div[data-name="menu-inner"] > table`（**0件**） |
 
 参照は `const selectorOf = (key) => menuSelectors.find((m) => m.key === key).selector` 経由。
-**置換箇所は6箇所**（`attach()` / `bodyObserverCallback()` / `attachMenu()` ×2 /
-`createKabuLinkMenu()` / `getTickerCode()`）。
+**置換箇所は6箇所**（`setupKabuLinkMenu()` ×2 / `bodyObserverCallback()` / `attachMenu()` ×2 /
+`getTickerCode()`）。1.12.2 までは `attach()` と `createKabuLinkMenu()` に 1 箇所ずつあったが、
+1.13.0 で両方 `setupKabuLinkMenu()` に移した（SPEC-CS-12）。
 
 ### `context-menu` をハッシュ非依存にした理由
 
@@ -977,11 +1054,15 @@ const isExtensionAlive = () =>
 
 | Content Script | 切断状態で走る拡張 API | 1.11.0 での症状 | 門の位置 |
 | --- | --- | --- | --- |
-| `tradingview-cs.js` | `sendMessage` 6箇所（`makeBrokerItemsAsync()` ×2 / `queryBrokerAsync()` ×2 / `openBrokerAsync()` / `openUrlAsync()`） ＋ storage | 右クリックのたびに3行を追加 → 例外 → 3行を除去。ボタンでは背景レイヤーが残る | **6箇所**（`attach()` の先頭 / オーバーレイ監視コールバック / SPEC-CS-11 条件1 / SPEC-CS-12 手順2 / `openBrokerAsync()` / `openUrlAsync()`） |
-| `rakuten-scr-cs.js` | 起動時に storage 1回。`MutationObserver` のコールバックは**キャッシュ済みの `keys`** を使い API を呼ばない | 例外は出ない。ただしページ送りのたびに `span.x-kabu-root` を追加し続ける（判定基準2 に抵触） | 2箇所（`attachAsync` の先頭 / 監視コールバック） |
+| `tradingview-cs.js` | `sendMessage` 6箇所（`makeBrokerItemsAsync()` ×2 / `queryBrokerAsync()` ×2 / `openBrokerAsync()` / `openUrlAsync()`） ＋ storage | 右クリックのたびに3行を追加 → 例外 → 3行を除去。ボタンでは背景レイヤーが残る | **7箇所**（`attach()` の先頭 / **canvas 監視コールバック（1.13.0）** / オーバーレイ監視コールバック / SPEC-CS-11 条件1 / SPEC-CS-12 手順2 / `openBrokerAsync()` / `openUrlAsync()`） |
+| `rakuten-scr-cs.js` | 起動時に storage 1回。`MutationObserver` のコールバックは**キャッシュ済みの `keys`** を使い API を呼ばない | 例外は出ない。ただしページ送りのたびに `span.x-kabu-root` を追加し続ける（判定基準2 に抵触） | **3箇所**（`attachAsync` の先頭 / 監視コールバック / デバウンス発火直後） |
 | `sbi-scr-cs.js` | 同上 | 同上 | 同上 |
 | `rakuten-cs.js` | 起動時に storage 1回のみ | 通常は無症状（切断状態のタブでは既に実行済み）。**拡張機能をページ読み込み直後 500ms 以内に再読み込みすると例外になる**（開発中に踏む） | 1箇所（`attachAsync` の先頭） |
 | `sbi-cs.js` | 同上（待機は 500ms） | 同上 | 1箇所（`attach()` の先頭。**`attachAsync` ではない**。SPEC-CS-01） |
+
+> **上表に加えて、5本すべてが `retrySetup()` の tick 先頭の門を共有する**（`src/urls.js`。SPEC-CS-22）。
+> スクリーナー2種の「デバウンス発火直後」は 1.13.0 で足した3つ目の門で、
+> 200ms 束ねるあいだに切断されうる（コールバック時は生存・注入時は切断）窓を塞ぐ。
 
 ### 起動時の門（`attach()` / `attachAsync()` の先頭）
 
@@ -1018,7 +1099,37 @@ TradingView だけ、起動時に DOM を追加する処理（`createKabuLinkMen
 切断状態を検知した `MutationObserver` のコールバックは、**自分の監視を `disconnect()` してから抜ける**。
 復帰する手段が無く（NFR-14「やらないこと」）、監視を続けても他社サイト上で無駄な処理が走り続けるだけのため（NFR-01）。
 
-対象: `rakuten-scr-cs.js` / `sbi-scr-cs.js` のページ送り監視、`tradingview-cs.js` のオーバーレイ監視。
+本拡張が張る `MutationObserver` は次の4種。**例外は無い。4種とも切断状態で外れる**（1.13.0 で canvas 監視も揃えた）。
+
+| 監視 | 置き場所 | 切断時 |
+| --- | --- | --- |
+| スクリーナーの `document.body` 監視（SPEC-CS-08 / SPEC-CS-10） | `rakuten-scr-cs.js` / `sbi-scr-cs.js` | コールバック先頭とデバウンス発火直後の門で `disconnect()` |
+| オーバーレイ監視（SPEC-CS-11） | `tradingview-cs.js` | コールバック先頭の門で `disconnect()` |
+| `body` 監視（オーバーレイレイヤー待ち。SPEC-CS-11） | `tradingview-cs.js` | **門は無い。** オーバーレイを見つけた時点で自ら `disconnect()` して役目を終える（恒久的には残らない） |
+| **canvas 監視**（ボタンの表示切替。SPEC-CS-12） | `tradingview-cs.js` | コールバック先頭の門で `disconnect()`（**1.13.0**。1.12.0〜1.12.2 は門も `disconnect()` も無く、タブの寿命まで残っていた） |
+
+#### canvas 監視を揃えた理由（1.13.0。architect 判断 2026-08-25。ADR-0008 の 10）
+
+> 1.13.0 でこの監視は `retrySetup()` の `setup()`（`setupKabuLinkMenu()`）の中で張るようになったため、
+> **FR-13 判定基準4「切断状態を検知したら、再試行を停止し、そのために張った監視も外すこと」に直接かかる。**
+> 他の3種と同じ形（コールバック先頭の門 → `disconnect()`）に揃えた。
+>
+> 揃える前でも実害は自前の `.ktt-tv-kabuLinkMenu` の show/hide だけで、**要素を追加しないため
+> NFR-14 判定基準2 は破っていなかった**（1.13.0 のリリースを止める欠陥ではなかった）。
+> それでも揃えたのは、本節の規則を「本拡張が張る監視はすべて切断で外れる」という
+> 例外なしの不変条件に保つため（例外を1つ残すと、次に監視を足す人がどちらに倣うか決められない）。
+>
+> 実装形は SPEC-CS-22 の「canvas 監視の切断時の停止」。
+> 手動確認は `docs/MANUAL-CHECKLIST.md` **G-7**（1.13.0 で新設。SPEC-CS-22 の検証表 9）。
+
+再試行のタイマーも同じ規則に従う（1.13.0。SPEC-CS-22 / FR-13 判定基準4）。
+**tick の先頭で `isExtensionAlive()` を判定し、偽なら `clearInterval` して止める。**
+
+楽天・SBI の 4 本は起動時に読んだ `keys` をキャッシュして使うため、
+**切断後も拡張 API に触れずに注入できてしまう**。ADR-0005 の 4 で
+「実害が無くても判定基準2 を優先して止める」と決めた経路と同じものが、
+再試行によって時間方向に広がる。門を tick ごとに置かないと NFR-14 判定基準2 が破れる。
+手動確認は `docs/MANUAL-CHECKLIST.md` **G-6**（1.13.0 で新設。SPEC-CS-22 の検証表 8）。
 
 ### 通知・復帰はしない
 
@@ -1043,11 +1154,15 @@ TradingView だけ、起動時に DOM を追加する処理（`createKabuLinkMen
 | スクリーナーのページ送りで注入しない・監視を外す | G-3 | 1, 2 |
 | タブを再読み込みすれば元に戻る | G-4 | 3 |
 | **起動時に「株Link」ボタンを注入しない** | G-5 | 2 |
+| **切断後に現れた行に注入しない（再試行の停止）** | G-6 | 2 |
+| **切断後に canvas 監視が外れ、ボタンの表示が更新されなくなる** | G-7 | 1, 3 |
 
 - 要件: NFR-14, NFR-01, NFR-05, CON-01, CON-03
 - 検証: `manual`（**自動テストにできない**。拡張機能の再読み込みは Playwright から再現できず、
-  切断状態は Chrome の内部状態のため。`docs/MANUAL-CHECKLIST.md` G-1〜G-5）／
-  `auto`（**正常時の退行が無いこと**は既存の注入テストが担保する。判定基準3）
+  切断状態は Chrome の内部状態のため。`docs/MANUAL-CHECKLIST.md` G-1〜G-7。
+  加えて、TradingView には自動テストが無いため、canvas 監視に門を足した 1.13.0 では
+  **A-8**（銘柄が無い画面でボタンが隠れる）で正常時の非退行を見る。判定基準3）／
+  `auto`（楽天・SBI の**正常時の退行が無いこと**は既存の注入テストが担保する。判定基準3）
 
 ## SPEC-CS-20 楽天証券・国内株式・株価検索の破損調査（FR-20）
 
@@ -1202,3 +1317,191 @@ TradingView だけ、起動時に DOM を追加する処理（`createKabuLinkMen
 - 要件: CON-11, FR-21, FR-03, FR-02, FR-04
 - 検証: `auto`（`セレクタ定義 › …` 19・20。`npm test`）／
   `manual`（新しいセレクタを足すときに上記手順を踏むこと）
+
+---
+
+## SPEC-CS-22 注入の再試行（共通）
+
+> 1.13.0 で実装した（FR-13）。設計判断は [ADR-0008](../adr/0008-injection-retry.md)。
+> canvas 監視の切断時の停止（SPEC-CS-19「監視の停止」／下の検証表 9）も同版で入った。
+
+固定待機（SPEC-CS-01）が明けた時点で注入対象が無くても、**現れるまで一定時間試し直す**。
+
+### 用語
+
+| 語 | 意味 | 寿命 | 打ち切り |
+| --- | --- | --- | --- |
+| **再試行** | 設置（注入・常設監視の開始）が空振りしたときに繰り返す処理 | 成功・打ち切り・切断まで | あり（30 秒） |
+| **常設監視** | 設置後にページの変化へ追随する `MutationObserver` | タブの寿命 | なし（切断時のみ外す。SPEC-CS-19） |
+
+FR-13 判定基準2 の「再試行のために張った監視も外す」は**再試行側**への要求として満たす。
+本仕様では再試行をタイマーで駆動するため `clearInterval` が対応する。
+常設監視は FR-13 が新設するものではなく、切断時に外す既存の規則（ADR-0005 の 4）をそのまま保つ。
+
+### 共有ヘルパー `retrySetup()`
+
+置き場所は **`src/urls.js`**。5本の Content Script すべてが読む唯一の共有ファイル
+（`isExtensionAlive()` と同じ理由。SPEC-CS-19 / CON-02）。
+`importScripts('./urls.js')` により Service Worker からも見えるため、**自動テストで直接叩ける**。
+
+次は**宣言だけの抜粋**。実物（`src/urls.js`）は関数本体に加えて、定数の JSDoc と
+`retrySetup()` の JSDoc の補足行（停止の 4 経路・切断判定の理由・SPEC 参照）を持つ。
+その補足行は下表と本節の注記に対応する。
+
+```javascript
+const retrySetupIntervalMs = 500
+const retrySetupTimeoutMs = 30000
+
+/**
+ * 設置(注入・常設監視の開始)を、成功するまで一定間隔で試す
+ * @param { () => boolean } setup 設置を試みる。これ以上の再試行が不要なら true
+ * @param { { intervalMs?: number, timeoutMs?: number } } [options] 既定は 500ms / 30000ms
+ */
+const retrySetup = (setup, options) => { /* … */ }
+```
+
+| 挙動 | 内容 |
+| --- | --- |
+| 初回 | **呼び出し時に同期で 1 回** `setup()` を実行する（現行と同じタイミングで注入が始まる） |
+| 継続 | `setup()` が偽なら `intervalMs` ごとに呼び直す |
+| 停止 | 下表の 4 経路。**タイマーが存在する場合はすべて同じ `stop()`（`clearInterval`）を通る** |
+
+| 停止経路 | 条件 | 要件 |
+| --- | --- | --- |
+| 成功 | `setup()` が真 | FR-13 判定基準1 |
+| 打ち切り | 初回から `timeoutMs` 経過 | FR-13 判定基準2 |
+| 切断 | tick の先頭で `isExtensionAlive()` が偽 | FR-13 判定基準4 / NFR-14 判定基準2 |
+| 例外 | `setup()` が例外を投げた（外へ出さない） | NFR-01 |
+
+- **切断の判定を毎 tick 行う。** 楽天・SBI の 4 本は起動時に読んだ `keys` をキャッシュして使うため、
+  切断後も拡張 API に触れずに注入できてしまう（ADR-0005 の 4 と同じ経路を時間方向に広げる）
+- **打ち切りは経過時間で見る。** タイマーは背景タブで 1 秒以上に丸められるため、
+  回数で持つと待つ時間が環境で変わる
+- **`options` は既定値を持つ。** 5本の呼び出し側は指定しない。小さい値を渡すのは自動テストだけ
+- **`stop()` を通らない停止が 1 つある。** 初回の同期呼び出しで成功または例外になった場合は
+  `setInterval` を張る前に `return` するため `stop()` を通らない。
+  **止めるべきタイマーが存在しないので放置は起きない**（`src/*.js` 中の `setInterval` は
+  `urls.js` の 1 箇所、`clearInterval` も 1 箇所）。
+  「4 経路とも同じ停止処理を通る」はタイマーが張られた後の話として読む
+
+### サイトごとの再試行単位と成功条件
+
+| Content Script | `setup()` がやること | 成功条件 |
+| --- | --- | --- |
+| `rakuten-cs.js` | URL が一致する `menuSelectors` で注入パスを 1 回走らせる | **累計 1 件以上注入**かつ**そのパスの新規注入が 0 件**（静止） |
+| `sbi-cs.js` | 全 `menuSelectors` で注入パスを 1 回走らせる | 同上 |
+| `rakuten-scr-cs.js` | 常設監視（SPEC-CS-08）を張り、初期パスを走らせる | 監視を張れた |
+| `sbi-scr-cs.js` | 常設監視（SPEC-CS-10）を張り、初期パスを走らせる | 監視を張れた |
+| `tradingview-cs.js` | `chart-canvas` と `toolbar-container` が**両方**あれば canvas 監視とボタンを作る（SPEC-CS-12） | 両方あって設置した／既にボタンがある |
+
+**静止を成功条件にする理由（楽天・SBI の 2 本）:** 「1 件でも注入できたら成功」にすると、
+表が段階的に描画される場合に一部の行だけ注入して止まり、**注入 < ヒット**が残る。
+FR-13 判定基準5 (c) が「注入 = ヒット」を課す 8 対象を直接壊すため、
+**新規注入が 0 件になる tick を 1 回見てから**止める。
+
+新規注入の判定は `$('span.x-kabu-root').length` をパスの前後で比べる
+（`attachMenu()` の戻り値を変えない）。
+
+> **残る限界（静止条件そのものの弱点）。** 「新規注入 0 件のパスを 1 回見たら止める」ため、
+> **行が時間を空けて 2 回に分かれて現れると、2 回目の行には注入されない。**
+> 例: t=0 に行が現れ、t=500 のパスで注入 → t=1000 のパスで `after === before` が成立して停止 →
+> t=1200 に現れた行は誰も拾わない（`rakuten-cs.js` / `sbi-cs.js` には常設監視が無い）。
+>
+> 影響するのは楽天証券・SBI証券の**通常ページ2本のみ**。スクリーナー2種は `document.body` の
+> 常設監視があり、TradingView はボタンが 1 つ出れば足りるため成立しない。
+> **実装を変えない**（「静止を N 回連続」や楽天・SBI への常設監視の常設化は、
+> いずれも FR-13 の範囲を超える。ADR-0008 の 5）。
+> 「たまに一部の行だけメニューが出ない」報告が来たら、まずここを疑う。
+
+### 再試行を始めない場合
+
+| Content Script | 条件 |
+| --- | --- |
+| `rakuten-cs.js` | `location.href` に一致する `menuSelector` が 0 件（SPEC-CS-14） |
+| 5本すべて | 起動時の門（`isExtensionAlive()` が偽）／`getEnableLinkKeysAsync()` が失敗（SPEC-CS-19） |
+
+> `sbi-cs.js` は URL で対象を絞らない（SPEC-CS-09）。SBI証券の対象外ページでは
+> 30 秒間セレクタ 2 本を評価し続ける。**DOM は一切変更しない**（NFR-01）。
+> 絞り込みの追加は SPEC-CS-09 の変更にあたるため、本仕様では行わない（ADR-0008 の 2）。
+
+### 二重注入の防止（FR-13 判定基準3）
+
+| 層 | 内容 | 新旧 |
+| --- | --- | --- |
+| 楽天・SBI 4本 | 置換済みの子ノードはテキストノードではないため、同じ要素を再走査しても置換が起きない（SPEC-CS-02） | 既存 |
+| 楽天・SBI 4本 | `attachMenu()` は、対象要素が `span.x-kabu-root` の内側にあるとき何もしない | **追加** |
+| TradingView ボタン | `$('.ktt-tv-kabuLinkMenu').length > 0` なら設置済みとして成功を返す | **追加** |
+| TradingView 右クリック | `tr[data-kabu-tantan]` のガード（SPEC-CS-11 条件1） | 既存・変更なし |
+
+> 2つ目のガードが要る理由: 注入したメニュー項目の `<a>` が検出用セレクタに再びヒットする
+> （楽天スーパースクリーナーの検出用セレクタのヒットが 1150 件になるのはこれ）。
+> パスを繰り返す設計では、構造的な性質だけに頼らない。
+
+### 定数
+
+| 定数 | 値 | 根拠 |
+| --- | --- | --- |
+| `retrySetupIntervalMs` | 500 | 現れてから注入までの遅れの上限。固定待機と同じ粒度 |
+| `retrySetupTimeoutMs` | 30000 | 30 秒たっても現れないものは対象ページではないとみなす。検証ツールの計測点（TradingView は遷移後 5000ms。SPEC-SC-25）より十分に長い |
+| `observerDebounceMs` | 200 | `document.body` 監視の発火を束ねる幅（SPEC-CS-08 / SPEC-CS-10。ADR-0008 の 3） |
+
+> **`observerDebounceMs` と `attachPass()` は 2 ファイルに重複定義してある**
+> （`observerDebounceMs`: `rakuten-scr-cs.js` / `sbi-scr-cs.js`、
+> `attachPass()`: `rakuten-cs.js` / `sbi-cs.js`。引数だけが違う）。
+> **定数を `urls.js` へ寄せると、SPEC-SC-25 の `settleMs` 計算式との対応が 1 箇所になる。**
+> 1.13.0 では寄せていない（実装変更。値を変える必要が出た時点で行う）。
+
+- 要件: FR-13, FR-03, FR-04, NFR-01, NFR-09, NFR-14, CON-02, CON-03
+- 検証: `auto`（`service_worker: retrySetup`（成功で停止 / 打ち切りで停止 / 例外で停止）と
+  `楽天証券 Content Script › 遅れて現れた銘柄コードにもメニューを注入する` ほか。SPEC-CS-22 の「検証」表）／
+  `半自動`（`npm run check:selectors` のフル実行を**連続 2 回**。FR-13 判定基準5 の (a)(b)(c)。SPEC-SC-25）／
+  `manual`（TradingView の銘柄切替への追随（FR-13 判定基準6）と切断状態での再試行停止・
+  canvas 監視の停止（同 4）。`docs/MANUAL-CHECKLIST.md` **A-12 / G-6 / G-7**。いずれも 1.13.0 で新設済み。
+  canvas 監視の門の**正常時の非退行**は既存の **A-8**（NFR-14 判定基準3））
+
+### 検証（developer が用意するもの）
+
+1〜9 すべて 1.13.0 で用意済み。
+
+| # | 種別 | テスト名 | 何を固定するか |
+| --- | --- | --- | --- |
+| 1 | `auto` | `service_worker: retrySetup › 成功したら再試行を止める` | `setup()` が真を返した後は呼ばれない |
+| 2 | `auto` | `service_worker: retrySetup › 打ち切り時刻を過ぎたら止める` | `timeoutMs` 経過後に呼ばれない（`intervalMs: 20, timeoutMs: 100` で駆動）。`clearInterval` に到達する |
+| 3 | `auto` | `service_worker: retrySetup › setup が例外を投げたら止める` | 例外が外へ出ず、2 回目が無い |
+| 4 | `auto` | `楽天証券 Content Script › 遅れて現れた銘柄コードにもメニューを注入する` | フィクスチャが 1500ms 後に行を足す → `span.x-kabu-root` が 3 件（判定基準1） |
+| 5 | `auto` | `楽天証券 Content Script › 同じ銘柄コードに二重注入しない` | 4 の後に 2 tick 待っても件数が増えない（判定基準3） |
+| 6 | `auto` | `SBI証券 Content Script › 遅れて現れた銘柄コードにもメニューを注入する` | 4 と同じ（`sbi-cs.js` 側） |
+| 6b | `auto` | `スクリーナー Content Script › 楽天スーパースクリーナー: 後から現れた結果一覧に注入する` | 器が後から現れても `document.body` 監視が拾う（SPEC-CS-08）。二重注入しない |
+| 6c | `auto` | `スクリーナー Content Script › SBI銘柄スクリーニング: 後から現れた結果一覧に注入する` | 実測「ヒット 50 / 注入 0」の経路の回帰（SPEC-CS-10） |
+| 7 | `manual` | `docs/MANUAL-CHECKLIST.md` A-12 | TradingView でリトライ注入されたボタンが銘柄切替に追随する（判定基準6） |
+| 8 | `manual` | `docs/MANUAL-CHECKLIST.md` G-6 | 楽天証券のページ読み込み直後に拡張機能を再読み込みし、**その後に現れた行にも注入されない**（判定基準4） |
+| 9 | `manual` | `docs/MANUAL-CHECKLIST.md` G-7 | 切断後に **canvas 監視が外れ、「株Link」ボタンの表示が更新されなくなる**（判定基準4。下記「canvas 監視の切断時の停止」） |
+
+#### canvas 監視の切断時の停止（検証表 9。1.13.0）
+
+`src/tradingview-cs.js` の `setupKabuLinkMenu()` の中で、canvas 監視を他の3種と同じ形に揃えた
+（SPEC-CS-19「監視の停止」）。`canvasObserverCallback` は独立した関数で監視オブジェクトを
+参照できないため、**同ファイルの `bodyObserver` と同じく無名コールバックで包む**
+（`canvasObserverCallback` 自体は変えていない）。
+
+```javascript
+const canvasObserver = new MutationObserver(() => {
+  // 切断状態では監視を外す(復帰手段が無く、監視を続けても無駄に走るだけ。SPEC-CS-19)
+  if (!isExtensionAlive()) {
+    canvasObserver.disconnect()
+    return
+  }
+  canvasObserverCallback()
+})
+canvasObserver.observe(canvas, { attributes: true })
+```
+
+| 観点 | 内容 |
+| --- | --- |
+| 正常時の振る舞い | 変わらない（`isExtensionAlive()` が真なら従来どおり `canvasObserverCallback()` を呼ぶ） |
+| 自動テスト | **無い。** 切断状態は Playwright から作れない（SPEC-CS-19 の検証欄と同じ理由） |
+| 手動確認 | `docs/MANUAL-CHECKLIST.md` **G-7**。TradingView のチャートでボタンが出ている状態 → 拡張機能を再読み込み → タブは再読み込みせずに銘柄コードが取れない画面へ移動 → **ボタンが残ったまま消えない**（監視が外れた証拠。**A-8 とは逆になるのが正しい**）。G-5 / G-6 と違い時間の窓は無い |
+| 正常時の非退行 | **A-8**（銘柄が無い画面でボタンが隠れる）。門が真の経路が壊れていないことの直接の証拠（NFR-14 判定基準3） |
+
+> 切断状態は Playwright から再現できない（SPEC-CS-19 の検証欄と同じ理由）。テスト 1〜3 の
+> `isExtensionAlive()` 経路も Service Worker 上では常に真になるため、**判定基準4 は手動でしか確かめられない**。

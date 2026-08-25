@@ -31,7 +31,7 @@ flowchart TD
 | --- | --- | --- |
 | 1 | 利用者がオプションページで設定を保存 | `chrome.storage.sync` に `enableLinkKeys` を書く |
 | 2 | storage が変わった | Service Worker が `onChanged` で検知し、コンテキストメニューを作り直す |
-| 3 | 対象サイトを開いた | Content Script が storage を読み、銘柄コードにメニューを注入する |
+| 3 | 対象サイトを開いた | Content Script が storage を読み、銘柄コードにメニューを注入する。**注入対象がまだ無ければ、現れるまで最大 30 秒試し直す**（SPEC-CS-22。1.13.0） |
 | 4 | メニューを選んだ | 新しいタブで遷移先サイトを開く |
 | 5 | TradingView で証券会社連携を使った | Content Script が Service Worker に問い合わせ、ログイン済みタブの URL からセッションIDを借りて遷移先を組み立てる |
 
@@ -43,7 +43,7 @@ flowchart TD
 ```json
 "js": [
   "third-party/jquery.min.js",  // $ を定義
-  "urls.js",                    // externalUrls / externalUrlsMap / exchanges / getEnableLinkKeysAsync / makeUrl / isExtensionAlive
+  "urls.js",                    // externalUrls / externalUrlsMap / exchanges / getEnableLinkKeysAsync / makeUrl / isExtensionAlive / retrySetup
   "linkMenu.js",                // createMenu（urls.js に依存）
   "rakuten-cs.js"               // 上記すべてを使う
 ]
@@ -53,7 +53,11 @@ Service Worker だけは `importScripts('./urls.js')` で読み込む。
 
 **5本の Content Script すべてが読むのは `urls.js` だけ**（`linkMenu.js` は TradingView に読み込まれない）。
 全 Content Script で共有したいものは `urls.js` に置く。
-`isExtensionAlive()`（切断状態の判定。SPEC-CS-19）をここに置いているのはこの理由による。
+`isExtensionAlive()`（切断状態の判定。SPEC-CS-19）と `retrySetup()`（注入の再試行。SPEC-CS-22）を
+ここに置いているのはこの理由による。
+
+> `urls.js` は Service Worker からも `importScripts` で読まれるため、
+> ここに置いた関数は `tests/service-worker.spec.mjs` から直接叩ける（ビルドが無い環境で唯一の単体テスト手段）。
 
 この暗黙の依存は壊れても実行時まで気づけないため、`npm run validate` が読み込み順を検証する。
 ESLint 側は `eslint.config.mjs` の `sharedGlobals` でこれらをグローバル宣言している。
@@ -197,6 +201,7 @@ npm test   # 差し替え後は必ず実行する
 | 変更ファイル | 影響 |
 | --- | --- |
 | `src/urls.js` | 全 Content Script + Service Worker + オプションページ |
+| `src/*-cs.js` の起動シーケンス・監視 | `docs/specs/content-scripts.md`（SPEC-CS-01 / 08 / 10 / 12 / 19 / 22）。**固定待機・再試行間隔・デバウンスを変えたら `scripts/selector-check/targets.mjs` の `settleMs` の下限を確かめる**（SPEC-SC-25。自動テストでは落ちない） |
 | `src/linkMenu.js` | 楽天・SBI の Content Script |
 | `src/service_worker.js` | コンテキストメニュー、メッセージ通信全体 |
 | `src/style.css` | 楽天・SBI のメニュー表示 |

@@ -3,15 +3,15 @@
 > **このファイルは `npm run docs:tests` で自動生成される。手で編集しない。**
 > 説明文を変えたい場合は `scripts/test-catalog.mjs` を編集する。
 
-テスト総数: **57**
+テスト総数: **65**
 
 テストの方針・手法は [TESTING.md](TESTING.md) を参照。
 
-## Content Script（楽天証券 / SBI証券）
+## Content Script（楽天証券 / SBI証券 / スクリーナー2種）
 
-`tests/content-script.spec.mjs` — 7 件
+`tests/content-script.spec.mjs` — 12 件
 
-context.route() で対象オリジンにフィクスチャ HTML を返し、実際の注入を検証する。
+context.route() で対象オリジンにフィクスチャ HTML を返し、実際の注入を検証する。固定待機が明けた後に要素が現れるフィクスチャで、注入の再試行（SPEC-CS-22）も見る。
 
 対応する仕様: SPEC-CS, SPEC-MF
 
@@ -20,10 +20,15 @@ context.route() で対象オリジンにフィクスチャ HTML を返し、実�
 | 1 | 楽天証券 Content Script | お気に入りの銘柄コードにリンクメニューを注入する |
 | 2 | 楽天証券 Content Script | メニュー項目が銘柄コード入りの外部リンクになっている |
 | 3 | 楽天証券 Content Script | ホバーでメニューが開く |
-| 4 | 楽天証券 Content Script | 対象外のページにはメニューを注入しない |
-| 5 | SBI証券 Content Script | ポートフォリオの銘柄コードにリンクメニューを注入する |
-| 6 | SBI証券 Content Script | 銘柄コードごとに異なる URL が生成される |
-| 7 | 設定の反映 | オプションで無効にしたサイトはメニューに出ない |
+| 4 | 楽天証券 Content Script | 遅れて現れた銘柄コードにもメニューを注入する |
+| 5 | 楽天証券 Content Script | 同じ銘柄コードに二重注入しない |
+| 6 | 楽天証券 Content Script | 対象外のページにはメニューを注入しない |
+| 7 | SBI証券 Content Script | ポートフォリオの銘柄コードにリンクメニューを注入する |
+| 8 | SBI証券 Content Script | 遅れて現れた銘柄コードにもメニューを注入する |
+| 9 | SBI証券 Content Script | 銘柄コードごとに異なる URL が生成される |
+| 10 | スクリーナー Content Script | 楽天スーパースクリーナー: 後から現れた結果一覧に注入する |
+| 11 | スクリーナー Content Script | SBI銘柄スクリーニング: 後から現れた結果一覧に注入する |
+| 12 | 設定の反映 | オプションで無効にしたサイトはメニューに出ない |
 
 ## オプションページ
 
@@ -84,7 +89,7 @@ chrome-extension:// のオプションページを開き、表示・操作・保
 
 ## Service Worker / 共有モジュール
 
-`tests/service-worker.spec.mjs` — 15 件
+`tests/service-worker.spec.mjs` — 18 件
 
 Service Worker のグローバルスコープを直接 evaluate して、純粋なロジックを検証する。
 
@@ -107,6 +112,9 @@ Service Worker のグローバルスコープを直接 evaluate して、純粋�
 | 13 | urls.js: exchanges | 取引所コードは大文字英字のみで、市場種別は jp / us のいずれか |
 | 14 | urls.js: externalUrls の整合性 | key が一意で必須フィールドが揃っている |
 | 15 | urls.js: externalUrls の整合性 | url1 は必ず ${code} を含む |
+| 16 | service_worker: retrySetup | 成功したら再試行を止める |
+| 17 | service_worker: retrySetup | 打ち切り時刻を過ぎたら止める |
+| 18 | service_worker: retrySetup | setup が例外を投げたら止める |
 
 ## 回帰テストとして重要なもの
 
@@ -114,6 +122,11 @@ Service Worker のグローバルスコープを直接 evaluate して、純粋�
 
 | テスト | 何を守っているか |
 | --- | --- |
+| 楽天証券 Content Script › 遅れて現れた銘柄コードにもメニューを注入する | 固定待機が明けた後に現れた要素へ注入できなくなる退行の検出（FR-13 / SPEC-CS-22） |
+| 楽天証券 Content Script › 同じ銘柄コードに二重注入しない | 再試行でパスを繰り返す設計になったことによる二重注入の検出（FR-13 判定基準3） |
+| SBI証券 Content Script › 遅れて現れた銘柄コードにもメニューを注入する | 固定待機が明けた後に現れた要素へ注入できなくなる退行の検出（FR-13 / SPEC-CS-22） |
+| スクリーナー Content Script › 楽天スーパースクリーナー: 後から現れた結果一覧に注入する | スクリーナーの常設監視が結果一覧の器に戻り、検索前に開いたタブで注入されなくなる退行の検出（FR-13） |
+| スクリーナー Content Script › SBI銘柄スクリーニング: 後から現れた結果一覧に注入する | スクリーナーの常設監視が結果一覧の器に戻り、検索前に開いたタブで注入されなくなる退行の検出（FR-13） |
 | オプションページ › 行がグリッドとして横並びにレイアウトされる | Materialize 2.x で .col が廃止され .row が CSS Grid 化した影響の検出 |
 | オプションページ › ハンドルをドラッグして並び替えた順序が保存される | jQuery UI 1.14.2 が jQuery 4.0.0 上で動くことの実証 |
 | オプションページ › 外部ホストへ一切リクエストしない | CDN・外部フォント・外部画像への依存が再混入していないかの検出 |
@@ -121,6 +134,9 @@ Service Worker のグローバルスコープを直接 evaluate して、純粋�
 | 結果ファイルの書式 › 消毒した URL・伏せ字を含む結果ファイルがインライン HTML を漏らさない | セレクタ検証の生成物が markdownlint（MD033）で落ち、npm run check を止める問題の検出 |
 | service_worker: getTickerCode › 文中の大文字並びには誤マッチしない | 米国株の正規表現から先頭アンカー ^ が失われていないかの検出 |
 | service_worker: compareVersion › マイナー/パッチを数値として比較する | バージョン比較が文字列比較に戻っていないかの検出 |
+| service_worker: retrySetup › 成功したら再試行を止める | 再試行が止まらず、他社サイト上でタイマーが走り続ける問題の検出（FR-13 判定基準2 / NFR-01） |
+| service_worker: retrySetup › 打ち切り時刻を過ぎたら止める | 再試行が止まらず、他社サイト上でタイマーが走り続ける問題の検出（FR-13 判定基準2 / NFR-01） |
+| service_worker: retrySetup › setup が例外を投げたら止める | 再試行が止まらず、他社サイト上でタイマーが走り続ける問題の検出（FR-13 判定基準2 / NFR-01） |
 
 ## 対象外
 
@@ -128,6 +144,6 @@ Service Worker のグローバルスコープを直接 evaluate して、純粋�
 | --- | --- |
 | TradingView (`tradingview-cs.js`) | DOM がハッシュ付きクラス名で毎リリース変わる。フィクスチャ化しても実サイトとの乖離を検出できない (CON-08) |
 | 楽天証券・内藤証券のセッション連携 | ログイン済みタブが前提のため自動化していない (CON-04) |
-| 楽天スーパースクリーナー / SBI銘柄スクリーニング | MutationObserver + iframe 前提で再現コストが見合わない |
+| 楽天スーパースクリーナー / SBI銘柄スクリーニング の**見た目と実 DOM** | 注入そのものは 1.13.0 で自動化した（常設監視を document.body に上げたためフィクスチャで再現できる）。実 DOM との乖離は `npm run check:selectors` と手動確認 C-2 / C-4 で見る |
 
 これらは変更時に手動確認する。手順は [TESTING.md](TESTING.md) を参照。

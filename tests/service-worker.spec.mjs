@@ -145,3 +145,96 @@ test.describe('urls.js: externalUrls の整合性', () => {
     expect(missing).toEqual([])
   })
 })
+
+// SPEC-CS-22: 注入の再試行の共有ヘルパー。
+// urls.js は Service Worker からも importScripts されるため、
+// Content Script を経由せずに停止経路を直接叩ける唯一の場所になる。
+// 停止は「成功・打ち切り・切断・例外」の 4 経路。タイマーが存在する場合はすべて同じ stop()
+// （clearInterval）を通る（初回の同期呼び出しで成功・例外になった場合は setInterval を張る前に
+// 抜けるため、止めるべきタイマーが無い。SPEC-CS-22）。
+// 打ち切りでは clearInterval の呼び出し自体を数えて到達を確かめ、
+// 例外では 2 回目が無いこと（＝タイマーが張られていないこと）で確かめる。
+// 切断（isExtensionAlive() が偽）は Service Worker 上では作れないため手動確認
+// （docs/MANUAL-CHECKLIST.md G-6）に委ねる。
+test.describe('service_worker: retrySetup', () => {
+  test('成功したら再試行を止める', async ({ serviceWorker }) => {
+    const result = await serviceWorker.evaluate(async () => {
+      let calls = 0
+      retrySetup(() => { calls += 1; return true }, { intervalMs: 20, timeoutMs: 1000 })
+
+      // 初回は呼び出し時に同期で走る
+      const sync = calls
+      await new Promise((resolve) => setTimeout(resolve, 200))
+      return { sync, after: calls }
+    })
+
+    expect(result.sync).toBe(1)
+    expect(result.after).toBe(1)
+  })
+
+  test('打ち切り時刻を過ぎたら止める', async ({ serviceWorker }) => {
+    const result = await serviceWorker.evaluate(async () => {
+      const realClearInterval = clearInterval
+      let cleared = 0
+      globalThis.clearInterval = (id) => { cleared += 1; realClearInterval(id) }
+
+      try {
+        let calls = 0
+        retrySetup(() => { calls += 1; return false }, { intervalMs: 20, timeoutMs: 100 })
+
+        await new Promise((resolve) => setTimeout(resolve, 300))
+        const atTimeout = calls
+        await new Promise((resolve) => setTimeout(resolve, 300))
+        return { atTimeout, after: calls, cleared }
+      } finally {
+        globalThis.clearInterval = realClearInterval
+      }
+    })
+
+    // 打ち切り後は 1 回も呼ばれない（無限に続かない。FR-13 判定基準2）
+    expect(result.after).toBe(result.atTimeout)
+    // 100ms / 20ms なので数回は走る（そもそも再試行していない、を弾く）
+    expect(result.atTimeout).toBeGreaterThan(1)
+    // 停止処理（clearInterval）に到達している
+    expect(result.cleared).toBe(1)
+  })
+
+  test('setup が例外を投げたら止める', async ({ serviceWorker }) => {
+    const result = await serviceWorker.evaluate(async () => {
+      // 初回（同期）に投げた場合: 呼び出し元へ例外が出ず、2 回目も無い
+      let syncCalls = 0
+      let thrown = null
+      try {
+        retrySetup(() => { syncCalls += 1; throw new Error('boom') }, { intervalMs: 20, timeoutMs: 1000 })
+      } catch (e) {
+        thrown = String(e)
+      }
+
+      // 2 回目以降（tick 中）に投げた場合: clearInterval に到達して止まる
+      const realClearInterval = clearInterval
+      let cleared = 0
+      globalThis.clearInterval = (id) => { cleared += 1; realClearInterval(id) }
+
+      try {
+        let tickCalls = 0
+        retrySetup(() => {
+          tickCalls += 1
+          if (tickCalls === 1) return false
+          throw new Error('boom')
+        }, { intervalMs: 20, timeoutMs: 1000 })
+
+        await new Promise((resolve) => setTimeout(resolve, 200))
+        return { thrown, syncCalls, tickCalls, cleared }
+      } finally {
+        globalThis.clearInterval = realClearInterval
+      }
+    })
+
+    expect(result.thrown).toBeNull()
+    // 初回で投げた分は、待った後も 2 回目が無い
+    expect(result.syncCalls).toBe(1)
+    // tick で投げた分は 2 回目で止まる
+    expect(result.tickCalls).toBe(2)
+    expect(result.cleared).toBe(1)
+  })
+})
