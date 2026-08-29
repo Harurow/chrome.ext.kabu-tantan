@@ -134,10 +134,30 @@ const exchanges = {
   全 Content Script（`manifest.json` の `js` 配列で `urls.js` が先）から参照できる唯一の共有ファイル。
   新しいファイルを足すと manifest の `js` 配列5箇所と読み込み順検査（SPEC-MF）に波及する（CON-02）
 
-**現在の参照元は `tradingview-cs.js` の `getTickerCode()`（SPEC-TC-07）だけ。**
-Service Worker の `getTickerCode(text)`（SPEC-TC-03）は未参照で、FR-14 に着手する際にここを参照する。
+### 参照元（3箇所）
 
-- 要件: FR-04（FR-14 の土台）
+| ファイル | 参照する関数・定数 | 引き方 | 仕様 |
+| --- | --- | --- | --- |
+| `src/service_worker.js` | `usCodeWithExchangePattern` | 読み込み時に `Object.keys(exchanges)` を `'us'` で絞り、正規表現を**1回だけ**組み立てる | SPEC-TC-03 |
+| `src/service_worker.js` | `matchExchangePrefixedTicker()` | 取引所トークンで引き、値が `'jp'` / `'us'` に**厳密一致**したときだけ銘柄コードの抽出へ進む | SPEC-TC-09 |
+| `src/tradingview-cs.js` | `parseExchangeSymbol()` | 同上（`getTickerCode()` から切り出した共通関数。ウォッチリストの行も通る） | SPEC-TC-07 |
+
+**表だけを共有し、解析器は共有しない**（ADR-0009 の 3）。
+入力の性質が違うため（利用者が選んだ任意の文字列／機械生成の `aria-label` と行の属性値）、
+区切りの扱いや失敗時のフォールバックが経路ごとに異なる。
+**米国ティッカーの後続境界（SPEC-TC-02）だけは3経路で同じ値**にしてあり、
+それは `米国ティッカーの後続境界: 3経路で同じ値` が機械的に固定している。
+
+> **`tradingview-cs.js` の `isSymbolShaped()` は、あえて本表を引かない。**
+> 右クリックの起点が「ウォッチリストの行かどうか」を値の**形**（`XXX:` で始まるか）だけで判定する。
+> ここで `exchanges` を引くと `SP:SPX`（未登録の取引所）が「行ではない」と判定され、
+> チャート起点へ落ちて**指数の行にチャートの銘柄が出る**（FR-08 判定基準 7 違反。SPEC-CS-23）。
+> **「取引所として妥当か」を判断するのは解釈側（`parseExchangeSymbol()`）の仕事**という切り分け。
+
+**表に無いコードの扱いは経路で揃っている。** どの経路でも銘柄コードを返さない
+（Service Worker はコロン区切りなら打ち切る。SPEC-TC-09。FR-08 判定基準 7）。
+
+- 要件: FR-04, FR-14, FR-08（判定基準 7）
 - 検証: `auto`（`urls.js: exchanges › 取引所コードは大文字英字のみで、市場種別は jp / us のいずれか`。
   キーの形・`_DLY` を表に載せていないこと・値が `jp` / `us` のいずれかであることを検査）／
   `lint`（`eslint.config.mjs` の `sharedGlobals` に `exchanges: 'readonly'` を宣言済み。外すと `no-undef`）

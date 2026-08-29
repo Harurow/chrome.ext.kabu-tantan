@@ -3,13 +3,13 @@
 > **このファイルは `npm run docs:tests` で自動生成される。手で編集しない。**
 > 説明文を変えたい場合は `scripts/test-catalog.mjs` を編集する。
 
-テスト総数: **65**
+テスト総数: **96**
 
 テストの方針・手法は [TESTING.md](TESTING.md) を参照。
 
 ## Content Script（楽天証券 / SBI証券 / スクリーナー2種）
 
-`tests/content-script.spec.mjs` — 12 件
+`tests/content-script.spec.mjs` — 17 件
 
 context.route() で対象オリジンにフィクスチャ HTML を返し、実際の注入を検証する。固定待機が明けた後に要素が現れるフィクスチャで、注入の再試行（SPEC-CS-22）も見る。
 
@@ -29,6 +29,11 @@ context.route() で対象オリジンにフィクスチャ HTML を返し、実�
 | 10 | スクリーナー Content Script | 楽天スーパースクリーナー: 後から現れた結果一覧に注入する |
 | 11 | スクリーナー Content Script | SBI銘柄スクリーニング: 後から現れた結果一覧に注入する |
 | 12 | 設定の反映 | オプションで無効にしたサイトはメニューに出ない |
+| 13 | tradingview-cs.js: isSymbolShaped | EXCHANGE:CODE の形だけを行の値と見なす |
+| 14 | tradingview-cs.js: isSymbolShaped | 解釈できる値は必ず形を満たす（形の判定は解釈より狭くならない） |
+| 15 | tradingview-cs.js: parseExchangeSymbol | canvas の aria-label と行の属性値で同じ結果になる |
+| 16 | tradingview-cs.js: parseExchangeSymbol | 米国ティッカーは後続境界を見て、切り出せないときは何も返さない |
+| 17 | tradingview-cs.js: parseExchangeSymbol | 取引所を解釈できない・形が合わないものは何も返さない |
 
 ## オプションページ
 
@@ -51,7 +56,7 @@ chrome-extension:// のオプションページを開き、表示・操作・保
 
 ## セレクタ定義（半自動検証の土台）
 
-`tests/selector-defs.spec.mjs` — 27 件
+`tests/selector-defs.spec.mjs` — 42 件
 
 ブラウザを起動せず、src/*-cs.js の menuSelectors と scripts/selector-check/targets.mjs の対応、および検証ツールの中断時の後始末を検証する。セレクタ文字列の二重管理を機械的に禁じる（NFR-13）。
 
@@ -84,12 +89,27 @@ chrome-extension:// のオプションページを開き、表示・操作・保
 | 23 | 手がかり | 識別・検出がともに 0 件の ⚠️ は題名から ❌ に再分類され、根拠が1行付く |
 | 24 | 手がかり | セレクタ評価の例外で ❌ になった対象には再分類の根拠を付けない |
 | 25 | 手がかり | 検証用 jQuery が未注入の対象は ⚠️ のままで、❌ の読み分けを壊さない |
-| 26 | 結果ファイルの書式 | 消毒した URL・伏せ字を含む結果ファイルがインライン HTML を漏らさない |
-| 27 | 結果ファイルの書式 | 手がかり節に到達判定の行が必ず1行出る |
+| 26 | 到達リンク | matchesTargetPath() が .do とパスパラメータ付きに一致しクエリ・フラグメントを無視する |
+| 27 | 到達リンク | matchesTargetPath() が別ページを取り違えない |
+| 28 | 到達リンク | pickLink() が資格を満たす候補のうち先頭の href を返す |
+| 29 | 到達リンク | pickLink() が資格を満たさない候補を1条件ずつ落として除外する |
+| 30 | 到達リンク | pickLink() がクエリを見て「開くだけ」のリンクだけを採る（資格6） |
+| 31 | 到達リンク | pickLink() が候補 0 件のとき no-candidate を返し、退避の文言が not-qualified と異なる |
+| 32 | 到達リンク | readPathnameAsync() はページ側で判定せず pathname をそのまま返す |
+| 33 | 到達リンク | リンクをたどれたら、その href へ referer 付きで遷移して件数を数える |
+| 34 | 到達リンク | 操作を切り替えるクエリのリンクが先頭にあっても踏まない |
+| 35 | 到達リンク | たどった先が対象ページでなければ件数を数えず、理由が「開けなかった」にならない |
+| 36 | 到達リンク | 候補を上限で切り捨てたら、退避の理由と別の1行で区別できる |
+| 37 | 到達リンク | 切り捨てが起きていなければ、切り捨ての1行は出ない |
+| 38 | 到達リンク | links.mjs のソースにクリック・フォーム送信が現れない |
+| 39 | 到達リンク | check.mjs の遷移する側もクリックせず、goto に渡る URL が2つに限られる |
+| 40 | 到達リンク | reach: link を持つサイトは link.origin を持ち、無ければハブを走査せず退避する |
+| 41 | 結果ファイルの書式 | 消毒した URL・伏せ字を含む結果ファイルがインライン HTML を漏らさない |
+| 42 | 結果ファイルの書式 | 手がかり節に到達判定の行が必ず1行出る |
 
 ## Service Worker / 共有モジュール
 
-`tests/service-worker.spec.mjs` — 18 件
+`tests/service-worker.spec.mjs` — 29 件
 
 Service Worker のグローバルスコープを直接 evaluate して、純粋なロジックを検証する。
 
@@ -103,18 +123,29 @@ Service Worker のグローバルスコープを直接 evaluate して、純粋�
 | 4 | service_worker: getTickerCode | 取引所コードなしの米国株を認識する |
 | 5 | service_worker: getTickerCode | 文中の大文字並びには誤マッチしない |
 | 6 | service_worker: getTickerCode | 単語の途中を切り出して別銘柄と誤認しない |
-| 7 | service_worker: getTickerCode | 先頭がティッカーなら後ろに文字列が続いても認識する |
-| 8 | service_worker: getTickerCode | 銘柄コードが無い文字列は false を返す |
-| 9 | service_worker: compareVersion | マイナー/パッチを数値として比較する |
-| 10 | urls.js: makeUrl | ${code} を置換する |
-| 11 | urls.js: makeUrl | ${code:0} は先頭1文字に置換する |
-| 12 | urls.js: makeUrl | ${exchange} は指定時のみ置換する |
-| 13 | urls.js: exchanges | 取引所コードは大文字英字のみで、市場種別は jp / us のいずれか |
-| 14 | urls.js: externalUrls の整合性 | key が一意で必須フィールドが揃っている |
-| 15 | urls.js: externalUrls の整合性 | url1 は必ず ${code} を含む |
-| 16 | service_worker: retrySetup | 成功したら再試行を止める |
-| 17 | service_worker: retrySetup | 打ち切り時刻を過ぎたら止める |
-| 18 | service_worker: retrySetup | setup が例外を投げたら止める |
+| 7 | service_worker: getTickerCode | 区切り記号の手前で切り出して別銘柄と誤認しない |
+| 8 | service_worker: getTickerCode | 区切り記号が接していなければ従来どおり認識する |
+| 9 | service_worker: getTickerCode | 半角と全角で結果が変わらない |
+| 10 | service_worker: getTickerCode | 先頭がティッカーなら後ろに文字列が続いても認識する |
+| 11 | service_worker: getTickerCode | 銘柄コードが無い文字列は false を返す |
+| 12 | service_worker: getTickerCode | 取引所プレフィックス: FR-14 の既知の弱点を解消する |
+| 13 | service_worker: getTickerCode | 取引所プレフィックス: コロン区切りを解釈する |
+| 14 | service_worker: getTickerCode | 取引所プレフィックス: コロン区切りで銘柄コードが取れなければ打ち切る |
+| 15 | service_worker: getTickerCode | 取引所プレフィックス: 未登録でもコロンなら打ち切る（判定基準7） |
+| 16 | service_worker: getTickerCode | 取引所プレフィックス: 空白区切りは失敗しても後続の規則へ送る |
+| 17 | service_worker: getTickerCode | 後置の取引所コードを exchanges の us 登録6件から判定する |
+| 18 | service_worker: getTickerCode | FR-14 の実装で 1.13.0 の判定を変えない（非退行） |
+| 19 | service_worker: compareVersion | マイナー/パッチを数値として比較する |
+| 20 | urls.js: makeUrl | ${code} を置換する |
+| 21 | urls.js: makeUrl | ${code:0} は先頭1文字に置換する |
+| 22 | urls.js: makeUrl | ${exchange} は指定時のみ置換する |
+| 23 | urls.js: exchanges | 取引所コードは大文字英字のみで、市場種別は jp / us のいずれか |
+| 24 | urls.js: externalUrls の整合性 | key が一意で必須フィールドが揃っている |
+| 25 | urls.js: externalUrls の整合性 | url1 は必ず ${code} を含む |
+| 26 | service_worker: retrySetup | 成功したら再試行を止める |
+| 27 | service_worker: retrySetup | 打ち切り時刻を過ぎたら止める |
+| 28 | service_worker: retrySetup | setup が例外を投げたら止める |
+| 29 | 米国ティッカーの後続境界: 3経路で同じ値 | 3経路とも同じ境界で、u フラグが付いている |
 
 ## 回帰テストとして重要なもの
 

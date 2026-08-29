@@ -1,11 +1,14 @@
 /**
- * 1対象の検証と判定・再分類 (SPEC-SC-09, 10, 11, 24)。
+ * 1対象の検証と判定・再分類 (SPEC-SC-09, 10, 11, 24, 26)。
  *
  * ここが持ってよいのは「件数・判定・例外メッセージ」だけ。
- * ページ本文・URL・認証情報は取得も記録もしない (SPEC-SC-14 / NFR-12)。
+ * ページ本文・URL・認証情報は**記録しない** (SPEC-SC-14 / NFR-12)。
+ * 到達のために href・`referer`・`pathname` を一時的に扱う経路はあるが (SPEC-SC-26)、
+ * 結果ファイルにも標準出力にも出さない。
  */
 
 import { collectFactsAsync, attachTrackingAsync, decideReach, sanitize } from './diagnostics.mjs'
+import { collectAnchorsAsync, readPathnameAsync, matchesTargetPath, pickLink, describeReach, LINK_PATH_MISMATCH_NOTE, LINK_TRUNCATED_NOTE, LINK_NO_CANDIDATE, LINK_NOT_QUALIFIED } from './links.mjs'
 
 // 消毒（URL を潰し 120 文字で切る）の実装は diagnostics.mjs にある。
 // 手がかりの整形と同じ関数を通す必要があるため、ここからは再輸出だけを行う (SPEC-SC-14)
@@ -175,6 +178,134 @@ const openContextMenuAsync = async (page, frame, chartSelector) => {
 }
 
 /**
+ * 組み立て URL を作る (SPEC-SC-06)。
+ * `reach: 'link'` では**たどれなかったときの退避先**として使う (SPEC-SC-26)。
+ */
+const buildUrl = (target, runner, entry) => (typeof target.url === 'function'
+  ? target.url({ session: runner.session, entry })
+  : target.url)
+
+/**
+ * ポータルから対象ページへのリンクを探す (SPEC-SC-26 の「リンクを探す範囲」)。
+ *
+ * 走査順は `context.pages()` → `page.frames()` → フレーム内は document order で、
+ * **最初に資格を満たしたアンカー**を採る。走査は読み取りだけで、ハブのページを遷移させない。
+ * 対象ごとに走査するので、直前にたどり着いたそのサイトのページも2件目以降のハブになる。
+ *
+ * 資格審査は純関数 `pickLink()` に閉じてあり、ここは走査と結果の集約だけを行う。
+ *
+ * **サイト固有の値は検証中のサイト定義から受け取る** (SPEC-SC-26「値は「検証中のサイト定義」から引く」)。
+ * ここで特定サイトの定数を名指しで読むと、他サイトに `reach: 'link'` を付けたときに
+ * **別サイトのオリジンでハブを走査して黙って 0 件になる**（例外も判定の変化も出ない。ADR-0011 の 9-6）。
+ *
+ * @param { import('@playwright/test').BrowserContext } context
+ * @param { { url: string } } entry `menuSelectors` のエントリ
+ * @param { { origin?: string, openQuery?: Record<string, string> } } link 検証中のサイトの `link`
+ * @returns { Promise<{ href: string | null, referer: string | null, reason: string, truncated: boolean }> }
+ */
+const findPortalLinkAsync = async (context, entry, link) => {
+  // ハブも遷移先も、そのサイト自身のオリジンに限る（サイト外への離脱を作らない。CON-10）。
+  // オリジンが無ければ**走査せず**退避する。他サイトのオリジンを流用しない (SPEC-SC-26 の規則3)
+  const origin = link?.origin
+  if (!origin) {
+    return { href: null, referer: null, reason: LINK_NO_CANDIDATE, truncated: false }
+  }
+
+  // 資格審査に使うサイト固有の値は純関数へ引数で渡す（links.mjs には持たせない）。
+  // `openQuery` が無ければ「クエリ無しだけを許す」に倒れる（安全側。SPEC-SC-26 の規則4）
+  const pickContext = { entryUrl: entry.url, origin, openQuery: link.openQuery }
+  let sawCandidate = false
+  let truncated = false
+
+  for (const page of context.pages()) {
+    if (page.isClosed() || !page.url().startsWith(`${origin}/`)) continue
+
+    for (const frame of page.frames()) {
+      let collected
+      try {
+        collected = await collectAnchorsAsync(frame, entry.url)
+      } catch {
+        // 読めないフレームは飛ばす（判定には影響させない）
+        continue
+      }
+      if (collected.candidates.length === 0) continue
+
+      sawCandidate = true
+      // 上限で切り捨てたフレームがあれば覚えておく（退避理由の読み違えを防ぐ）
+      truncated = truncated || collected.truncated === true
+      const picked = pickLink(collected.candidates, pickContext)
+      if (picked.href) {
+        return { href: picked.href, referer: frame.url(), reason: picked.reason, truncated: false }
+      }
+    }
+  }
+
+  // 候補すら無かったのか、候補はあったが資格を満たさなかったのかを退避理由に残す
+  return {
+    href: null,
+    referer: null,
+    reason: sawCandidate ? LINK_NOT_QUALIFIED : LINK_NO_CANDIDATE,
+    truncated
+  }
+}
+
+/**
+ * ポータルのリンクをたどって対象ページを開く (SPEC-SC-26 の「遷移」「到達後のパス確認」)。
+ *
+ * **CON-10 の担保をこの関数1つに閉じる。** 実際に遷移するのはここだけで、
+ * `page.goto()` に渡るのは「資格審査を通した href」か「組み立て URL」のどちらかしかない。
+ * `links.mjs` と同じく、この関数にクリック・フォーム送信の呼び出しが現れないことを
+ * 自動テストが文字列として固定する (SPEC-SC-16 の `到達リンク`)。
+ * **そのため、この関数にはコメントにも当該の呼び出し形を書かない。**
+ *
+ * @returns { Promise<{ opened: boolean, measurable: boolean }> }
+ *   `opened` が偽なら遷移そのものに失敗している（呼び出し側は打ち切る）。
+ *   `measurable` が偽なら着いた先が対象ページでない（件数を数えない）
+ */
+const followPortalLinkAsync = async (runner, site, target, entry, result) => {
+  const page = runner.page
+  // オリジン・許すクエリは検証中のサイト定義から引く (SPEC-SC-26)
+  const link = await findPortalLinkAsync(runner.context, entry, site.link)
+
+  // 到達方法の1行は**判定を問わず**残す。遷移の成否より前に決まるのでここで積む。
+  // 備考の先頭に来る (SPEC-SC-23 の備考 8)
+  result.notes.push(describeReach(link.reason))
+  if (link.truncated) {
+    // 「資格を満たさない」と「上限より後ろを見ていない」を読み分けられるようにする
+    result.notes.push(LINK_TRUNCATED_NOTE)
+  }
+
+  // たどれなければ従来どおり組み立て URL を直打ちする＝最悪でも現状と同じ観測になる
+  const url = link.href ?? buildUrl(target, runner, entry)
+  try {
+    // referer はアンカーを見つけたフレームの URL。実際にそのリンクを押したときに
+    // ブラウザが送る値と同じで、偽装ではない (ADR-0011 の 3)。値は出力しない (NFR-12)
+    await page.goto(url, link.referer
+      ? { referer: link.referer, waitUntil: 'domcontentloaded' }
+      : { waitUntil: 'domcontentloaded' })
+  } catch (err) {
+    result.status = UNREACHED
+    result.reason = 'ページを開けなかった'
+    result.notes.push(`遷移に失敗した: ${sanitize(err.message)}`)
+    return { opened: false, measurable: false }
+  }
+  await page.waitForTimeout(target.settleMs ?? DEFAULT_SETTLE_MS)
+
+  // パス確認はリンクをたどれたときだけ行う。直打ちへ退避した場合は従来どおりの経路
+  // （件数を数えて到達判定に掛ける）に戻す (SPEC-SC-26 の判定表)。
+  // 一致規則は Node 側の純関数1箇所だけに置く（ページ側は pathname を返すだけ）
+  if (link.href && !matchesTargetPath(await readPathnameAsync(page.mainFrame()), entry.url)) {
+    // 開けてはいるので「開けなかった」ではない。着いた先が違うことをそのまま書く
+    result.status = UNREACHED
+    result.reason = 'たどった先が対象ページでない'
+    result.notes.push(LINK_PATH_MISMATCH_NOTE)
+    return { opened: true, measurable: false }
+  }
+
+  return { opened: true, measurable: true }
+}
+
+/**
  * 1対象を検証する。
  * 例外は必ず内部で捕捉し、呼び出し側は次の対象へ進める (FR-15)。
  */
@@ -183,10 +314,13 @@ export const checkTargetAsync = async (runner, site, target, entry, resolved) =>
 
   let page = runner.page
   let frame = runner.lastFrame
+  // たどった先が対象ページでなかったときは件数を数えない (SPEC-SC-26)。
+  // 別のページで検出用セレクタがたまたま当たり、誤って ✅ を出すのを防ぐ
+  let measurable = true
 
   try {
     if (target.reach === 'goto') {
-      const url = typeof target.url === 'function' ? target.url({ session: runner.session, entry }) : target.url
+      const url = buildUrl(target, runner, entry)
       page = runner.page
       try {
         await page.goto(url, { waitUntil: 'domcontentloaded' })
@@ -198,6 +332,15 @@ export const checkTargetAsync = async (runner, site, target, entry, resolved) =>
       }
       frame = page.mainFrame()
       await page.waitForTimeout(target.settleMs ?? DEFAULT_SETTLE_MS)
+    } else if (target.reach === 'link') {
+      // ポータルのリンクをたどる (SPEC-SC-26)。遷移と到達後のパス確認は1つの関数に閉じてある
+      page = runner.page
+      const followed = await followPortalLinkAsync(runner, site, target, entry, result)
+      if (!followed.opened) {
+        return result
+      }
+      frame = page.mainFrame()
+      measurable = followed.measurable
     } else if (target.reach === 'tab') {
       const candidates = collectFrames(runner.context, target.frameUrl)
       if (candidates.length === 0) {
@@ -255,17 +398,19 @@ export const checkTargetAsync = async (runner, site, target, entry, resolved) =>
       }
     }
 
-    result.pageHits = await countPageAsync(frame, target.pageSelectors)
-    result.hits = await countAsync(frame, entry.selector)
-    result.injectedHits = await countAsync(frame, target.injected ?? site.injected)
+    if (measurable) {
+      result.pageHits = await countPageAsync(frame, target.pageSelectors)
+      result.hits = await countAsync(frame, entry.selector)
+      result.injectedHits = await countAsync(frame, target.injected ?? site.injected)
 
-    judge(result)
+      judge(result)
 
-    if (target.extra === 'tv-symbol') {
-      const prefix = await detectSymbolPrefixAsync(frame, entry.selector)
-      result.notes.push(prefix
-        ? `\`aria-label\` は \`${prefix}\` で始まる`
-        : '`aria-label` が `TSE:` / `TSE_DLY:` のいずれでも始まらない')
+      if (target.extra === 'tv-symbol') {
+        const prefix = await detectSymbolPrefixAsync(frame, entry.selector)
+        result.notes.push(prefix
+          ? `\`aria-label\` は \`${prefix}\` で始まる`
+          : '`aria-label` が `TSE:` / `TSE_DLY:` のいずれでも始まらない')
+      }
     }
   } catch (err) {
     if (err instanceof JQueryMissingError) {

@@ -10,10 +10,21 @@
  * 実測で外れが判明したら**このファイルだけ**を直す。
  */
 
-const RAKUTEN_ORIGIN = 'https://member.rakuten-sec.co.jp'
+/** 楽天証券のオリジン。組み立て URL とポータルのリンク探索 (SPEC-SC-26) で共用する */
+export const RAKUTEN_ORIGIN = 'https://member.rakuten-sec.co.jp'
+
+/**
+ * 「そのページを開く」ことだけを意味するクエリ (SPEC-SC-26 のアンカーの資格 6)。
+ *
+ * 楽天証券の `.do` は**同一パスのクエリで操作を切り替える**（`eventType` が `init` 以外も取りうる）。
+ * ポータルのリンクをたどるとき、この1組（またはクエリ無し）以外は資格を満たさないものとして採らない。
+ * 組み立て URL の `eventType=init` と**同じ情報源**にするため、下の `RAKUTEN_STOCK_QUERY` もここから作る。
+ */
+export const RAKUTEN_OPEN_QUERY = { eventType: 'init' }
 
 // 個別銘柄・株価検索は銘柄の指定が要る（トヨタ自動車で確認する）
-const RAKUTEN_STOCK_QUERY = '?eventType=init&dscrCd=7203&marketCd=1&chartPeriod=1&gmn=J&smn=01&lmn=01&fmn=01'
+const RAKUTEN_STOCK_QUERY =
+  `?${new URLSearchParams(RAKUTEN_OPEN_QUERY)}&dscrCd=7203&marketCd=1&chartPeriod=1&gmn=J&smn=01&lmn=01&fmn=01`
 
 /**
  * 楽天証券の遷移先 URL を組み立てる。
@@ -30,12 +41,18 @@ const rakutenUrl = (query = '') => (ctx) => {
 // ランキング系はページ骨格が共通
 const RAKUTEN_RANKING_PAGE = 'div#str-main-inner div.mbody table.tbl-data-01'
 
-/** 楽天証券の対象（12ページすべて。セレクタが同じでもページ単位で見る。FR-12） */
+/**
+ * 楽天証券の対象（12ページすべて。セレクタが同じでもページ単位で見る。FR-12）。
+ *
+ * お気に入り2・保有商品一覧2 は組み立て URL の直打ちがエラー画面に飛ばされるため、
+ * ログイン済みページのリンクをたどる (SPEC-SC-26)。たどれなければ `url` の直打ちへ退避する。
+ * 他の8対象は `reach: 'goto'` のままで経路を変えない（非退行。ADR-0011 の 6）。
+ */
 const rakutenTargets = [
-  { key: 'お気に入り', pageSelectors: ['form#form table.tbl-data-01'], requiresUserData: true },
-  { key: 'お気に入り編集', pageSelectors: ['form table.tbl-data-01'], requiresUserData: true },
-  { key: '保有商品一覧・すべて', pageSelectors: ['div#table_possess_data'], requiresUserData: true },
-  { key: '保有商品一覧・国内株式', pageSelectors: ['table#poss-tbl-sp'], requiresUserData: true },
+  { key: 'お気に入り', reach: 'link', pageSelectors: ['form#form table.tbl-data-01'], requiresUserData: true },
+  { key: 'お気に入り編集', reach: 'link', pageSelectors: ['form table.tbl-data-01'], requiresUserData: true },
+  { key: '保有商品一覧・すべて', reach: 'link', pageSelectors: ['div#table_possess_data'], requiresUserData: true },
+  { key: '保有商品一覧・国内株式', reach: 'link', pageSelectors: ['table#poss-tbl-sp'], requiresUserData: true },
   { key: 'ランキング・売買代金', pageSelectors: [RAKUTEN_RANKING_PAGE] },
   { key: 'ランキング・出来高', pageSelectors: [RAKUTEN_RANKING_PAGE] },
   { key: 'ランキング・値上り・値下り', pageSelectors: [RAKUTEN_RANKING_PAGE] },
@@ -73,8 +90,14 @@ export const sites = [
     injected: 'span.x-kabu-root',
     prepare: [
       '楽天証券にログインする（12ページはツールが自動で開く）',
+      'ログイン後の画面（トップページ）のタブを閉じずに Enter を押す（4ページはこのタブのリンクをたどる）',
       'お気に入りに1銘柄以上、可能なら国内株式を1銘柄以上保有した口座で実行する（0件だと「破損」と区別できない）'
     ],
+    // `reach: 'link'` の対象が使うサイト固有の値 (SPEC-SC-26「値は「検証中のサイト定義」から引く」)。
+    // 組み立て URL と同じ定数を渡すので値がずれようがない (NFR-13)。
+    // check.mjs はここから引く（定数を名指しで import しない）ため、
+    // 他サイトに `reach: 'link'` を付けても楽天のオリジンでハブを走査してしまうことがない
+    link: { origin: RAKUTEN_ORIGIN, openQuery: RAKUTEN_OPEN_QUERY },
     targets: rakutenTargets
   },
 

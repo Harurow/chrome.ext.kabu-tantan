@@ -48,17 +48,33 @@ const createSandbox = () => {
 }
 
 /**
+ * `src/` のスクリプトを `node:vm` で評価し、トップレベルの宣言を取り出す。
+ *
+ * 複数渡すときは `manifest.json` の `js` 配列と**同じ順**に並べる
+ * （ビルドが無く、共有は読み込み順に依存する。CON-02）。
+ *
+ * @param { string[] } relativePaths リポジトリルートからの相対パス
+ * @param { string } expression 取り出したい式 (例: `menuSelectors`)
+ */
+export const evaluateScripts = (relativePaths, expression) => {
+  const sources = relativePaths.map((relativePath) =>
+    fs.readFileSync(path.join(rootDir, relativePath), 'utf8'))
+
+  return vm.runInNewContext(
+    `${sources.join('\n;')}\n;${expression}`,
+    createSandbox(),
+    { filename: relativePaths.join(' + '), timeout: 1000 })
+}
+
+/**
  * Content Script から `menuSelectors` を取り出す。
  * @param { string } relativePath リポジトリルートからの相対パス (例: `src/rakuten-cs.js`)
  * @returns { { key?: string, title: string, url?: string, selector: string }[] }
  */
 export const loadMenuSelectors = (relativePath) => {
-  const filename = path.join(rootDir, relativePath)
-  const source = fs.readFileSync(filename, 'utf8')
-
   let value
   try {
-    value = vm.runInNewContext(`${source}\n;menuSelectors`, createSandbox(), { filename, timeout: 1000 })
+    value = evaluateScripts([relativePath], 'menuSelectors')
   } catch (err) {
     throw new Error(`${relativePath} から menuSelectors を取り出せません: ${err.message}`)
   }

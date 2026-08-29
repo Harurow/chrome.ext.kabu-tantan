@@ -20,31 +20,174 @@ const remakeContextMenus = async () => {
 }
 
 /**
- * 文字列から銘柄コードを取得する
+ * 国内銘柄コードの書式(SPEC-TC-01)。先頭からの前方一致で使う
+ */
+const jpCodePattern = /^[0-9][0-9ACDFGHJKLMNPRSTUWXY][0-9][0-9ACDFGHJKLMNPRSTUWXY]/
+
+/**
+ * 米国ティッカーの書式(SPEC-TC-02)。先頭からの前方一致で使う
+ *
+ * 後続境界は**許可列挙**。「切り出してよい後続」だけを並べ、未知の文字が続けば切り出さない。
+ * 害のある記号を並べる禁止列挙だと ASCII 記号・数字が素通りし、`SP500` から
+ * `SP`(実在ティッカー)を切り出していた。未知の入力では開かない側に倒す(FR-08。ADR-0009 の 9)
+ *  1. 終端 `$`                       `AAPL`
+ *  2. 空白 `\s`                      `AAPL Apple Inc.`(半角・全角・改行・タブ)
+ *  3. 本文文字(非 ASCII の `\p{L}`)   `AAPLの株価` / `AAPL株`。
+ *     全角ラテン `Ａ-Ｚ` と長音符2字(`ー` U+30FC / `ｰ` U+FF70)は除く
+ *  4. 終止記号(半角・全角)            `AAPL,` / `AAPL、` / `AAPL）`
+ *
+ * 3 を「非 ASCII なら許可」にすると全角の連結記号(`＆` `．` `－` `・` やダッシュ類)が
+ * 素通りし、`S＆P500` から `S`(SentinelOne)を切り出す。`\p{L}` は連結記号を含まないため
+ * この穴が構造的に塞がる(ADR-0009 の 10)。NFKC 正規化は採らない(同 10)
+ *
+ * 長音符2字は `\p{L}`(Lm)だが除く。**日本語 IME でハイフンを打つと出る**ため、
+ * `BRKーB` / `BRKｰB` のように連結記号の代用として実際に打たれる(ADR-0009 の 11)。
+ * 例外の基準は「文字かどうか」ではなく「連結記号の代用として実際に打たれるか」なので、
+ * 反復記号(`々` `ゝ` `〆`)は許可のまま(`AAPL々` は `us AAPL`)
+ *
+ * **`u` フラグ必須。** 忘れると `\p{L}` がリテラル `p{L}` になり、例外も lint エラーも
+ * 出ないまま 3 だけが死ぬ(テストの `AAPLの株価` が検出する)。
+ * また `[\p{L}…]` だけでは ASCII 英字も `\p{L}` に含まれ `BRK.B` が `BR` になるため、
+ * 非 ASCII 限定の先読み `(?=[^\x20-\x7E])` と組み合わせる
+ *
+ * 代償として `AAPL.` / `AAPL-Apple` / `AAPL#` / `AAPL0` は開かなくなる。
+ * 空白を挟む `AAPL - Apple Inc.` は落ちない。
+ * 境界は3経路(ここ / 優先順位4の直書き / tradingview-cs.js の parseExchangeSymbol)で
+ * 同じ値にする(FR-08 の適用範囲)
+ */
+const usCodePattern = /^([A-Z]{1,5})(?=$|[\s,;:!?"'()[\]{}]|(?![Ａ-Ｚａ-ｚーｰ])(?=[^\x20-\x7E])[\p{L}、。，；：！？＂＇（）［］｛｝「」『』【】〈〉《》〔〕‘’“”])/u
+
+/**
+ * 取引所プレフィックス `EXCHANGE:TICKER` の先頭部分(SPEC-TC-09)
+ * `_DLY` は遅延配信の接尾辞。区切りはコロン(前後の空白可)と空白の両方を認める
+ *
+ * コロンは**半角と全角の両方**を認める(ADR-0009 の 12)。全角だけ通すと
+ * `A：Z` が `us A`(Agilent)を開き、半角 `A:Z`(判定基準7 で打ち切り)と食い違う。
+ * 全角コロンは日本語入力で普通に打たれるので、長音符2字と同じ基準で扱う
+ */
+const exchangePrefixPattern = /^\s*([A-Z]+)(_DLY)?(\s*[:：]\s*|\s+)/
+
+/**
+ * 区切りがコロンだったか(SPEC-TC-09 の打ち切り判定)
+ * **半角だけを見る `includes(':')` では全角コロンが打ち切られない。**
+ * 判定は2箇所(未登録の分岐 / 銘柄コードが取れなかった分岐)にあり、
+ * 片方だけ直すと `A：Z` が素通りするため、1つの定数を両方から使う(ADR-0009 の 12)
+ */
+const colonSeparatorPattern = /[:：]/
+
+/**
+ * 後置の取引所コード `TICKER EXCHANGE` の書式(SPEC-TC-03)
+ * 取引所の集合は `exchanges`(urls.js)の 'us' 登録から組み立てる。
+ * 一覧を二重に持たないため、ここに取引所コードを直書きしない(NFR-13)
+ * 区切りは `\s+`(1個以上)。`\s*` だと `AAPLNASDAQ` が通ってしまう
+ * 末尾の後続境界は**取引所トークン側**なので、ティッカー側の許可列挙(usCodePattern)にしない。
+ * 許可列挙にすると `AAPL NASDAQ.` / `AAPL NASDAQ-100` / `AAPL NASDAQ+` / `AAPL NASDAQ&`
+ * が落ちる(ADR-0009 の 7・8・9)
+ */
+const usCodeWithExchangePattern = new RegExp(
+  '^\\s*([A-Z]{1,5})\\s+(' +
+  Object.keys(exchanges)
+    .filter((key) => exchanges[key] === 'us')
+    // 一方が他方の接頭辞になっている場合に短い方が先に成立しないよう長い順に並べる
+    .sort((a, b) => b.length - a.length || a.localeCompare(b))
+    .join('|') +
+  ')(?![A-Za-z])'
+)
+
+/**
+ * 取引所プレフィックス `EXCHANGE:TICKER` を解釈する(SPEC-TC-09)
+ * TradingView のシンボル表記(`NYSE:AAPL` / `TSE:7203`)を選択して右クリックする使い方に対応する
  * @param {string} text 解析する文字列
  * @returns {(
  *   { status: false } |
  *   { status: true, type: 'jp', code: string } |
- *   { status: true, type: 'us', code: string, exchange?: 'NASDAQ' | 'NYSE' }
+ *   { status: true, type: 'us', code: string, exchange: string } |
+ *   null
+ *  )} 本規則が不成立(次の規則へ送る)の場合は null
+ */
+const matchExchangePrefixedTicker = (text) => {
+  const matched = exchangePrefixPattern.exec(text)
+  if (!matched) {
+    return null
+  }
+
+  // '_DLY' を剥がしたトークンで引く。プロトタイプ由来の値を拾わないよう厳密一致で判定する
+  const exchange = matched[1]
+  const type = exchanges[exchange]
+  if (type !== 'jp' && type !== 'us') {
+    // 未登録の取引所(FR-08 判定基準7)
+    //  - コロン(半角・全角): 打ち切る。`X:Y` は「取引所:銘柄」の記号表記で `X` はティッカーではない。
+    //    登録の有無は本拡張の対応範囲の問題であって、`X` がティッカーかどうかとは無関係。
+    //    次の規則へ落とすと `SP:SPX`(S&P500 指数の TradingView 表記)が
+    //    `SP`(SP Plus Corp)を、`CME:ES1!` が CME Group を開く
+    //  - 空白: 次の規則へ送る。記号表記かどうかを区別できるのはコロンだけで、
+    //    `SP 500` / `CME Group` は 1.13.0 と同じ `us SP` / `us CME` のままにする
+    return colonSeparatorPattern.test(matched[3]) ? { status: false } : null
+  }
+
+  const rest = text.slice(matched[0].length)
+
+  if (type === 'jp') {
+    const code = jpCodePattern.exec(rest)
+    if (code) {
+      // 国内株は exchange を返さない(getUrl が jp では exchange を見ない。SPEC-TC-05)
+      return { status: true, type, code: code[0] }
+    }
+  } else {
+    const code = usCodePattern.exec(rest)
+    if (code) {
+      return { status: true, type, code: code[1], exchange }
+    }
+  }
+
+  // 取引所は引けたが銘柄コードが取れなかった場合、区切りによって扱いを分ける
+  //  - コロン(半角・全角): 打ち切る。次の規則へ落とすと `NYSE:` が `us NYSE` になり、
+  //    取引所コードそのものを銘柄コードとして返す欠陥に戻る
+  //  - 空白: 次の規則へ送る。取引所コードと同じ綴りの実在ティッカーがあるため
+  //    (`CBOE Global Markets` は `us CBOE` のままにする)
+  return colonSeparatorPattern.test(matched[3]) ? { status: false } : null
+}
+
+/**
+ * 文字列から銘柄コードを取得する(SPEC-TC-04 の優先順位で判定する)
+ * @param {string} text 解析する文字列
+ * @returns {(
+ *   { status: false } |
+ *   { status: true, type: 'jp', code: string } |
+ *   { status: true, type: 'us', code: string, exchange?: string }
  *  )}
  */
 const getTickerCode = (text) => {
+  // 1. 国内4桁(SPEC-TC-01)
   let match = text.match(/^\s*([0-9][0-9ACDFGHJKLMNPRSTUWXY][0-9][0-9ACDFGHJKLMNPRSTUWXY])\s*/)
   if (match) {
     return { status: true, type: 'jp', code: match[1] }
   }
+
+  // 2. 取引所プレフィックス(SPEC-TC-09)
+  //    コロン区切りで失敗した場合はここで { status: false } を返して打ち切る
+  const prefixed = matchExchangePrefixedTicker(text)
+  if (prefixed) {
+    return prefixed
+  }
+
   // 米国株は「選択範囲の先頭にティッカーが単独で置かれている」場合だけ対象とする。
   //  - 先頭アンカー(^)が無いと文中の大文字並び（例:「株価はNYSEで上昇」）に誤マッチする
-  //  - 後続境界が無いと単語の途中を拾う。例えば 'Apple Inc. AAPL NASDAQ' から 'A' を
-  //    取り出してしまい、別銘柄のページを開くという最悪の失敗をする
-  match = text.match(/^\s*([A-Z]{1,5})\s*(NASDAQ|NYSE)(?![A-Za-z])/)
+  //  - 後続境界が無いと単語や記号表記の途中を拾う。例えば 'Apple Inc. AAPL NASDAQ' から 'A' を、
+  //    'BRK.B' / 'BRK-B' から 'BRK' を、'SP500' から 'SP' を取り出してしまい、
+  //    別銘柄のページを開くという最悪の失敗をする。境界は許可列挙で、値は usCodePattern と同じ
+  //    (3経路で揃える。u フラグを忘れると日本語が続く形だけが黙って落ちる)
+  // 3. 米国 + 後置の取引所コード(SPEC-TC-03)
+  match = text.match(usCodeWithExchangePattern)
   if (match) {
     return { status: true, type: 'us', code: match[1], exchange: match[2] }
   }
-  match = text.match(/^\s*([A-Z]{1,5})(?![A-Za-z])\s*/)
+  // 4. 米国のみ(SPEC-TC-02)
+  match = text.match(/^\s*([A-Z]{1,5})(?=$|[\s,;:!?"'()[\]{}]|(?![Ａ-Ｚａ-ｚーｰ])(?=[^\x20-\x7E])[\p{L}、。，；：！？＂＇（）［］｛｝「」『』【】〈〉《》〔〕‘’“”])\s*/u)
   if (match) {
     return { status: true, type: 'us', code: match[1] }
   }
+  // 5. いずれにも成立しない
   return { status: false }
 }
 
@@ -52,7 +195,7 @@ const getTickerCode = (text) => {
  * 画面遷移先のURLを作成する
  * @param {'jp' | 'us'} type 国内銘柄か米国銘柄かを表す
  * @param {string} code 銘柄コード
- * @param {'NASDAQ' | 'NYSE' | undefined } exchange 米国株の場合の証券取引所コード
+ * @param {string | undefined} exchange 米国株の場合の証券取引所コード(`exchanges` のキー)
  * @param {string} url1 国内用URL
  * @param {string?} url2 米国用URL（証券取引所コードあり）
  * @param {string?} url3 米国用URL（証券取引所コードなし）

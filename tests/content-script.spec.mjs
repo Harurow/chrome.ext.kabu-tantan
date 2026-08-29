@@ -1,4 +1,5 @@
 import { test, expect } from './fixtures/extension.mjs'
+import { evaluateScripts } from '../scripts/selector-check/load-selectors.mjs'
 
 /**
  * 対象サイトの DOM 構造を最小限だけ再現したフィクスチャ。
@@ -267,5 +268,130 @@ test.describe('設定の反映', () => {
     await expect(items).toHaveCount(2)
     await expect(items.nth(0)).toHaveAttribute('href', 'https://kabutan.jp/stock/?code=7203')
     await expect(items.nth(1)).toHaveAttribute('href', 'https://minkabu.jp/stock/7203')
+  })
+})
+
+/**
+ * TradingView の `EXCHANGE:CODE` 解釈 (SPEC-TC-07 / SPEC-CS-23)。
+ *
+ * TradingView 自体は DOM がハッシュ付きクラス名で変わるため自動テスト対象外だが、
+ * `parseExchangeSymbol()` は**純粋な文字列処理**で、ブラウザも DOM も要らない。
+ * canvas の `aria-label` とウォッチリストの行の属性値の両方がここを通り、
+ * 誤った銘柄のリンクを出す唯一の経路になる（FR-19 判定基準 3・6 / ADR-0010）。
+ *
+ * ビルドが無く `export` が使えない (CON-02) ため、`node:vm` でソースを評価して取り出す
+ * （`menuSelectors` の読み出しと同じ仕組み）。読み込み順は `manifest.json` の `js` と同じ。
+ */
+// 再レビュー M-5: 「行」を属性の有無ではなく値の形で決める (SPEC-CS-23)。
+// 属性の有無で決めていたため、チャート内の要素が候補属性を `main` / `8253` のような値で
+// 持つと「行だが解釈できない」となり、**チャートの右クリック拡張(FR-04。必須)が全面停止**した
+test.describe('tradingview-cs.js: isSymbolShaped', () => {
+  const isSymbolShaped = evaluateScripts(
+    ['src/urls.js', 'src/tradingview-cs.js'], 'isSymbolShaped')
+
+  test('EXCHANGE:CODE の形だけを行の値と見なす', () => {
+    // 形を満たす＝行の値（解釈できるかは別。ここは形だけを見る）
+    expect(isSymbolShaped('TSE:8253')).toBe(true)
+    expect(isSymbolShaped('NASDAQ:AAPL')).toBe(true)
+    expect(isSymbolShaped('TSE_DLY:8253')).toBe(true)
+    // 未登録の取引所も「行ではある」。ここで落とすと指数の行がチャート起点になり、
+    // チャートの銘柄が出てしまう（判定基準7 違反）ので exchanges は引かない
+    expect(isSymbolShaped('SP:SPX')).toBe(true)
+    // 大文字の内部識別子も形は満たす。**差分は原理的に消えない**ことを意図として固定する
+    // （判定基準7 が「行として認識したうえで捨てる」を要求している以上、
+    //   exchanges に無い大文字トークンは必ず差分に残る。ADR-0010 の 2 の追補2）
+    expect(isSymbolShaped('MAIN:1')).toBe(true)
+
+    // 形を満たさない＝行ではない（チャート判定へ進む）
+    expect(isSymbolShaped('8253')).toBe(false) // コード単独
+    expect(isSymbolShaped('main')).toBe(false) // チャート側の要素にありうる値
+    expect(isSymbolShaped('pane-1')).toBe(false)
+    expect(isSymbolShaped(':AAPL')).toBe(false) // 取引所トークンが無い
+    expect(isSymbolShaped('1TSE:8253')).toBe(false) // 数字始まり
+    expect(isSymbolShaped('')).toBe(false)
+    // 上限（広げすぎの防止）。字種を解釈側と揃えたので小文字を含む識別子は行ではない。
+    // 通すと「形は満たすが解釈が絶対に成功しない」値が行として捨てられ、
+    // チャートの右クリック拡張（FR-04。必須）が黙って止まる
+    expect(isSymbolShaped('main:1')).toBe(false)
+    expect(isSymbolShaped('chart:2')).toBe(false)
+    expect(isSymbolShaped('pane:0')).toBe(false)
+    expect(isSymbolShaped('Widget:1')).toBe(false)
+    // 小文字の取引所表記。SPEC-TC-09 が不成立と定めており、解釈側も受理しない
+    expect(isSymbolShaped('nyse:aapl')).toBe(false)
+    for (const value of [null, undefined, 0, {}]) {
+      expect(isSymbolShaped(value)).toBe(false)
+    }
+  })
+
+  // 下限（狭めすぎの防止）。字種を狭める方向へ倒しすぎると本物の行が行でなくなり、
+  // ウォッチリストの右クリック（FR-19）が動かなくなる。
+  // 形の判定と解釈の**包含関係**をここで固定する（ADR-0010 の 2 の追補2）
+  test('解釈できる値は必ず形を満たす（形の判定は解釈より狭くならない）', () => {
+    const parseExchangeSymbol = evaluateScripts(
+      ['src/urls.js', 'src/tradingview-cs.js'], 'parseExchangeSymbol')
+
+    for (const value of ['TSE:8253', 'TSE_DLY:8253', 'NASDAQ:AAPL',
+      'BATS:AAPL の 1 日 チャート', 'NYSE:F']) {
+      // 対照: そもそも解釈できている値であること（空振りしていないことの担保）
+      expect(parseExchangeSymbol(value).code, value).not.toBeNull()
+      expect(isSymbolShaped(value), value).toBe(true)
+    }
+  })
+})
+
+test.describe('tradingview-cs.js: parseExchangeSymbol', () => {
+  const parseExchangeSymbol = evaluateScripts(
+    ['src/urls.js', 'src/tradingview-cs.js'], 'parseExchangeSymbol')
+
+  const notFound = { code: null, type: null }
+
+  test('canvas の aria-label と行の属性値で同じ結果になる', () => {
+    // 先頭からの前方一致なので、後ろに文字列が続いても続かなくても同じ (SPEC-CS-23)
+    expect(parseExchangeSymbol('TSE:7203 の 1 日 チャート')).toEqual({ code: '7203', type: 'jp' })
+    expect(parseExchangeSymbol('TSE:7203')).toEqual({ code: '7203', type: 'jp' })
+    expect(parseExchangeSymbol('TSE_DLY:7203 の 1 日 チャート')).toEqual({ code: '7203', type: 'jp' })
+    expect(parseExchangeSymbol('TSE:135A')).toEqual({ code: '135A', type: 'jp' })
+    expect(parseExchangeSymbol('BATS:AAPL の 1 日 チャート')).toEqual({ code: 'AAPL', type: 'us' })
+    expect(parseExchangeSymbol('NASDAQ:AAPL')).toEqual({ code: 'AAPL', type: 'us' })
+  })
+
+  // 回帰テスト: 米国ティッカーに後続境界が無く、単語の途中を切り出していた。
+  // 行の属性値は値全体がシンボルなので、`NYSE:BRK.B` の行が `BRK` のページを開いていた
+  test('米国ティッカーは後続境界を見て、切り出せないときは何も返さない', () => {
+    // 複合ティッカー（区切り記号を含む）は「誤った銘柄」より「出さない」に倒す (FR-19)
+    // 境界の値は Service Worker 側と揃える (FR-08 の適用範囲)
+    expect(parseExchangeSymbol('NYSE:BRK.B')).toEqual(notFound)
+    expect(parseExchangeSymbol('NYSE:RDS.A')).toEqual(notFound)
+    expect(parseExchangeSymbol('NYSE:BRK-B')).toEqual(notFound)
+    expect(parseExchangeSymbol('NYSE:BRK/B')).toEqual(notFound)
+    expect(parseExchangeSymbol('NYSE:BRK+B')).toEqual(notFound)
+    // 許可列挙にしたので、列挙にない記号・数字・全角の連結記号も落ちる
+    expect(parseExchangeSymbol('NYSE:BRK&B')).toEqual(notFound)
+    expect(parseExchangeSymbol('NYSE:BRK_B')).toEqual(notFound)
+    expect(parseExchangeSymbol('NYSE:BRK1')).toEqual(notFound)
+    expect(parseExchangeSymbol('NYSE:BRK・B')).toEqual(notFound)
+    // 長音符2字（日本語 IME でハイフンを打つと出る形）も落ちる
+    expect(parseExchangeSymbol('NYSE:BRKーB')).toEqual(notFound)
+    expect(parseExchangeSymbol('NYSE:BRKｰB')).toEqual(notFound)
+    // 6文字以上の英字列も切り出さない（Service Worker の usCodePattern と同じ扱い）
+    expect(parseExchangeSymbol('NASDAQ:ALPHABET')).toEqual(notFound)
+    // 5文字までの単独ティッカーはそのまま取れる
+    expect(parseExchangeSymbol('NASDAQ:GOOGL')).toEqual({ code: 'GOOGL', type: 'us' })
+    expect(parseExchangeSymbol('NYSE:F')).toEqual({ code: 'F', type: 'us' })
+  })
+
+  test('取引所を解釈できない・形が合わないものは何も返さない', () => {
+    // 市場種別は `EXCHANGE:` からしか決めない（コード単独は取引所が分からない。SPEC-CS-23）
+    expect(parseExchangeSymbol('8253')).toEqual(notFound)
+    // exchanges に無い取引所（指数・先物・FX・暗号資産など）
+    expect(parseExchangeSymbol('XETR:BMW')).toEqual(notFound)
+    // 市場と銘柄コードの書式が食い違う
+    expect(parseExchangeSymbol('TSE:AAPL')).toEqual(notFound)
+    expect(parseExchangeSymbol('NASDAQ:7203')).toEqual(notFound)
+    expect(parseExchangeSymbol('NASDAQ:aapl')).toEqual(notFound)
+    // 値が無い場合も落ちない
+    for (const text of [null, undefined, '']) {
+      expect(parseExchangeSymbol(text)).toEqual(notFound)
+    }
   })
 })

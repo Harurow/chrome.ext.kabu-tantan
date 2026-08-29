@@ -2,14 +2,58 @@ $(() => {
   setTimeout(attach, 500)
 })
 
-/** チャート上で contextmenu が発生してから、メニューの拡張を許す猶予(ミリ秒) */
-const chartContextMenuGraceMs = 1500
+/** contextmenu が発生してから、メニューの拡張を許す猶予(ミリ秒) */
+const contextMenuGraceMs = 1500
 
 /** 入れ子メニュー(サブメニュー)を閉じるまでの遅延(ミリ秒) */
 const submenuCloseDelayMs = 150
 
-/** チャート上で最後に contextmenu が発生した時刻。未発生は 0 */
-let chartContextMenuAt = 0
+/**
+ * ウォッチリストの行が銘柄を持つ属性の候補(推測値 / 実サイト未確認。SPEC-CS-23)
+ * 近い順に見て、最初に `EXCHANGE:CODE` として解釈できた値を採る。
+ * 変更するのはこの配列だけでよい(行の判定にも同じ配列から作ったセレクタを使う)
+ *
+ * `data-symbol` は候補に入れない(再レビュー M-5。ADR-0010 の 2 の追補)。
+ * 名前が汎用的すぎてチャート側の要素に付いている可能性が高く、
+ * 当たると FR-04(必須)のチャート右クリックが止まりかねない
+ * @type { string[] }
+ */
+const watchlistSymbolAttrs = ['data-symbol-full', 'data-symbol-short']
+
+/** 行の目印セレクタ。属性名を直書きせず候補配列から組み立てる */
+const watchlistRowSelector = watchlistSymbolAttrs.map((attr) => `[${attr}]`).join(',')
+
+/**
+ * 値が `EXCHANGE:CODE` の**形**か(SPEC-CS-23「「行」の定義は属性の有無ではなく値の形」)
+ *
+ * 取引所トークンらしき語＋コロンだけを見る純粋関数。
+ * **`exchanges` を引かない。** 引くと `SP:SPX`(未登録の取引所)が「行ではない」になり、
+ * チャート起点へ落ちて**指数の行にチャートの銘柄が出る**(FR-08 判定基準7 違反)。
+ * 「取引所として妥当か」は解釈側(parseExchangeSymbol)の仕事で、ここは形だけを見る
+ *
+ * **字種は parseExchangeSymbol() の取引所トークン(`/^([A-Z]+)(_DLY)?:/`)と揃えて大文字のみにする。**
+ * 広げると「形は満たすが解釈が絶対に成功しない」値(`main:1` / `nyse:aapl` など)まで行と見なされ、
+ * 捨てられた結果**チャートの右クリック拡張(FR-04。必須)が止まる**(ADR-0010 の 2 の追補2)。
+ * 逆に狭めすぎると本物の行が行でなくなり FR-19 が動かないため、
+ * 「解釈できる値は必ず形を満たす」という包含関係をテストで固定してある
+ * @param {string | null | undefined} text 候補属性の値
+ * @returns { boolean }
+ */
+const isSymbolShaped = (text) =>
+  typeof text === 'string' && /^[A-Z][A-Z0-9_]*:/.test(text)
+
+/**
+ * 直近の右クリックの起点(SPEC-CS-23)
+ * 記録は常に1件。起点が同時に2つ存在しないので、チャートと行の取り違えが起きない
+ * @type {{ kind: 'row' | 'chart' | null, at: number, code: string | null, type: string | null }}
+ */
+let contextMenuOrigin = { kind: null, at: 0, code: null, type: null }
+
+/**
+ * 起点を捨てた状態を作る(未発生・破棄はどちらも at: 0。常に猶予外になる)
+ * @returns {{ kind: null, at: 0, code: null, type: null }}
+ */
+const discardedOrigin = () => ({ kind: null, at: 0, code: null, type: null })
 
 /**
  * ページを改変するエントリポイント
@@ -30,20 +74,91 @@ const attach = () => {
   })
   bodyObserver.observe(body, { childList: true })
 
-  // 右クリックの起点を記録する
+  // 右クリックの起点を記録する(SPEC-CS-23)
   // TradingView は右クリック以外でも同じメニュー要素を使うため、
-  // チャート上の右クリック直後だけメニューを拡張する
-  // (ウォッチリスト等から開いたメニューはチャートと別銘柄になりうる)
-  // チャート外を右クリックした場合は記録を捨てる
-  // (直前のチャート右クリックが猶予内に残っていても拡張させない)
+  // 有効な起点(ウォッチリストの行 / チャート)の右クリック直後だけメニューを拡張する
+  // ツールバー・銘柄検索・余白を右クリックした場合は記録を捨てる
+  // (直前の右クリックが猶予内に残っていても拡張させない)
+  // キャプチャ段階で受けるのはサイト側が stopPropagation() しても届くようにするため
   document.addEventListener('contextmenu', (e) => {
-    chartContextMenuAt = $(e.target).closest('div.chart-gui-wrapper').length > 0 ? Date.now() : 0
+    contextMenuOrigin = resolveContextMenuOrigin(e.target)
   }, true)
 
   // canvas監視とボタンは1単位で設置する(SPEC-CS-22 / ADR-0008 の 4)
   // 分けると「ボタンはあるが銘柄切替に追随しない」状態が作れてしまう(FR-13 判定基準6)
   // 両方が揃うまで試し直し、揃わなければ30秒で打ち切る
   retrySetup(setupKabuLinkMenu)
+}
+
+/**
+ * 右クリックの発生元から起点を解決する(SPEC-CS-23「起点の判定」)
+ * 行の判定をチャートより先に行う。優先順位はこの時点で決まり、
+ * attachMenu() は記録された1件しか見ない(起点が同時に2つ存在しない)
+ * @param {EventTarget | null} target contextmenu の発生元
+ * @returns {{ kind: 'row' | 'chart' | null, at: number, code: string | null, type: string | null }}
+ */
+const resolveContextMenuOrigin = (target) => {
+  const row = findRowTickerCode(target)
+  if (row) {
+    // 行だが銘柄を解釈できない(指数・先物・FX・暗号資産など)場合は捨てる。
+    // チャートへ落とすと「その行と違う銘柄のリンク」が出る(FR-04 違反)
+    if (row.code == null) {
+      return discardedOrigin()
+    }
+    return { kind: 'row', at: Date.now(), code: row.code, type: row.type }
+  }
+
+  if ($(target).closest('div.chart-gui-wrapper').length > 0) {
+    return { kind: 'chart', at: Date.now(), code: null, type: null }
+  }
+
+  return discardedOrigin()
+}
+
+/**
+ * 発生元から祖先方向へ行の目印を探し、銘柄コードを取り出す(SPEC-CS-23)
+ * 目印を持つ要素を近い順に見て、最初に解釈できた値を採る。
+ * 子孫方向へは探さない(別の行の銘柄を拾ってしまう)
+ *
+ * **セレクタは粗い絞り込みでしかなく、行と見なすのは値が `EXCHANGE:CODE` の形のときだけ**
+ * (再レビュー M-5)。属性の有無で決めると、チャート内の要素が候補属性を
+ * `main` / `8253` のような値で持っていた場合に「行だが解釈できない」となり、
+ * **チャートの右クリック拡張(FR-04。必須)が全面的に止まる**
+ * @param {EventTarget | null} target contextmenu の発生元
+ * @returns {{ code: string | null, type: string | null } | null}
+ *   形の値がどこにも無ければ null(行ではない → チャート判定へ)、
+ *   形はあって解釈できなければ code/type ともに null(捨てる)
+ */
+const findRowTickerCode = (target) => {
+  let element = $(target).closest(watchlistRowSelector)[0]
+  if (!element) {
+    return null
+  }
+
+  // 形の値を1つでも見たか。見ていなければ「行ではない」としてチャート判定へ送る
+  let shaped = false
+
+  while (element) {
+    for (const attr of watchlistSymbolAttrs) {
+      const value = element.getAttribute(attr)
+      // 形を満たさない値(コード単独の 8253 やチャート側の main など)は行の値と見なさない
+      if (!isSymbolShaped(value)) {
+        continue
+      }
+      shaped = true
+      // 市場種別は `EXCHANGE:` からしか決めない。
+      // 未登録の取引所(例 SP:SPX)は解釈に失敗させ、次の候補へ送る
+      // (「4桁なら国内株」と当てにいくと米国株の行で誤ったリンクを出す)
+      const parsed = parseExchangeSymbol(value)
+      if (parsed.code != null) {
+        return parsed
+      }
+    }
+    const parent = element.parentElement
+    element = parent ? $(parent).closest(watchlistRowSelector)[0] : undefined
+  }
+
+  return shaped ? { code: null, type: null } : null
 }
 
 /**
@@ -132,8 +247,10 @@ const attachMenu = () => {
     return
   }
 
-  // チャート上の右クリックを起点にしたメニューだけを拡張する
-  if (Date.now() - chartContextMenuAt > chartContextMenuGraceMs) {
+  // 有効な起点(ウォッチリストの行 / チャート)の右クリック直後だけ拡張する
+  // 捨てた記録(at: 0)は常に猶予外になる
+  const origin = contextMenuOrigin
+  if (Date.now() - origin.at > contextMenuGraceMs) {
     return
   }
 
@@ -143,8 +260,11 @@ const attachMenu = () => {
     return
   }
 
-  // 銘柄コードはメニューの文言ではなくチャートのcanvasから取得する
-  const { code, type } = getTickerCode()
+  // 銘柄コードはメニューの文言ではなく起点から取得する(SPEC-CS-23)
+  // 行: 右クリック時に確定済みの値を使う
+  //     (ウォッチリストは仮想スクロールで行が差し替わるためDOMをたどり直さない)
+  // チャート: canvasのaria-label(SPEC-TC-07)
+  const { code, type } = origin.kind === 'row' ? origin : getTickerCode()
   if (code == null) {
     return
   }
@@ -728,22 +848,33 @@ const openUrlAsync = async (url) => {
  * @returns {{ code: string, type: string }} 取得した銘柄コード、取得できない場合はcode/typeともにnull
  */
 const getTickerCode = () => {
+  return parseExchangeSymbol($(selectorOf('chart-canvas')).attr('aria-label'))
+}
+
+/**
+ * `EXCHANGE:CODE` 形式の文字列から銘柄コードを取り出す(SPEC-TC-07 の 1〜3)
+ * 先頭からの前方一致。米国株だけは後続境界を見る(下記)。
+ * canvasのaria-label(`TSE:7203 の 1 日 チャート`)と
+ * ウォッチリストの行の属性値(`TSE:8253`)の両方がこの関数を通る(SPEC-CS-23 / NFR-13)
+ * @param {string | null | undefined} text 解析する文字列
+ * @returns {{ code: string, type: string }} 取得した銘柄コード、取得できない場合はcode/typeともにnull
+ */
+const parseExchangeSymbol = (text) => {
   const notFound = { code: null, type: null }
 
-  const canvas = $(selectorOf('chart-canvas'))
-  const ariaLabel = canvas.attr('aria-label')
-  if (!ariaLabel) {
+  if (!text) {
     return notFound
   }
 
   // 取引所トークンを取り出す('_DLY'は遅延配信の接尾辞なので剥がしてから引く)
-  const matched = /^([A-Z]+)(_DLY)?:/.exec(ariaLabel)
+  const matched = /^([A-Z]+)(_DLY)?:/.exec(text)
   if (!matched) {
     return notFound
   }
 
+  // exchangesに載っていない取引所(指数・先物・FX・暗号資産など)はここで落ちる
   const type = exchanges[matched[1]]
-  const rest = ariaLabel.slice(matched[0].length)
+  const rest = text.slice(matched[0].length)
 
   if (type === 'jp') {
     const code = /^[0-9][0-9ACDFGHJKLMNPRSTUWXY][0-9][0-9ACDFGHJKLMNPRSTUWXY]/.exec(rest)
@@ -751,7 +882,16 @@ const getTickerCode = () => {
       return { code: code[0], type }
     }
   } else if (type === 'us') {
-    const code = /^[A-Z]{1,5}/.exec(rest)
+    // 後続境界を付ける。境界が無いと単語や記号表記の途中を切り出して別銘柄になる。
+    // ここは行の属性値(値全体がシンボル)も通るため、`NYSE:BRK.B` / `NYSE:BRK-B` /
+    // `NYSE:BRK&B` / `NYSE:BRK1`から`BRK`を返してはならない。
+    // 境界は「切り出してよい後続だけを許す」許可列挙(終端 / 空白 / 非 ASCII の `\p{L}` /
+    // 終止記号)。`\p{L}` からは全角ラテンと長音符2字(`ー` `ｰ`)を除く(`NYSE:BRKーB` 対策)。
+    // **`u` フラグ必須**で、忘れると `\p{L}` がリテラルになり日本語が続く形だけが
+    // 黙って落ちる。取れない場合は「何も出さない」に倒す(FR-19)。
+    // 実装は Service Worker の usCodePattern と共有しないが、境界の値だけは揃える
+    // (FR-08 の適用範囲。規則の正本は SPEC-TC-02。ADR-0009 の 3・9・10)
+    const code = /^[A-Z]{1,5}(?=$|[\s,;:!?"'()[\]{}]|(?![Ａ-Ｚａ-ｚーｰ])(?=[^\x20-\x7E])[\p{L}、。，；：！？＂＇（）［］｛｝「」『』【】〈〉《》〔〕‘’“”])/u.exec(rest)
     if (code) {
       return { code: code[0], type }
     }
