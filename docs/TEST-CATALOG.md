@@ -3,13 +3,13 @@
 > **このファイルは `npm run docs:tests` で自動生成される。手で編集しない。**
 > 説明文を変えたい場合は `scripts/test-catalog.mjs` を編集する。
 
-テスト総数: **96**
+テスト総数: **102**
 
 テストの方針・手法は [TESTING.md](TESTING.md) を参照。
 
 ## Content Script（楽天証券 / SBI証券 / スクリーナー2種）
 
-`tests/content-script.spec.mjs` — 17 件
+`tests/content-script.spec.mjs` — 20 件
 
 context.route() で対象オリジンにフィクスチャ HTML を返し、実際の注入を検証する。固定待機が明けた後に要素が現れるフィクスチャで、注入の再試行（SPEC-CS-22）も見る。
 
@@ -29,11 +29,14 @@ context.route() で対象オリジンにフィクスチャ HTML を返し、実�
 | 10 | スクリーナー Content Script | 楽天スーパースクリーナー: 後から現れた結果一覧に注入する |
 | 11 | スクリーナー Content Script | SBI銘柄スクリーニング: 後から現れた結果一覧に注入する |
 | 12 | 設定の反映 | オプションで無効にしたサイトはメニューに出ない |
-| 13 | tradingview-cs.js: isSymbolShaped | EXCHANGE:CODE の形だけを行の値と見なす |
-| 14 | tradingview-cs.js: isSymbolShaped | 解釈できる値は必ず形を満たす（形の判定は解釈より狭くならない） |
-| 15 | tradingview-cs.js: parseExchangeSymbol | canvas の aria-label と行の属性値で同じ結果になる |
-| 16 | tradingview-cs.js: parseExchangeSymbol | 米国ティッカーは後続境界を見て、切り出せないときは何も返さない |
-| 17 | tradingview-cs.js: parseExchangeSymbol | 取引所を解釈できない・形が合わないものは何も返さない |
+| 13 | メニュー項目のクリック範囲 | 項目の文字の外を押しても、文字の上と同じ URL が開く |
+| 14 | メニュー項目のクリック範囲 | 項目と項目のあいだを押しても何も開かない |
+| 15 | メニュー項目のクリック範囲 | 項目をクリックしてもメニューは閉じない |
+| 16 | tradingview-cs.js: isSymbolShaped | EXCHANGE:CODE の形だけを行の値と見なす |
+| 17 | tradingview-cs.js: isSymbolShaped | 解釈できる値は必ず形を満たす（形の判定は解釈より狭くならない） |
+| 18 | tradingview-cs.js: parseExchangeSymbol | canvas の aria-label と行の属性値で同じ結果になる |
+| 19 | tradingview-cs.js: parseExchangeSymbol | 米国ティッカーは後続境界を見て、切り出せないときは何も返さない |
+| 20 | tradingview-cs.js: parseExchangeSymbol | 取引所を解釈できない・形が合わないものは何も返さない |
 
 ## オプションページ
 
@@ -56,7 +59,7 @@ chrome-extension:// のオプションページを開き、表示・操作・保
 
 ## セレクタ定義（半自動検証の土台）
 
-`tests/selector-defs.spec.mjs` — 42 件
+`tests/selector-defs.spec.mjs` — 45 件
 
 ブラウザを起動せず、src/*-cs.js の menuSelectors と scripts/selector-check/targets.mjs の対応、および検証ツールの中断時の後始末を検証する。セレクタ文字列の二重管理を機械的に禁じる（NFR-13）。
 
@@ -104,8 +107,11 @@ chrome-extension:// のオプションページを開き、表示・操作・保
 | 38 | 到達リンク | links.mjs のソースにクリック・フォーム送信が現れない |
 | 39 | 到達リンク | check.mjs の遷移する側もクリックせず、goto に渡る URL が2つに限られる |
 | 40 | 到達リンク | reach: link を持つサイトは link.origin を持ち、無ければハブを走査せず退避する |
-| 41 | 結果ファイルの書式 | 消毒した URL・伏せ字を含む結果ファイルがインライン HTML を漏らさない |
-| 42 | 結果ファイルの書式 | 手がかり節に到達判定の行が必ず1行出る |
+| 41 | 到達リンク | 資格を満たさなかった条件ごとの件数が、条件番号の順で1行になる |
+| 42 | 到達リンク | 資格6 で落ちたクエリのキー名が、伏せ字と上限を通してバッククォート付きで出る |
+| 43 | 到達リンク | no-candidate のときは走査の規模が1行になる |
+| 44 | 結果ファイルの書式 | 消毒した URL・伏せ字を含む結果ファイルがインライン HTML を漏らさない |
+| 45 | 結果ファイルの書式 | 手がかり節に到達判定の行が必ず1行出る |
 
 ## Service Worker / 共有モジュール
 

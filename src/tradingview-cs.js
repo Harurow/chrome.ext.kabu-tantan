@@ -336,7 +336,7 @@ const makeSubmenuHolderRow = () => {
  * @returns {JQuery<HTMLElement>}
  */
 const makeMenuItem = (code, item) => {
-  return $(`
+  const row = $(`
   <tr class="${tvMimicClasses.accessible} ${tvMimicClasses.item}" data-role="menuitem" tabindex="-1">
     <td class="${tvMimicClasses.iconCell}" data-icon-cell="true"></td>
     <td>
@@ -347,10 +347,32 @@ const makeMenuItem = (code, item) => {
       </div>
     </td>
   </tr>`)
-    .click(() => {
-      // クリックした場合はメニューが消えるように'ESC'キーを押したことにして消す
-      document.dispatchEvent(new KeyboardEvent('keyup', { keyCode: 27 }))
-    })
+
+  // 代行クリックで発火した<a>のクリックは、この行まで再びバブルしてくる。
+  // そのときは何もしない(Escを二重に投げてサイト側の他の動作を誘発しないため)
+  let delegating = false
+
+  return row.click((event) => {
+    if (delegating) {
+      return
+    }
+
+    // 文字(<a>)の外(アイコン列・右の余白・上下の余白)を押した場合は<a>のクリックを代行する
+    // (開く経路は<a>の1本のままにする。URL・target・relを2箇所で持たない。SPEC-CS-25)
+    const anchor = row.find('a')[0]
+    if (anchor != null && event.target.closest?.('a') !== anchor) {
+      delegating = true
+      try {
+        anchor.click()
+      } finally {
+        delegating = false
+      }
+    }
+
+    // クリックした場合はメニューが消えるように'ESC'キーを押したことにして消す
+    // (閉じるのは開いた後。先に閉じると<a>がDOMから外れ、代行クリックが空振りする)
+    document.dispatchEvent(new KeyboardEvent('keyup', { keyCode: 27 }))
+  })
 }
 
 /**
@@ -419,12 +441,32 @@ const addTickerMenuAsync = async (ctxMenu, code, type) => {
   const holderRow = makeSubmenuHolderRow()
   ctxMenu.append(separatorRow).append(parentRow).append(holderRow)
 
+  // 縦位置の補正で書き換える前のmargin-topを控えておく(3行を取り除くときに元へ戻す)
+  // 検出用セレクタ(context-menu)はtableを指すので、その外側のdivを基準にする
+  const ctxMenuBox = ctxMenu.closest('div.context-menu')[0]
+  const savedMarginTop = ctxMenuBox?.style.marginTop ?? ''
+  // ずらしたときだけ真になる。これで囲まないと、補正が走る前に0件・例外へ入った場合に
+  // 触っていないインラインスタイルを書き戻してしまう(style=""が残る)
+  let shifted = false
+
   // 追加した3行をまとめて取り除く(メニューに拡張の痕跡を残さない)
   const removeRows = () => {
     separatorRow.remove()
     parentRow.remove()
     holderRow.remove()
+    // ずらした場合だけmargin-topを元に戻す(位置の痕跡も残さない。SPEC-CS-24)
+    if (shifted && ctxMenuBox != null) {
+      ctxMenuBox.style.marginTop = savedMarginTop
+      shifted = false
+    }
   }
+
+  // 3行を足した分だけメニューは下へ伸びる。TradingViewは伸びたことを知らないので
+  // 位置を直さず、下端付近では追加行が画面の外に出る(ホバーできず入れ子も開けない)。
+  // サイト側が位置を決め終える前に測らないよう、次のフレームで1回だけ補正する(SPEC-CS-24)
+  requestAnimationFrame(() => {
+    shifted = fitContextMenuIntoWindow(separatorRow)
+  })
 
   // 証券会社と情報サイトは互いに独立しているので並行に取得する
   let items
@@ -446,6 +488,48 @@ const addTickerMenuAsync = async (ctxMenu, code, type) => {
   }
 
   bindSubmenu(parentRow, holderRow, code, brokerItems, linkItems)
+}
+
+/**
+ * 3行を足して下へ伸びた右クリックメニューを画面内に収める(SPEC-CS-24)
+ *
+ * 触るのはサイト側メニューの**インラインのmargin-topだけ**。
+ * top / transform は読まないし書かない(サイト側がどちらで位置決めしていても、
+ * 負のmargin-topは箱をそのまま上へずらす。ADR-0012 の 2)。
+ * 入れ子の配置(positionSubmenu)とは触ってよい範囲が違うので別関数にしてある
+ * @param {JQuery<HTMLElement>} addedRow 追加した行(存在確認と親メニューの引き当てに使う)
+ * @returns {boolean} 実際にずらしたか(呼び出し側が後始末の要否を決める)
+ */
+const fitContextMenuIntoWindow = (addedRow) => {
+  // 0件・例外で3行を取り除いた後なら何もしない
+  if (addedRow[0]?.isConnected !== true) {
+    return false
+  }
+
+  // 検出用セレクタ(context-menu)はtableを指すので、その外側のdivを基準にする
+  const menu = addedRow.closest('div.context-menu')[0]
+  if (menu == null) {
+    return false
+  }
+
+  const rect = menu.getBoundingClientRect()
+
+  // 下端に掛からない位置では今までと同じ場所に出す(常に上へ寄せない)
+  // 端数は下端を切らない側(切り上げ)に倒す
+  const overflow = Math.ceil(rect.bottom - window.innerHeight)
+  if (overflow <= 0) {
+    return false
+  }
+
+  // 上端は画面の外に出さない(サイト側の項目は上に並んでいるため)
+  // 端数は下端を切らない側(切り捨て)に倒す
+  const shift = Math.min(overflow, Math.floor(rect.top))
+  if (shift <= 0) {
+    return false
+  }
+
+  menu.style.marginTop = `-${shift}px`
+  return true
 }
 
 /**

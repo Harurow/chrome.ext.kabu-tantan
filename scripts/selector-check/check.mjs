@@ -8,7 +8,7 @@
  */
 
 import { collectFactsAsync, attachTrackingAsync, decideReach, sanitize } from './diagnostics.mjs'
-import { collectAnchorsAsync, readPathnameAsync, matchesTargetPath, pickLink, describeReach, LINK_PATH_MISMATCH_NOTE, LINK_TRUNCATED_NOTE, LINK_NO_CANDIDATE, LINK_NOT_QUALIFIED } from './links.mjs'
+import { collectAnchorsAsync, readPathnameAsync, matchesTargetPath, pickLink, describeReach, describeRejected, describeQueryKeys, describeScan, LINK_PATH_MISMATCH_NOTE, LINK_TRUNCATED_NOTE, LINK_NO_CANDIDATE, LINK_NOT_QUALIFIED } from './links.mjs'
 
 // 消毒（URL を潰し 120 文字で切る）の実装は diagnostics.mjs にある。
 // 手がかりの整形と同じ関数を通す必要があるため、ここからは再輸出だけを行う (SPEC-SC-14)
@@ -201,14 +201,20 @@ const buildUrl = (target, runner, entry) => (typeof target.url === 'function'
  * @param { import('@playwright/test').BrowserContext } context
  * @param { { url: string } } entry `menuSelectors` のエントリ
  * @param { { origin?: string, openQuery?: Record<string, string> } } link 検証中のサイトの `link`
- * @returns { Promise<{ href: string | null, referer: string | null, reason: string, truncated: boolean }> }
+ * @returns { Promise<{ href: string | null, referer: string | null, reason: string, truncated: boolean, rejected: Record<string, number>, queryKeys: string[], scan: { frames: number, links: number, matched: number, unreadable: number } }> }
+ *   `rejected` / `queryKeys` は退避理由が `not-qualified` のときの内訳、
+ *   `scan` は `no-candidate` のときの走査の規模 (SPEC-SC-26 の「退避理由の内訳」)
  */
 const findPortalLinkAsync = async (context, entry, link) => {
+  // 走査の規模。`no-candidate` の原因（ハブが無い／読めていない／本当に無い）を分ける件数で、
+  // 出すのは数だけ。URL もページ名も持たない (NFR-12)
+  const scan = { frames: 0, links: 0, matched: 0, unreadable: 0 }
+
   // ハブも遷移先も、そのサイト自身のオリジンに限る（サイト外への離脱を作らない。CON-10）。
   // オリジンが無ければ**走査せず**退避する。他サイトのオリジンを流用しない (SPEC-SC-26 の規則3)
   const origin = link?.origin
   if (!origin) {
-    return { href: null, referer: null, reason: LINK_NO_CANDIDATE, truncated: false }
+    return { href: null, referer: null, reason: LINK_NO_CANDIDATE, truncated: false, rejected: {}, queryKeys: [], scan }
   }
 
   // 資格審査に使うサイト固有の値は純関数へ引数で渡す（links.mjs には持たせない）。
@@ -216,18 +222,28 @@ const findPortalLinkAsync = async (context, entry, link) => {
   const pickContext = { entryUrl: entry.url, origin, openQuery: link.openQuery }
   let sawCandidate = false
   let truncated = false
+  // 落ちた条件の件数とクエリのキー名は**フレームをまたいで合算する** (SPEC-SC-26 の規則4)
+  const rejected = {}
+  const queryKeys = []
 
   for (const page of context.pages()) {
     if (page.isClosed() || !page.url().startsWith(`${origin}/`)) continue
 
     for (const frame of page.frames()) {
+      // 読めなかったフレームも数える。数えないと「ハブが無い」と区別できなくなる
+      scan.frames += 1
       let collected
       try {
         collected = await collectAnchorsAsync(frame, entry.url)
       } catch {
-        // 読めないフレームは飛ばす（判定には影響させない）
+        // 読めないフレームは飛ばす（判定には影響させない）。
+        // **数だけは残す。** 数えないと `links 0` が「読めていない」のか
+        // 「本当にリンクが無い」のか区別できない (SPEC-SC-26 の3原因)
+        scan.unreadable += 1
         continue
       }
+      scan.links += collected.total ?? 0
+      scan.matched += collected.matched ?? 0
       if (collected.candidates.length === 0) continue
 
       sawCandidate = true
@@ -235,8 +251,13 @@ const findPortalLinkAsync = async (context, entry, link) => {
       truncated = truncated || collected.truncated === true
       const picked = pickLink(collected.candidates, pickContext)
       if (picked.href) {
-        return { href: picked.href, referer: frame.url(), reason: picked.reason, truncated: false }
+        return { href: picked.href, referer: frame.url(), reason: picked.reason, truncated: false, rejected: {}, queryKeys: [], scan }
       }
+
+      for (const [name, count] of Object.entries(picked.rejected)) {
+        rejected[name] = (rejected[name] ?? 0) + count
+      }
+      queryKeys.push(...picked.queryKeys)
     }
   }
 
@@ -245,7 +266,10 @@ const findPortalLinkAsync = async (context, entry, link) => {
     href: null,
     referer: null,
     reason: sawCandidate ? LINK_NOT_QUALIFIED : LINK_NO_CANDIDATE,
-    truncated
+    truncated,
+    rejected,
+    queryKeys,
+    scan
   }
 }
 
@@ -273,6 +297,18 @@ const followPortalLinkAsync = async (runner, site, target, entry, result) => {
   if (link.truncated) {
     // 「資格を満たさない」と「上限より後ろを見ていない」を読み分けられるようにする
     result.notes.push(LINK_TRUNCATED_NOTE)
+  }
+  // 退避理由の内訳 (SPEC-SC-23 の備考 11〜13)。到達方法の1行の直後に、**互いに排他**で出す。
+  // 一語の退避理由だけでは次の一手が決まらない（クエリなら許す集合を広げうるが、
+  // インラインハンドラなら到達方法を諦める。分岐が正反対。ADR-0011 の 10）
+  if (link.reason === LINK_NOT_QUALIFIED) {
+    for (const note of [describeRejected(link.rejected), describeQueryKeys(link.queryKeys)]) {
+      if (note) {
+        result.notes.push(note)
+      }
+    }
+  } else if (link.reason === LINK_NO_CANDIDATE) {
+    result.notes.push(describeScan(link.scan))
   }
 
   // たどれなければ従来どおり組み立て URL を直打ちする＝最悪でも現状と同じ観測になる

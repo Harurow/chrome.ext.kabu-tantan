@@ -20,3 +20,10 @@ li.x-kabu-menu-item {
 li.x-kabu-menu-item:last-child {
   margin-right: 0;
 }
+
+/* 文字の外(右側の余白・上下)でも押せるように、<a>をliの内容ボックスいっぱいに広げる
+   (SPEC-CS-25 2-d。ハンドラは増やさない)。
+   liのmargin(項目間の隙間)は要素の外側なので押せないままで、隣の項目は開かない */
+li.x-kabu-menu-item > a {
+  display: block;
+}

@@ -18,8 +18,13 @@
  * ログインが要る経路は自動テストにできないため、純関数に落とせるところを最大化してある。
  */
 
+import { isSuspiciousToken, sanitize, TOKEN_WITHHELD } from './diagnostics.mjs'
+
 /** 候補として持ち帰るアンカーの上限（document order の先頭から。SPEC-SC-26） */
 export const MAX_CANDIDATES = 20
+
+/** 備考に出すクエリのキー名の上限 (SPEC-SC-26 の「キー名だけを出す」規則4) */
+export const MAX_QUERY_KEYS = 10
 
 /* ------------------------------------------------------------------ *
  * 純関数（自動テストの対象。SPEC-SC-16 の `到達リンク`）
@@ -70,6 +75,116 @@ export const LINK_TRUNCATED_NOTE =
  * @param { string } reason
  */
 export const describeReach = (reason) => REACH_NOTES[reason] ?? REACH_NOTES[LINK_NO_CANDIDATE]
+
+/* ------------------------------------------------------------------ *
+ * 退避理由の内訳 (SPEC-SC-26 の「退避理由の内訳」)
+ * ------------------------------------------------------------------ */
+
+/**
+ * 資格の条件名。**固定の6語**で、サイトの DOM にも URL にも依存しない (SPEC-SC-14)。
+ * `not-qualified` だけでは「クエリで落ちた（許す集合を広げうる）」のか
+ * 「インラインハンドラで落ちた（到達方法を諦める）」のかが区別できず、
+ * 次の一手が正反対なのに決められない (ADR-0011 の 10)。
+ */
+export const REJECT_RAW_HREF = 'rawHref'
+export const REJECT_SCHEME = 'スキーム'
+export const REJECT_ORIGIN = 'オリジン'
+export const REJECT_PATH = 'パス'
+export const REJECT_INLINE_HANDLER = 'インラインハンドラ'
+export const REJECT_QUERY = 'クエリ'
+
+/**
+ * 条件番号（SPEC-SC-26 の「アンカーの資格」1〜6）の順。
+ * 審査の順序と内訳の並び順を**この1つの配列**で決める。
+ * 件数の降順にしないのは、実行間で並びが動くと差分が読めなくなるため。
+ */
+export const REJECT_CONDITIONS = [
+  REJECT_RAW_HREF,
+  REJECT_SCHEME,
+  REJECT_ORIGIN,
+  REJECT_PATH,
+  REJECT_INLINE_HANDLER,
+  REJECT_QUERY
+]
+
+/**
+ * 資格を満たさなかった条件ごとの件数を1行にする (SPEC-SC-23 の備考 11)。
+ * 0 件の条件は書かない。1件も無ければ `null`（呼び出し側は積まない）。
+ * @param { Record<string, number> | undefined } rejected 条件名 → 件数
+ * @returns { string | null }
+ */
+export const describeRejected = (rejected) => {
+  const parts = REJECT_CONDITIONS
+    .filter((name) => (rejected?.[name] ?? 0) > 0)
+    .map((name) => `${name} ${rejected[name]} 件`)
+  return parts.length === 0 ? null : `資格を満たさなかった内訳: ${parts.join(' / ')}`
+}
+
+/**
+ * クエリのキー名1個を記録してよい形にする。
+ * `BV_SessionID` などが混ざるため、SPEC-SC-22 の不記録判定を通す (SPEC-SC-14)。
+ *
+ * **判定は生の値で、出力は消毒を通す。** 不記録判定を先に置くのは、
+ * `sanitize()` が URL を `[url]` に潰すと「疑わしさ」が消えてしまうため。
+ * 消毒を通すのは、`isSuspiciousToken` の長い英数字列の規則が
+ * ハイフン・ドットで区切られた長いキーを取り逃し、**長さの上限が効かない経路**になるから。
+ * @param { string } key
+ */
+const formatQueryKey = (key) => {
+  if (isSuspiciousToken(key)) {
+    return TOKEN_WITHHELD
+  }
+
+  const text = sanitize(key)
+  // バッククォートを含むキーはコードスパンを壊す（伏せ字と同じく形の問題として落とす）
+  return text === '' || text.includes('`') ? TOKEN_WITHHELD : text
+}
+
+/**
+ * 資格6（クエリ）で落ちた候補のキー名を1行にする (SPEC-SC-23 の備考 12)。
+ *
+ * **キー名だけを出し、値は出さない。** 許す集合 (`openQuery`) を広げてよいかは
+ * キーの意味で決まり、値は判断に要らない (SPEC-SC-14 / ADR-0011 の 7 の 5)。
+ *
+ * 重複を除いてアルファベット順に並べ、伏せ字と消毒を通し、上限 10 個で切る。
+ * **キー名は1つずつバッククォートで囲む。** 伏せ字 `<withheld>` が素のまま備考セルに出ると
+ * markdownlint の MD033 に当たり、生成物が `npm run lint:md` で落ちる (SPEC-SC-26 の規則6)。
+ *
+ * @param { string[] | undefined } keys 生のキー名（重複・順不同でよい）
+ * @returns { string | null }
+ */
+export const describeQueryKeys = (keys) => {
+  const raw = (keys ?? []).map((key) => String(key ?? '')).filter((key) => key !== '')
+  // 並べ替えは伏せ字の**前**に行う（キー名のアルファベット順であって、伏せ字の順ではない）。
+  // 伏せた後にもう一度重複を除くのは、別々のキーが同じ `<withheld>` になりうるため
+  const sorted = [...new Set(raw)].sort()
+  const list = [...new Set(sorted.map(formatQueryKey))].slice(0, MAX_QUERY_KEYS)
+  return list.length === 0
+    ? null
+    : `資格を満たさなかったクエリのキー: ${list.map((key) => `\`${key}\``).join(', ')}`
+}
+
+/**
+ * `no-candidate` のときの走査の規模を1行にする (SPEC-SC-23 の備考 13)。
+ *
+ * 「リンクが無い」には3つの別の原因（ハブが無い／フレームを読めていない／
+ * 本当にリンクが無い）があり、文言だけでは区別できない (SPEC-SC-26)。
+ * **出すのは件数だけ**で、URL もページ名も出さない (NFR-12)。
+ *
+ * **読めなかったフレームの数は別に数える。** `links 0` だけでは
+ * 「フレームを読めていない」と「本当にリンクが 0 件」が同じ見え方になり、
+ * 3 つの原因のうち 2 つが区別できない（0 件のときは1行の書式を変えない）。
+ *
+ * @param { { frames?: number, links?: number, matched?: number, unreadable?: number } | undefined } scan
+ */
+export const describeScan = (scan) => {
+  const frames = scan?.frames ?? 0
+  const links = scan?.links ?? 0
+  const matched = scan?.matched ?? 0
+  const unreadable = scan?.unreadable ?? 0
+  const base = `ハブ ${frames} フレームを走査し、リンク ${links} 件のうちパス一致は ${matched} 件`
+  return unreadable === 0 ? base : `${base}（うち読めなかったフレーム ${unreadable} 件）`
+}
 
 /**
  * `menuSelectors[].url` から対象ページのパスを取り出す。
@@ -141,52 +256,94 @@ const isOpeningQuery = (search, openQuery) => {
  * | 5 | インラインハンドラを持たない | 実体が送信のリンク (CON-10) |
  * | 6 | クエリが空、または `openQuery` と完全に一致 | 同一パスで操作を切り替えるリンク (CON-10) |
  *
+ * **真偽値ではなく「最初に落ちた条件」を返す** (SPEC-SC-26 の「退避理由の内訳」)。
+ * 条件は上表の 1〜6 の順に見る。1候補につき数えるのは最初の1つだけで、
+ * どこまで審査したかによって内訳が動かないようにする。
+ * 解決できない `href` は条件2（スキーム）で落とす（スキームを確かめられない）。
+ *
  * @param { { rawHref: string, href: string, hasInlineHandler: boolean } } candidate
  * @param { { entryUrl: string, origin: string, openQuery?: Record<string, string> } } context
+ * @returns { string | null } 落ちた条件の名前。資格を満たすなら `null`
  */
 const isQualified = (candidate, { entryUrl, origin, openQuery }) => {
   const rawHref = String(candidate?.rawHref ?? '').trim()
   if (rawHref === '' || rawHref.startsWith('#')) {
-    return false
-  }
-  if (candidate.hasInlineHandler) {
-    return false
+    return REJECT_RAW_HREF
   }
 
   let url
   try {
     url = new URL(String(candidate.href ?? ''))
   } catch {
-    // 解決できない href は採らない
-    return false
+    return REJECT_SCHEME
   }
 
-  return url.protocol === 'https:' &&
-    url.origin === origin &&
-    matchesTargetPath(url.pathname, entryUrl) &&
-    isOpeningQuery(url.search, openQuery)
+  if (url.protocol !== 'https:') {
+    return REJECT_SCHEME
+  }
+  if (url.origin !== origin) {
+    return REJECT_ORIGIN
+  }
+  if (!matchesTargetPath(url.pathname, entryUrl)) {
+    return REJECT_PATH
+  }
+  if (candidate.hasInlineHandler) {
+    return REJECT_INLINE_HANDLER
+  }
+  if (!isOpeningQuery(url.search, openQuery)) {
+    return REJECT_QUERY
+  }
+  return null
+}
+
+/**
+ * 資格6 で落ちた候補のクエリのキー名を取り出す。**値は取り出さない** (SPEC-SC-14)。
+ * @param { string } href 解決済みの絶対 URL
+ * @returns { string[] }
+ */
+const queryKeysOf = (href) => {
+  try {
+    return [...new URL(String(href ?? '')).searchParams.keys()]
+  } catch {
+    return []
+  }
 }
 
 /**
  * 候補から遷移してよい href を1つ選ぶ (SPEC-SC-26)。純関数。
  *
  * **なぜ落としたかを返す**（備考の退避理由をここで決めるため。ADR-0011 の 8）。
+ * 退避理由の一語だけでは次の一手が決まらないため、
+ * **条件ごとの件数**と、資格6 で落ちた候補の**クエリのキー名**も返す
+ * (SPEC-SC-26 の「退避理由の内訳」)。たどれた場合は内訳を出さないので空で返す。
  *
  * @param { { rawHref: string, href: string, hasInlineHandler: boolean }[] } candidates document order
  * @param { { entryUrl: string, origin: string, openQuery?: Record<string, string> } } context
- * @returns { { href: string | null, reason: string } }
+ * @returns { { href: string | null, reason: string, rejected: Record<string, number>, queryKeys: string[] } }
  */
 export const pickLink = (candidates, context) => {
   const list = candidates ?? []
   if (list.length === 0) {
-    return { href: null, reason: LINK_NO_CANDIDATE }
+    return { href: null, reason: LINK_NO_CANDIDATE, rejected: {}, queryKeys: [] }
   }
 
+  const rejected = {}
+  const queryKeys = []
+
   // 走査順（document order）の先頭から、最初に資格を満たしたものを採る
-  const found = list.find((candidate) => isQualified(candidate, context))
-  return found
-    ? { href: found.href, reason: LINK_FOLLOWED }
-    : { href: null, reason: LINK_NOT_QUALIFIED }
+  for (const candidate of list) {
+    const rejection = isQualified(candidate, context)
+    if (rejection === null) {
+      return { href: candidate.href, reason: LINK_FOLLOWED, rejected: {}, queryKeys: [] }
+    }
+
+    rejected[rejection] = (rejected[rejection] ?? 0) + 1
+    if (rejection === REJECT_QUERY) {
+      queryKeys.push(...queryKeysOf(candidate.href))
+    }
+  }
+
+  return { href: null, reason: LINK_NOT_QUALIFIED, rejected, queryKeys }
 }
 
 /* ------------------------------------------------------------------ *

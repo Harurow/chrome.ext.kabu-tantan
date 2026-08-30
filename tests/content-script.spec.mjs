@@ -272,6 +272,149 @@ test.describe('設定の反映', () => {
 })
 
 /**
+ * SPEC-CS-25（2-d。FR-25）: 楽天証券・SBI証券のメニュー項目は、行のどこを押しても
+ * 文字の上を押したときと同じ結果になる。
+ *
+ * 実装は `src/style.css` の `li.x-kabu-menu-item > a { display: block }` の1規則だけで、
+ * 項目を組み立てる `linkMenu.js` と `style.css` は楽天・SBI の4本すべてに同じ組で注入される
+ * （`manifest.json` の `content_scripts`）。よって楽天のフィクスチャで固定すれば
+ * SBI 側も同じ規則で動く。TradingView 側（2-a / 2-b / 2-c）は自動化しない（CON-08）。
+ */
+test.describe('メニュー項目のクリック範囲', () => {
+  /** 先頭の銘柄コードのメニューをホバーで開く */
+  const openFirstMenuAsync = async (page) => {
+    const root = page.locator('span.x-kabu-root').first()
+    await root.hover()
+
+    const menu = root.locator('ul.x-kabu-body')
+    await expect(menu).toBeVisible()
+    return menu
+  }
+
+  /**
+   * 各項目について、`<a>` の箱（＝押せる範囲）と、その中の文字の右端を測る。
+   * 文字の外を押すための座標を、タイトルの長さに依存せず決めるために使う
+   */
+  const measureItemsAsync = (menu) =>
+    menu.locator('li.x-kabu-menu-item > a').evaluateAll((anchors) =>
+      anchors.map((a) => {
+        const box = a.getBoundingClientRect()
+        // 文字そのものの矩形（<a> の箱ではなく中身のテキスト）
+        const range = document.createRange()
+        range.selectNodeContents(a)
+        const text = range.getBoundingClientRect()
+
+        return {
+          href: a.href,
+          left: box.left,
+          right: box.right,
+          top: box.top,
+          bottom: box.bottom,
+          textRight: text.right
+        }
+      }))
+
+  /** 文字の外がいちばん広い項目を選ぶ（タイトルの長さは設定で変わるため実測で決める） */
+  const widestPaddingOf = (items) =>
+    items.reduce((widest, current) =>
+      current.right - current.textRight > widest.right - widest.textRight ? current : widest)
+
+  /** 差し替えたページの目印。実サイトへ出ていっていないことを題名で確かめる */
+  const STUB_TITLE = 'stub'
+
+  /** 新しいタブが実サイトへ出ていかないよう、その URL だけを差し替える */
+  const stubTargetAsync = (context, url) =>
+    context.route(url, (route) => route.fulfill({
+      status: 200,
+      contentType: 'text/html; charset=utf-8',
+      body: `<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8"><title>${STUB_TITLE}</title></head><body></body></html>`
+    }))
+
+  /**
+   * 新しいタブが開くのを待ち、**差し替えたページであること**まで確かめる。
+   * 差し替えの一致が外れると `npm test` が実サイトへリクエストを出すため、
+   * URL だけでなく中身で見る（外部リクエストゼロの方針。`tests/options.spec.mjs` と同じ）
+   */
+  const waitForStubPageAsync = async (context, clickAsync) => {
+    const [opened] = await Promise.all([context.waitForEvent('page'), clickAsync()])
+    await opened.waitForLoadState('domcontentloaded')
+    expect(await opened.title()).toBe(STUB_TITLE)
+    return opened
+  }
+
+  // 判定基準1 / 2-d: 文字の外（右側の余白）でも、文字の上と同じ URL へ行く
+  test('項目の文字の外を押しても、文字の上と同じ URL が開く', async ({ page, context, serveFixture }) => {
+    await serveFixture(page, RAKUTEN_FAVORITES_URL, RAKUTEN_FAVORITES_HTML)
+    const menu = await openFirstMenuAsync(page)
+
+    const item = widestPaddingOf(await measureItemsAsync(menu))
+
+    // 余白が無いと「文字の外を押す」自体が成立しない（規則が効いていない場合もここで落ちる）。
+    // 既定で有効なサイトはタイトルの幅が揃っていないので、いちばん短い項目には必ず余白が出る。
+    // 幅が揃う日が来ても黙って通ることはなく、この行で落ちる
+    expect(item.right - item.textRight).toBeGreaterThan(4)
+
+    await stubTargetAsync(context, item.href)
+    const y = (item.top + item.bottom) / 2
+
+    // 文字の上
+    const onText = await waitForStubPageAsync(context, () => page.mouse.click(item.left + 2, y))
+
+    // 文字の外（文字の右端と <a> の右端の中間）
+    await page.bringToFront()
+    await openFirstMenuAsync(page)
+    const besideText = await waitForStubPageAsync(context,
+      () => page.mouse.click((item.textRight + item.right) / 2, y))
+
+    expect(besideText.url()).toBe(onText.url())
+    expect(besideText.url()).toBe(item.href)
+  })
+
+  // 判定基準6: 項目間の隙間（<li> の margin）は押せないまま
+  test('項目と項目のあいだを押しても何も開かない', async ({ page, context, serveFixture }) => {
+    await serveFixture(page, RAKUTEN_FAVORITES_URL, RAKUTEN_FAVORITES_HTML)
+    const menu = await openFirstMenuAsync(page)
+
+    const [first, second] = await measureItemsAsync(menu)
+    const gap = second.top - first.bottom
+    expect(gap).toBeGreaterThan(0)
+
+    const x = first.left + 2
+    const y = (first.bottom + second.top) / 2
+
+    // 隙間の点はどの <a> にも当たらない（クリックの前に当たり判定で確かめる）
+    const hit = await page.evaluate(([x, y]) =>
+      document.elementFromPoint(x, y)?.closest('a')?.href ?? null, [x, y])
+    expect(hit).toBeNull()
+
+    const opened = []
+    context.on('page', (opened$) => opened.push(opened$.url()))
+
+    await page.mouse.click(x, y)
+    await page.waitForTimeout(500)
+
+    expect(opened).toEqual([])
+    expect(page.url()).toBe(RAKUTEN_FAVORITES_URL)
+  })
+
+  // 判定基準4: クリックしてもメニューは閉じない（TradingView とは正解が違う。SPEC-CS-04）
+  test('項目をクリックしてもメニューは閉じない', async ({ page, context, serveFixture }) => {
+    await serveFixture(page, RAKUTEN_FAVORITES_URL, RAKUTEN_FAVORITES_HTML)
+    const menu = await openFirstMenuAsync(page)
+
+    const item = widestPaddingOf(await measureItemsAsync(menu))
+    await stubTargetAsync(context, item.href)
+
+    await waitForStubPageAsync(context,
+      () => page.mouse.click((item.textRight + item.right) / 2, (item.top + item.bottom) / 2))
+
+    // ホバーが外れるまで開いたまま（マウスは項目の上に置いたまま調べる）
+    await expect(menu).toHaveClass(/\bopen\b/)
+    await expect(menu).toBeVisible()
+  })
+})
+
+/**
  * TradingView の `EXCHANGE:CODE` 解釈 (SPEC-TC-07 / SPEC-CS-23)。
  *
  * TradingView 自体は DOM がハッシュ付きクラス名で変わるため自動テスト対象外だが、
