@@ -44,6 +44,7 @@ flowchart TD
 "js": [
   "third-party/jquery.min.js",  // $ を定義
   "urls.js",                    // externalUrls / externalUrlsMap / exchanges / getEnableLinkKeysAsync / makeUrl / isExtensionAlive / retrySetup
+                                // 1.17.0 で usCodePattern / jpLooseCodePattern / matchInjectionTicker を追加（未実装。FR-28）
   "linkMenu.js",                // createMenu（urls.js に依存）
   "rakuten-cs.js"               // 上記すべてを使う
 ]
@@ -58,6 +59,10 @@ Service Worker だけは `importScripts('./urls.js')` で読み込む。
 
 > `urls.js` は Service Worker からも `importScripts` で読まれるため、
 > ここに置いた関数は `tests/service-worker.spec.mjs` から直接叩ける（ビルドが無い環境で唯一の単体テスト手段）。
+>
+> **`urls.js` に値を足したら `eslint.config.mjs` の `sharedGlobals` にも足す。**
+> 足さないと、その値を使う側で `no-undef` が出る（1.17.0 で移す `usCodePattern` が該当。
+> `service_worker.js` から宣言が消えるため、**移設と同時に列へ足さないと lint が落ちる**）。
 
 この暗黙の依存は壊れても実行時まで気づけないため、`npm run validate` が読み込み順を検証する。
 ESLint 側は `eslint.config.mjs` の `sharedGlobals` でこれらをグローバル宣言している。
@@ -125,6 +130,10 @@ TradingView のリリースでハッシュ部分が変わる。**変わっても
 
 米国株は `[A-Z]{1,5}`。**必ず先頭にアンカー (`^`) を付ける** ——
 付けないと日本語文中の大文字並び（例: 「株価はNYSEで上昇」）に誤マッチする。
+**後続境界（切り出してよい後続の許可列挙）も必須**で、値は3本のリテラルで揃える（SPEC-TC-02）。
+
+**注入経路（楽天・SBI）は国内株を先に、空振りしたときだけ米国株を見る**（SPEC-TC-10。1.17.0。未実装）。
+国内株の式は非アンカーのまま変えない。**この順序が「国内株の結果を変えない」ことの保証**になる。
 
 ### URL テンプレート
 
@@ -202,7 +211,7 @@ npm test   # 差し替え後は必ず実行する
 | --- | --- |
 | `src/urls.js` | 全 Content Script + Service Worker + オプションページ |
 | `src/*-cs.js` の起動シーケンス・監視 | `docs/specs/content-scripts.md`（SPEC-CS-01 / 08 / 10 / 12 / 19 / 22）。**固定待機・再試行間隔・デバウンスを変えたら `scripts/selector-check/targets.mjs` の `settleMs` の下限を確かめる**（SPEC-SC-25。自動テストでは落ちない） |
-| `src/linkMenu.js` | 楽天・SBI の Content Script |
+| `src/linkMenu.js` | 楽天・SBI の Content Script **4本すべて**（国内株の経路も同時に変わる。FR-28 判定基準5 が崩れうる唯一の場所） |
 | `src/service_worker.js` | コンテキストメニュー、メッセージ通信全体 |
 | `src/style.css` | 楽天・SBI のメニュー表示 |
 | `src/tradingview-cs.css` | TradingView のみ |

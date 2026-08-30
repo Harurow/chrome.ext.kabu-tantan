@@ -17,14 +17,30 @@ export const RAKUTEN_ORIGIN = 'https://member.rakuten-sec.co.jp'
  * 「そのページを開く」ことだけを意味するクエリ (SPEC-SC-26 のアンカーの資格 6)。
  *
  * 楽天証券の `.do` は**同一パスのクエリで操作を切り替える**（`eventType` が `init` 以外も取りうる）。
- * ポータルのリンクをたどるとき、この1組（またはクエリ無し）以外は資格を満たさないものとして採らない。
- * 組み立て URL の `eventType=init` と**同じ情報源**にするため、下の `RAKUTEN_STOCK_QUERY` もここから作る。
+ * ポータルのリンクをたどるとき、ここに挙げたキーだけで構成されるクエリ（またはクエリ無し）以外は
+ * 資格を満たさないものとして採らない。**許可列挙**なので、知らないキーが1つでもあれば落ちる。
+ *
+ * | 種類 | キー | 判断 |
+ * | --- | --- | --- |
+ * | `pinned` | `eventType` | サイトが**操作の種類をこのキーで表している**と読めるため、値を `init` に固定したまま緩めない |
+ * | `anyValue` | `gmn` / `fmn` / `lmn` / `smn` | グローバル／第1／大／小メニューの階層。**どのメニューから来たか**を表すだけで遷移先の内容も状態も変えない |
+ * | `anyValue` | `l-id` | リンク識別子（流入元のトラッキング）。同上 |
+ *
+ * `local` / `type` / `sub_type` は 2026-08-30 の実測で観測したが**許さない**。「表示の絞り込み」と
+ * 読めるだけで確証が無く、同一パスで**操作**を切り替える可能性を否定できない
+ * （CON-10「判断がつかないものは採らない」。ADR-0011 の 11）。
+ *
+ * 組み立て URL の `eventType=init` と**同じ情報源**にするため、下の `RAKUTEN_STOCK_QUERY` は
+ * `pinned` から作る。
  */
-export const RAKUTEN_OPEN_QUERY = { eventType: 'init' }
+export const RAKUTEN_OPEN_QUERY = {
+  pinned: { eventType: 'init' },
+  anyValue: ['gmn', 'fmn', 'lmn', 'smn', 'l-id']
+}
 
 // 個別銘柄・株価検索は銘柄の指定が要る（トヨタ自動車で確認する）
 const RAKUTEN_STOCK_QUERY =
-  `?${new URLSearchParams(RAKUTEN_OPEN_QUERY)}&dscrCd=7203&marketCd=1&chartPeriod=1&gmn=J&smn=01&lmn=01&fmn=01`
+  `?${new URLSearchParams(RAKUTEN_OPEN_QUERY.pinned)}&dscrCd=7203&marketCd=1&chartPeriod=1&gmn=J&smn=01&lmn=01&fmn=01`
 
 /**
  * 楽天証券の遷移先 URL を組み立てる。

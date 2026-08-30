@@ -226,23 +226,38 @@ export const matchesTargetPath = (pathname, entryUrl) => {
  * 同じパスに GET で並んでいれば、パス一致だけでは「遷移」と「操作」を区別できない。
  * 判断がつかないものは採らない (CON-10)。
  *
+ * 許すキーは2種類ある。**どちらにも無いキーが1つでもあれば落とす**（許可列挙）。
+ *
+ * | 種類 | 意味 |
+ * | --- | --- |
+ * | `pinned` | 値まで一致させるキー。**あるなら値が一致すること。無くてもよい** |
+ * | `anyValue` | キーだけ許し、値は問わないキー（メニュー階層・流入元など、遷移先を変えないもの） |
+ *
  * 許すクエリの集合は**サイト固有の値なので引数で受け取る**（`links.mjs` は持たない）。
- * 渡されなければ「クエリ無しだけを許す」に倒れる（安全側に閉じる）。
+ * 渡されなければ「クエリ無しだけを許す」に倒れる（安全側に閉じる。規則7）。
  *
  * @param { string } search `URL` の `search`（先頭の `?` を含む）
- * @param { Record<string, string> | undefined } openQuery 許すキーと値（例 `{ eventType: 'init' }`）
+ * @param { { pinned?: Record<string, string>, anyValue?: string[] } | undefined } openQuery
+ *   許すキー（例 `{ pinned: { eventType: 'init' }, anyValue: ['gmn'] }`）
  */
 const isOpeningQuery = (search, openQuery) => {
   if (search === '') {
     return true
   }
 
-  const allowed = new Map(Object.entries(openQuery ?? {}))
+  const pinned = new Map(Object.entries(openQuery?.pinned ?? {}))
+  const anyValue = new Set(openQuery?.anyValue ?? [])
   const actual = [...new URLSearchParams(search)]
 
-  // 件数も見る。同じキーの重複や、許した組に別のキーを足した形をすり抜けさせない
-  return actual.length === allowed.size &&
-    actual.every(([key, value]) => allowed.get(key) === value)
+  // 同じキーが2回以上現れたら落とす（資格6 の規則4）。`anyValue` のキーでも重複は許さない。
+  // 重複はサイト側が組み立てた素のリンクの形ではなく、意味を読み切れない
+  const keys = actual.map(([key]) => key)
+  if (new Set(keys).size !== keys.length) {
+    return false
+  }
+
+  // 大小は区別する（`eventtype` はどちらにも無いので落ちる。規則6）
+  return actual.every(([key, value]) => (pinned.has(key) ? pinned.get(key) === value : anyValue.has(key)))
 }
 
 /**
@@ -254,7 +269,7 @@ const isOpeningQuery = (search, openQuery) => {
  * | 3 | オリジンが対象サイト | サイト外への離脱 (CON-10) |
  * | 4 | pathname が対象のパスに一致 | 別ページへの遷移 |
  * | 5 | インラインハンドラを持たない | 実体が送信のリンク (CON-10) |
- * | 6 | クエリが空、または `openQuery` と完全に一致 | 同一パスで操作を切り替えるリンク (CON-10) |
+ * | 6 | クエリが空、または `openQuery` が許すキーだけで構成される | 同一パスで操作を切り替えるリンク (CON-10) |
  *
  * **真偽値ではなく「最初に落ちた条件」を返す** (SPEC-SC-26 の「退避理由の内訳」)。
  * 条件は上表の 1〜6 の順に見る。1候補につき数えるのは最初の1つだけで、
@@ -262,7 +277,8 @@ const isOpeningQuery = (search, openQuery) => {
  * 解決できない `href` は条件2（スキーム）で落とす（スキームを確かめられない）。
  *
  * @param { { rawHref: string, href: string, hasInlineHandler: boolean } } candidate
- * @param { { entryUrl: string, origin: string, openQuery?: Record<string, string> } } context
+ * @param { { entryUrl: string, origin: string, openQuery?: { pinned?: Record<string, string>, anyValue?: string[] } } } context
+ *   `openQuery` の形は `isOpeningQuery()` を参照（`pinned` は値まで一致、`anyValue` はキーだけ）
  * @returns { string | null } 落ちた条件の名前。資格を満たすなら `null`
  */
 const isQualified = (candidate, { entryUrl, origin, openQuery }) => {
@@ -318,7 +334,8 @@ const queryKeysOf = (href) => {
  * (SPEC-SC-26 の「退避理由の内訳」)。たどれた場合は内訳を出さないので空で返す。
  *
  * @param { { rawHref: string, href: string, hasInlineHandler: boolean }[] } candidates document order
- * @param { { entryUrl: string, origin: string, openQuery?: Record<string, string> } } context
+ * @param { { entryUrl: string, origin: string, openQuery?: { pinned?: Record<string, string>, anyValue?: string[] } } } context
+ *   `openQuery` の形は `isOpeningQuery()` を参照（`pinned` は値まで一致、`anyValue` はキーだけ）
  * @returns { { href: string | null, reason: string, rejected: Record<string, number>, queryKeys: string[] } }
  */
 export const pickLink = (candidates, context) => {

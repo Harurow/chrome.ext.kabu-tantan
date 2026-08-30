@@ -200,7 +200,9 @@ const buildUrl = (target, runner, entry) => (typeof target.url === 'function'
  *
  * @param { import('@playwright/test').BrowserContext } context
  * @param { { url: string } } entry `menuSelectors` のエントリ
- * @param { { origin?: string, openQuery?: Record<string, string> } } link 検証中のサイトの `link`
+ * @param { { origin?: string, openQuery?: { pinned?: Record<string, string>, anyValue?: string[] } } } link 検証中のサイトの `link`
+ *   `openQuery` は `links.mjs` の `isOpeningQuery()` がそのまま解釈する形で渡す。
+ *   **`URLSearchParams` に入る形ではない**（組み立て URL に使うのは `pinned` の側だけ。`targets.mjs`）
  * @returns { Promise<{ href: string | null, referer: string | null, reason: string, truncated: boolean, rejected: Record<string, number>, queryKeys: string[], scan: { frames: number, links: number, matched: number, unreadable: number } }> }
  *   `rejected` / `queryKeys` は退避理由が `not-qualified` のときの内訳、
  *   `scan` は `no-candidate` のときの走査の規模 (SPEC-SC-26 の「退避理由の内訳」)
@@ -218,11 +220,12 @@ const findPortalLinkAsync = async (context, entry, link) => {
   }
 
   // 資格審査に使うサイト固有の値は純関数へ引数で渡す（links.mjs には持たせない）。
-  // `openQuery` が無ければ「クエリ無しだけを許す」に倒れる（安全側。SPEC-SC-26 の規則4）
+  // `openQuery` が無ければ「クエリ無しだけを許す」に倒れる（安全側。SPEC-SC-26 の資格6 の規則7）
   const pickContext = { entryUrl: entry.url, origin, openQuery: link.openQuery }
   let sawCandidate = false
   let truncated = false
-  // 落ちた条件の件数とクエリのキー名は**フレームをまたいで合算する** (SPEC-SC-26 の規則4)
+  // 落ちた条件の件数とクエリのキー名は**フレームをまたいで合算する**
+  // (SPEC-SC-26 の「退避理由の内訳」の規則4。上の資格6 の規則番号とは別の表)
   const rejected = {}
   const queryKeys = []
 

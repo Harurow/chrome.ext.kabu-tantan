@@ -807,17 +807,34 @@ test.describe('到達リンク', () => {
     const context = { entryUrl: FAVORITE, origin: ORIGIN, openQuery: RAKUTEN_OPEN_QUERY }
     const link = (query) => qualified(`${ORIGIN}/app/info_jp_prc_reg_lst.do${SESSION}${query}`)
 
-    // クエリ無しと、`eventType=init` だけは通る
-    for (const query of ['', '?eventType=init']) {
+    // 通る形。`pinned` は値まで一致、`anyValue` は値を問わない。
+    // (a) `anyValue` のキーは値が何でも通る／(b) `pinned` のキーは無くてもよい
+    for (const query of [
+      '', '?eventType=init',
+      '?eventType=init&gmn=J&l-id=xxxx',            // 2026-08-30 に実測したお気に入りの形
+      '?gmn=J', '?l-id=header_favorite',            // `pinned` が無くても通る
+      '?eventType=init&gmn=J&fmn=1&lmn=01&smn=02',  // `anyValue` は値を問わない
+      // `anyValue` は**空値でも通る**。`pinned` の `?eventType=` は落ちる（下）ので、
+      // この非対称は意図したもの（値を見ないキーに「空だから危ない」と言える根拠が無い）
+      '?l-id='
+    ]) {
       expect(pickLink([link(query)], context), `"${query}"`)
         .toEqual({ href: link(query).href, reason: LINK_FOLLOWED, rejected: {}, queryKeys: [] })
     }
 
-    // 値が違う・キーが増える・キーが重なる・大小が違う → すべて採らない。
+    // 落ちる形。(c) どちらにも無いキーは落ちる（許可列挙）／(d) 重複キーは `anyValue` でも落ちる。
     // 落ちた条件は6（クエリ）で、`RAKUTEN_OPEN_QUERY` を広げうるかの判断材料になる
     for (const query of [
-      '?eventType=delete', '?eventType=init&rowNo=3', '?rowNo=3',
-      '?eventType=init&eventType=init', '?eventtype=init', '?eventType='
+      '?eventType=delete',                  // `pinned` の値違い
+      // 本命の形。**メニュー階層を伴う操作リンク**（`anyValue` を足しても操作は通さない）
+      '?eventType=delete&gmn=J',
+      '?eventType=',                        // 空値も値違い（`anyValue` の空値とは扱いが違う）
+      '?eventtype=init',                    // 大小違い（どちらの集合にも無い）
+      '?rowNo=3', '?eventType=init&rowNo=3', // 未知のキー
+      // 「絞り込み」と読めるが確証が無いキーは許さない (CON-10。ADR-0011 の 11)
+      '?local=1', '?type=1', '?sub_type=1', '?eventType=init&gmn=J&type=1',
+      '?eventType=init&eventType=init',     // 重複キー（`pinned`）
+      '?gmn=J&gmn=K'                        // 重複キー（`anyValue` でも落とす）
     ]) {
       const picked = pickLink([link(query)], context)
       expect(picked.href, query).toBeNull()
@@ -826,20 +843,40 @@ test.describe('到達リンク', () => {
     }
 
     // 先頭に操作リンクが並んでいても、後ろの「開くだけ」のリンクを採る
-    expect(pickLink([link('?eventType=delete'), link('?rowNo=1'), link('')], context))
-      .toEqual({ href: link('').href, reason: LINK_FOLLOWED, rejected: {}, queryKeys: [] })
+    expect(pickLink([link('?eventType=delete'), link('?rowNo=1'), link('?gmn=J')], context))
+      .toEqual({ href: link('?gmn=J').href, reason: LINK_FOLLOWED, rejected: {}, queryKeys: [] })
 
-    // 許すクエリを渡さなければクエリ付きは一切通らない（安全側に閉じる）
-    const withoutOpenQuery = pickLink([link('?eventType=init')], { entryUrl: FAVORITE, origin: ORIGIN })
-    expect(withoutOpenQuery.href).toBeNull()
-    expect(withoutOpenQuery.reason).toBe(LINK_NOT_QUALIFIED)
-    expect(withoutOpenQuery.rejected).toEqual({ [REJECT_QUERY]: 1 })
+    // 許すクエリを渡さなければクエリ付きは一切通らない（安全側の既定。規則7）。
+    // 片方だけ渡した場合も、渡さなかった側は空集合に倒れる（`?? {}` / `?? []` の既定）
+    const partial = [
+      // [ラベル, openQuery, `?eventType=init` が通るか, `?gmn=J` が通るか]
+      ['未指定', undefined, false, false],
+      ['pinned だけ', { pinned: RAKUTEN_OPEN_QUERY.pinned }, true, false],
+      ['anyValue だけ', { anyValue: RAKUTEN_OPEN_QUERY.anyValue }, false, true]
+    ]
+    for (const [label, openQuery, pinnedOk, anyValueOk] of partial) {
+      for (const [query, allowed] of [['?eventType=init', pinnedOk], ['?gmn=J', anyValueOk]]) {
+        const picked = pickLink([link(query)], { entryUrl: FAVORITE, origin: ORIGIN, openQuery })
+        const at = `${label} ${query}`
+        expect(picked.href, at).toBe(allowed ? link(query).href : null)
+        expect(picked.reason, at).toBe(allowed ? LINK_FOLLOWED : LINK_NOT_QUALIFIED)
+        expect(picked.rejected, at).toEqual(allowed ? {} : { [REJECT_QUERY]: 1 })
+      }
+      // どの既定でもクエリ無しは通る（規則1）
+      expect(pickLink([link('')], { entryUrl: FAVORITE, origin: ORIGIN, openQuery }).reason, label)
+        .toBe(LINK_FOLLOWED)
+    }
 
-    // 許す値の情報源は組み立て URL と同じ（`targets.mjs` の1箇所。新しい推測値を増やさない）
+    // 許す値の情報源は組み立て URL と同じ（`targets.mjs` の1箇所。新しい推測値を増やさない）。
+    // `RAKUTEN_STOCK_QUERY` は `pinned` から組み立てる
     const stockUrl = rakutenSite().targets
       .find((target) => target.key === '国内株式・個別銘柄')
       .url({ session: SESSION, entry: { url: '/app/info_jp_prc_dtl.do;' } })
-    expect(new URL(stockUrl).search.startsWith(`?${new URLSearchParams(RAKUTEN_OPEN_QUERY)}`)).toBe(true)
+    expect(new URL(stockUrl).search.startsWith(`?${new URLSearchParams(RAKUTEN_OPEN_QUERY.pinned)}`)).toBe(true)
+    // 組み立て URL が持つメニュー階層のキーは `anyValue` 側で許してある（同じキーを二重に定義しない）
+    for (const key of ['gmn', 'smn', 'lmn', 'fmn']) {
+      expect(RAKUTEN_OPEN_QUERY.anyValue, key).toContain(key)
+    }
   })
 
   test('pickLink() が候補 0 件のとき no-candidate を返し、退避の文言が not-qualified と異なる', () => {
