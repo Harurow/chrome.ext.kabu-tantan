@@ -15,6 +15,9 @@ const sharedGlobals = {
   retrySetupIntervalMs: 'readonly',
   retrySetupTimeoutMs: 'readonly',
   exchanges: 'readonly',
+  usCodePattern: 'readonly',
+  jpLooseCodePattern: 'readonly',
+  matchInjectionTicker: 'readonly',
   // linkMenu.js が提供
   createMenu: 'readonly',
   // third-party/jquery.min.js が提供
@@ -104,6 +107,7 @@ export default [
         chrome: 'readonly',
         document: 'readonly',
         getTickerCode: 'readonly',
+        getUrl: 'readonly',
         compareVersion: 'readonly'
       }
     },

@@ -179,6 +179,91 @@ const exchanges = {
 }
 
 /**
+ * 米国ティッカーの書式(SPEC-TC-02)。先頭からの前方一致で使う
+ *
+ * 後続境界は**許可列挙**。「切り出してよい後続」だけを並べ、未知の文字が続けば切り出さない。
+ * 害のある記号を並べる禁止列挙だと ASCII 記号・数字が素通りし、`SP500` から
+ * `SP`(実在ティッカー)を切り出していた。未知の入力では開かない側に倒す(FR-08。ADR-0009 の 9)
+ *  1. 終端 `$`                       `AAPL`
+ *  2. 空白 `\s`                      `AAPL Apple Inc.`(半角・全角・改行・タブ)
+ *  3. 本文文字(非 ASCII の `\p{L}`)   `AAPLの株価` / `AAPL株`。
+ *     全角ラテン `Ａ-Ｚ` と長音符2字(`ー` U+30FC / `ｰ` U+FF70)は除く
+ *  4. 終止記号(半角・全角)            `AAPL,` / `AAPL、` / `AAPL）`
+ *
+ * 3 を「非 ASCII なら許可」にすると全角の連結記号(`＆` `．` `－` `・` やダッシュ類)が
+ * 素通りし、`S＆P500` から `S`(SentinelOne)を切り出す。`\p{L}` は連結記号を含まないため
+ * この穴が構造的に塞がる(ADR-0009 の 10)。NFKC 正規化は採らない(同 10)
+ *
+ * 長音符2字は `\p{L}`(Lm)だが除く。**日本語 IME でハイフンを打つと出る**ため、
+ * `BRKーB` / `BRKｰB` のように連結記号の代用として実際に打たれる(ADR-0009 の 11)。
+ * 例外の基準は「文字かどうか」ではなく「連結記号の代用として実際に打たれるか」なので、
+ * 反復記号(`々` `ゝ` `〆`)は許可のまま(`AAPL々` は `us AAPL`)
+ *
+ * **`u` フラグ必須。** 忘れると `\p{L}` がリテラル `p{L}` になり、例外も lint エラーも
+ * 出ないまま 3 だけが死ぬ(テストの `AAPLの株価` が検出する)。
+ * また `[\p{L}…]` だけでは ASCII 英字も `\p{L}` に含まれ `BRK.B` が `BR` になるため、
+ * 非 ASCII 限定の先読み `(?=[^\x20-\x7E])` と組み合わせる
+ *
+ * 代償として `AAPL.` / `AAPL-Apple` / `AAPL#` / `AAPL0` は開かなくなる。
+ * 空白を挟む `AAPL - Apple Inc.` は落ちない。
+ * リテラルは3本(ここ / service_worker.js の優先順位4の直書き /
+ * tradingview-cs.js の parseExchangeSymbol)で同じ値にする(FR-08 の適用範囲)。
+ * 1.17.0 で service_worker.js から移設し、注入経路(SPEC-TC-10)とも共有する。
+ * 通る経路は5本になるがリテラルは増えない(ADR-0014 の 3)
+ */
+const usCodePattern = /^([A-Z]{1,5})(?=$|[\s,;:!?"'()[\]{}]|(?![Ａ-Ｚａ-ｚーｰ])(?=[^\x20-\x7E])[\p{L}、。，；：！？＂＇（）［］｛｝「」『』【】〈〉《》〔〕‘’“”])/u
+
+/**
+ * 注入経路で使う国内銘柄コードの書式(SPEC-TC-06)
+ * **アンカー無し**。表のセルなど、サイトが描いた文字列の途中にコードがある想定
+ * 共有するオブジェクトなので `g` は付けない(lastIndex を持ち回らないため)
+ */
+const jpLooseCodePattern = /[0-9][0-9ACDFGHJKLMNPRSTUWXY][0-9][0-9ACDFGHJKLMNPRSTUWXY]/
+
+/**
+ * 注入経路(楽天・SBIのContent Script 4本)で要素のテキストから銘柄コードを取り出す(SPEC-TC-10)
+ *
+ * **国内株を先に見て、空振りしたときだけ米国株を試す。**
+ * この順序が「国内株の抽出結果が今日と1文字も変わらない」ことの保証そのもので、
+ * 米国株の抽出が走るのは**今日の実装が何もしていない要素だけ**になる
+ * (FR-28 判定基準5。ADR-0014 の 2)
+ *
+ * 米国株の抽出は `allowUs` が真のときだけ走る。opt-in にしないと、FR-28 が対象外と決めた
+ * ページ(ランキング・個別銘柄・スクリーナー)でも大文字トークンに当たった時点でメニューが出て、
+ * **別銘柄のページが静かに開く**側の失敗になる(ADR-0014 の 1)
+ *
+ * 取引所は見ない(判定基準9)。`type: 'us'` に exchange は付かず、URLは常に url3(SPEC-CS-06)
+ *
+ * 抽出は**形しか見ない**。`00700`(中国株)に順位1が当たり `0070` を返す、
+ * `USD 米ドル`(預り金)に順位2が当たるといった形は、どの要素に抽出をかけるか
+ * (＝セレクタ)でしか防げない(SPEC-CS-26)
+ *
+ * @param { string } text 要素のテキスト
+ * @param { boolean } allowUs 米国株の抽出を許すか(menuSelectors の us)
+ * @returns { { code: string, type: 'jp' | 'us' } | null }
+ */
+const matchInjectionTicker = (text, allowUs) => {
+  const trimmed = (text ?? '').trim()
+
+  // 1. 国内株(非アンカー。複数一致しても先頭の1件)
+  const jp = jpLooseCodePattern.exec(trimmed)
+  if (jp) {
+    return { code: jp[0], type: 'jp' }
+  }
+
+  // 2. 米国株(先頭アンカー + 後続境界。SPEC-TC-02)
+  if (allowUs === true) {
+    const us = usCodePattern.exec(trimmed)
+    if (us) {
+      return { code: us[1], type: 'us' }
+    }
+  }
+
+  // 3. どちらも不成立
+  return null
+}
+
+/**
  * URL連想リスト
  * @type { { [key: string]: { key: string, title: string, url1: string, url2?: string, url3?: string } } }
  */

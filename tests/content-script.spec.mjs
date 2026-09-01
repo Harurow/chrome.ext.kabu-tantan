@@ -113,6 +113,104 @@ const SBI_SCR_LATE_HTML = page$('銘柄スクリーニング', `<body>
   </script>
 </body>`)
 
+// --- FR-28 / SPEC-CS-26: 米国株の行 -------------------------------------
+// rakuten-cs.js:「お気に入り」に米国ティッカーの形の行を混ぜる。
+// **このエントリには `us: true` を付けていない**ので何も起きないこと（opt-in）を見る。
+// 米国株のお気に入りは別ページ（`info_us_prc_reg_lst.do`）で、
+// このページに米国株の行は並ばない（実機で確定。ADR-0014 の 9-2）
+const RAKUTEN_FAVORITES_US_HTML = page$('お気に入り', `<body>
+  <form id="form">
+    <table class="tbl-data-01">
+      <tbody>
+        <tr><td class="align-C"><div class="mbody"><nobr>7203</nobr></div></td></tr>
+        <tr><td class="align-C"><div class="mbody"><nobr>AAPL</nobr></div></td></tr>
+        <tr><td class="align-C"><div class="mbody"><nobr>T</nobr></div></td></tr>
+        <tr><td class="align-C"><div class="mbody"><nobr>BRK.B</nobr></div></td></tr>
+        <tr><td class="align-C"><div class="mbody"><nobr>ALPHABET</nobr></div></td></tr>
+      </tbody>
+    </table>
+  </form>
+</body>`)
+
+// 同じコードが2つのテキストノードに現れるセル（判定基準10）。
+// 1.16.1 までは該当するテキストノードを**すべて**置換していたのでメニューが2つ出た
+const RAKUTEN_FAVORITES_DUP_HTML = page$('お気に入り', `<body>
+  <form id="form">
+    <table class="tbl-data-01">
+      <tbody>
+        <tr><td class="align-C"><div class="mbody"><nobr>7203<i>／</i>7203</nobr></div></td></tr>
+      </tbody>
+    </table>
+  </form>
+</body>`)
+
+// rakuten-cs.js:「保有商品一覧・すべて」。**商品種別で走査対象を絞れる唯一のエントリ**で、
+// 判定基準7（株式以外の行に出さない）を自動で固定できるのはここだけ（SPEC-CS-26）。
+// 「米国株式」は実 DOM で未確認のラベル（外れたら 0 件＝今日と同じに倒れる）
+const RAKUTEN_POSSESS_ALL_URL =
+  'https://member.rakuten-sec.co.jp/app/ass_all_possess_lst.do;BV_SessionID=TEST'
+const RAKUTEN_POSSESS_ALL_HTML = page$('保有商品一覧', `<body>
+  <div id="table_possess_data">
+    <table class="tbl-bold-border">
+      <tbody>
+        <tr><td>国内株式</td><td>7203 トヨタ自動車</td></tr>
+        <tr><td>米国株式</td><td>AAPL アップル</td></tr>
+        <tr><td>投資信託</td><td>eMAXIS Slim 全世界株式</td></tr>
+        <tr><td>預り金</td><td>USD 米ドル</td></tr>
+      </tbody>
+    </table>
+  </div>
+</body>`)
+
+// rakuten-cs.js:「保有商品一覧・すべて」に米国株の行を並べる。
+// **取引所の列を持たない**フィクスチャで、取引所を読み取らなくても成立することも見る
+// （判定基準9）。`BRK.B` / `ALPHABET` は後続境界で落ちる側（判定基準8）
+const RAKUTEN_POSSESS_ALL_US_HTML = page$('保有商品一覧', `<body>
+  <div id="table_possess_data">
+    <table class="tbl-bold-border">
+      <tbody>
+        <tr><td>国内株式</td><td>7203</td></tr>
+        <tr><td>米国株式</td><td>AAPL</td></tr>
+        <tr><td>米国株式</td><td>T</td></tr>
+        <tr><td>米国株式</td><td>BRK.B</td></tr>
+        <tr><td>米国株式</td><td>ALPHABET</td></tr>
+      </tbody>
+    </table>
+  </div>
+</body>`)
+
+// rakuten-cs.js:「ランキング・売買代金」。`us: true` を付けていないエントリなので、
+// 米国ティッカーの形のセルがあっても何も起きない（opt-in が効いていること。ADR-0014 の 1）
+const RAKUTEN_RANKING_URL =
+  'https://member.rakuten-sec.co.jp/app/market_ranking.do;BV_SessionID=TEST'
+const RAKUTEN_RANKING_HTML = page$('ランキング', `<body>
+  <div id="str-main-inner">
+    <div class="mbody">
+      <table class="tbl-data-01">
+        <tbody>
+          <tr><td>1</td><td>7203</td></tr>
+          <tr><td>2</td><td>ETF</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</body>`)
+
+// sbi-cs.js:「ポートフォリオ」に外国株式の行を足す。
+// **実画面に外国株式の行が並ぶかは未確認**（保有が無いと確かめられない。FR-28 適用範囲 c）
+const SBI_PORTFOLIO_US_HTML = page$('ポートフォリオ', `<body>
+  <div class="middleArea2"><div class="middleAreaM2">
+    <table><tbody><tr><td>
+      <table><tbody><tr><td>
+        <table><tbody>
+          <tr><td class="mtext">トヨタ自動車</td><td class="mtext">7203</td></tr>
+          <tr><td class="mtext">アップル</td><td class="mtext">AAPL</td></tr>
+        </tbody></table>
+      </td></tr></tbody></table>
+    </td></tr></tbody></table>
+  </div></div>
+</body>`)
+
 test.describe('楽天証券 Content Script', () => {
   test('お気に入りの銘柄コードにリンクメニューを注入する', async ({ page, serveFixture }) => {
     await serveFixture(page, RAKUTEN_FAVORITES_URL, RAKUTEN_FAVORITES_HTML)
@@ -411,6 +509,220 @@ test.describe('メニュー項目のクリック範囲', () => {
     // ホバーが外れるまで開いたまま（マウスは項目の上に置いたまま調べる）
     await expect(menu).toHaveClass(/\bopen\b/)
     await expect(menu).toBeVisible()
+  })
+})
+
+/**
+ * FR-28 / SPEC-CS-26: 証券会社サイトの一覧で米国株の行からもメニューを開ける。
+ *
+ * CON-08（自動テストにできない）は **TradingView だけ**の制約で、楽天・SBI は
+ * フィクスチャで検証できる。判定基準1〜10 のほぼ全部をここで固定する（ADR-0014 の 8）。
+ * 実ページでしか見られないのは3つだけ（米国株の行が実在すること／保有商品一覧の
+ * 商品種別ラベルの実測値／SBI に外国株式の行が並ぶか）で、`docs/MANUAL-CHECKLIST.md` C-1 / C-3。
+ */
+test.describe('米国株の行への注入', () => {
+  /** 注入されたメニューの元テキストを並び順で取り出す */
+  const injectedTextsAsync = (page) =>
+    page.locator('span.x-kabu-root').evaluateAll((roots) =>
+      roots.map((root) => root.childNodes[0].nodeValue))
+
+  // 判定基準1 / 5 / 6 / 8 / 9
+  test('保有商品一覧（すべて）の米国株の行にメニューが出て、国内株の行は変わらない', async ({ page, serveFixture, serviceWorker }) => {
+    await serveFixture(page, RAKUTEN_POSSESS_ALL_URL, RAKUTEN_POSSESS_ALL_US_HTML)
+
+    const roots = page.locator('span.x-kabu-root')
+    await expect(roots).toHaveCount(3)
+
+    // 判定基準8: `BRK.B`（クラス株）と `ALPHABET`（6文字以上）には注入しない。
+    // 前者で `BRK` を開くのは「開かないより悪い」失敗（SPEC-TC-02）
+    expect(await injectedTextsAsync(page)).toEqual(['7203', 'AAPL', 'T'])
+
+    // 判定基準5 / 6: 国内株の行は今までどおり（有効な全キーが url1 で並ぶ）
+    const jpExpected = await serviceWorker.evaluate(() =>
+      externalUrls.map((u) => ({ title: u.title, url: makeUrl(u.url1, '7203') })))
+    const jpActual = await roots.nth(0).locator('li.x-kabu-menu-item a').evaluateAll(
+      (as) => as.map((a) => ({ title: a.getAttribute('title'), url: a.getAttribute('href') })))
+    expect(jpActual).toEqual(jpExpected)
+  })
+
+  // 判定基準2 / 3 / 9: 米国株は url3 のみ。取引所は見ないので右クリックと文字列一致する
+  test('米国株の項目は url3 を持つサイトだけで、右クリックと同じ URL になる', async ({ page, serveFixture, serviceWorker }) => {
+    await serveFixture(page, RAKUTEN_POSSESS_ALL_URL, RAKUTEN_POSSESS_ALL_US_HTML)
+    await expect(page.locator('span.x-kabu-root')).toHaveCount(3)
+
+    // 同じ文字列を選択して右クリックしたときの遷移先（getTickerCode は exchange を返さず、
+    // getUrl は url3 を選ぶ。SPEC-TC-05）。順序はオプションの並び順のまま
+    const expected = await serviceWorker.evaluate(() =>
+      externalUrls
+        .map((u) => ({ title: u.title, url: getUrl('us', 'AAPL', undefined, u.url1, u.url2, u.url3) }))
+        .filter((item) => item.url !== undefined))
+
+    // 米国株のページを持つサイトだけが並ぶ（国内株より少ない）
+    expect(expected.length).toBeGreaterThan(0)
+    expect(expected.length).toBeLessThan((await serviceWorker.evaluate(() => externalUrls.length)))
+
+    const actual = await page.locator('span.x-kabu-root').nth(1)
+      .locator('li.x-kabu-menu-item a').evaluateAll((as) => as.map((a) => ({
+        title: a.getAttribute('title'),
+        url: a.getAttribute('href'),
+        rel: a.getAttribute('rel'),
+        target: a.getAttribute('target')
+      })))
+
+    expect(actual.map(({ title, url }) => ({ title, url }))).toEqual(expected)
+    for (const a of actual) {
+      expect(a.target).toBe('_blank')
+      expect(a.rel).toBe('noopener noreferrer')
+    }
+  })
+
+  // 判定基準4: 遷移先が0件ならメニュー自体を出さない（空の箱を開かない）
+  test('url3 を持たないサイトだけが有効なら米国株の行にメニューを出さない', async ({ page, context, extensionId, serveFixture }) => {
+    // 日本経済新聞・四季報はどちらも url3 を持たない
+    const options = await context.newPage()
+    await options.goto(`chrome-extension://${extensionId}/options.html`)
+    await options.evaluate(() => chrome.storage.sync.set({
+      enableLinkKeys: { 'www.nikkei.com/company': 0, 'shikiho.toyokeizai.net/stocks': 1 }
+    }))
+    await options.close()
+
+    await serveFixture(page, RAKUTEN_POSSESS_ALL_URL, RAKUTEN_POSSESS_ALL_US_HTML)
+
+    // 国内株の行だけが残る（米国株の行は span ごと作られない）
+    await expect(page.locator('span.x-kabu-root')).toHaveCount(1)
+    expect(await injectedTextsAsync(page)).toEqual(['7203'])
+    await expect(page.locator('ul.x-kabu-body')).toHaveCount(1)
+    await expect(page.locator('li.x-kabu-menu-item a')).toHaveCount(2)
+  })
+
+  // 判定基準1 / 7: 商品種別で走査対象を絞れる唯一のエントリ
+  test('保有商品一覧（すべて）は国内株式・米国株式の行だけに注入する', async ({ page, serveFixture }) => {
+    await serveFixture(page, RAKUTEN_POSSESS_ALL_URL, RAKUTEN_POSSESS_ALL_HTML)
+
+    await expect(page.locator('span.x-kabu-root')).toHaveCount(2)
+    expect(await injectedTextsAsync(page)).toEqual(['7203 トヨタ自動車', 'AAPL アップル'])
+
+    // 預り金の `USD 米ドル` は形だけ見れば `us USD` が成立する（SPEC-TC-10）。
+    // 届かせないのはセレクタの仕事で、抽出規則では防げない
+    await expect(page.getByText('USD 米ドル').locator('span.x-kabu-root')).toHaveCount(0)
+  })
+
+  // 判定基準1 / 2: SBI ポートフォリオ（実画面に外国株式の行が並ぶかは未確認）
+  test('SBI ポートフォリオの外国株式の行にも注入する', async ({ page, serveFixture }) => {
+    await serveFixture(page, SBI_PORTFOLIO_URL, SBI_PORTFOLIO_US_HTML)
+
+    await expect(page.locator('span.x-kabu-root')).toHaveCount(2)
+    expect(await injectedTextsAsync(page)).toEqual(['7203', 'AAPL'])
+
+    const hrefs = await page.locator('span.x-kabu-root').evaluateAll((roots) =>
+      roots.map((root) => root.querySelector('a[href*="kabutan.jp"]')?.getAttribute('href')))
+    expect(hrefs).toEqual([
+      'https://kabutan.jp/stock/?code=7203',
+      'https://us.kabutan.jp/stocks/AAPL'
+    ])
+  })
+
+  // opt-in（ADR-0014 の 1）: `us: true` を付けていないエントリは今日と同じまま
+  test('us を付けていないランキングでは米国ティッカーの形のセルに注入しない', async ({ page, serveFixture }) => {
+    await serveFixture(page, RAKUTEN_RANKING_URL, RAKUTEN_RANKING_HTML)
+
+    await expect(page.locator('span.x-kabu-root')).toHaveCount(1)
+    expect(await injectedTextsAsync(page)).toEqual(['7203'])
+  })
+
+  // opt-in（ADR-0014 の 9-2）: お気に入りは米国株が別ページなので `us: true` を付けない。
+  // 商品種別で絞れないセレクタなので、利得が無いなら当たる文字列の集合を広げない
+  test('お気に入りは us を付けていないので米国ティッカーの形の行に注入しない', async ({ page, serveFixture }) => {
+    await serveFixture(page, RAKUTEN_FAVORITES_URL, RAKUTEN_FAVORITES_US_HTML)
+
+    await expect(page.locator('span.x-kabu-root')).toHaveCount(1)
+    expect(await injectedTextsAsync(page)).toEqual(['7203'])
+  })
+
+  // 遷移先を全部無効にすると、国内株でもメニューを出さない（1.16.1 は空の箱を開いていた）。
+  // このとき注入は永久に0件なので、attachAsync 側で早めに切り上げる（NFR-01）
+  test('遷移先を全部無効にすると国内株の行にもメニューを出さない', async ({ page, context, extensionId, serveFixture }) => {
+    const options = await context.newPage()
+    await options.goto(`chrome-extension://${extensionId}/options.html`)
+    await options.evaluate(() => chrome.storage.sync.set({ enableLinkKeys: {} }))
+    await options.close()
+
+    await serveFixture(page, RAKUTEN_FAVORITES_URL, RAKUTEN_FAVORITES_HTML)
+
+    await page.waitForTimeout(1500)
+    await expect(page.locator('span.x-kabu-root')).toHaveCount(0)
+    await expect(page.locator('ul.x-kabu-body')).toHaveCount(0)
+  })
+
+  // 判定基準10: 1行につきメニューは1つ
+  test('同じコードが2回現れるセルでもメニューは1つ', async ({ page, serveFixture }) => {
+    await serveFixture(page, RAKUTEN_FAVORITES_URL, RAKUTEN_FAVORITES_DUP_HTML)
+
+    await expect(page.locator('span.x-kabu-root')).toHaveCount(1)
+
+    // 再試行のパスが繰り返されても2つ目が生えない（打ち切りだけでは次のパスが置換する）
+    await page.waitForTimeout(1200)
+    await expect(page.locator('span.x-kabu-root')).toHaveCount(1)
+    await expect(page.locator('ul.x-kabu-body')).toHaveCount(1)
+  })
+})
+
+/**
+ * SPEC-TC-10: 注入経路の抽出規則そのもの。
+ * `matchInjectionTicker` は純粋な文字列処理なので、ブラウザも DOM も要らない
+ * （`parseExchangeSymbol` と同じ仕組みで `node:vm` から呼ぶ。CON-02）。
+ */
+test.describe('urls.js: matchInjectionTicker', () => {
+  const matchInjectionTicker = evaluateScripts(['src/urls.js'], 'matchInjectionTicker')
+
+  // SPEC-TC-10 の具体例表（allowUs が真のとき）
+  test('国内株を先に見て、空振りしたときだけ米国株を試す', () => {
+    // 順位1: 国内株（非アンカー）
+    expect(matchInjectionTicker('7203', true)).toEqual({ code: '7203', type: 'jp' })
+    expect(matchInjectionTicker('135A', true)).toEqual({ code: '135A', type: 'jp' })
+
+    // 順位2: 米国株（先頭アンカー + 後続境界）
+    expect(matchInjectionTicker('AAPL', true)).toEqual({ code: 'AAPL', type: 'us' })
+    expect(matchInjectionTicker('AAPL アップル', true)).toEqual({ code: 'AAPL', type: 'us' })
+    expect(matchInjectionTicker('AAPLの決算', true)).toEqual({ code: 'AAPL', type: 'us' })
+
+    // 判定基準8: 後続境界に当たらない形は切り出さない（`BRK` を開かない）
+    for (const text of ['BRK.B', 'BRK-B', 'BRK1', 'BRKーB', 'ALPHABET']) {
+      expect(matchInjectionTicker(text, true), text).toBeNull()
+    }
+
+    // 順位3: どちらにも当たらない
+    expect(matchInjectionTicker('投資信託', true)).toBeNull()
+    expect(matchInjectionTicker('トヨタ自動車', true)).toBeNull()
+  })
+
+  // 判定基準6 / 7 の限界。**抽出は形しか見ない**ので、どの要素に抽出をかけるかを
+  // 決めるセレクタ側でしか防げない（SPEC-CS-26 / ADR-0014 の 2・4）
+  test('形しか見ないので、届かせてはいけないセルは抽出では防げない', () => {
+    // 中国株の5桁コード。順位1（非アンカー）が当たって `0070` になる
+    expect(matchInjectionTicker('00700', true)).toEqual({ code: '0070', type: 'jp' })
+    // 預り金の通貨。順位2が当たる
+    expect(matchInjectionTicker('USD 米ドル', true)).toEqual({ code: 'USD', type: 'us' })
+  })
+
+  // opt-in が偽なら 1 と 3 しかない＝今日とバイト単位で同じ結果
+  test('allowUs が偽なら米国株は一切成立しない', () => {
+    expect(matchInjectionTicker('AAPL', false)).toBeNull()
+    expect(matchInjectionTicker('AAPL アップル', false)).toBeNull()
+    expect(matchInjectionTicker('USD 米ドル', false)).toBeNull()
+    expect(matchInjectionTicker('AAPL', undefined)).toBeNull()
+
+    // 国内株は allowUs に関係なく同じ
+    expect(matchInjectionTicker('7203', false)).toEqual({ code: '7203', type: 'jp' })
+    expect(matchInjectionTicker('00700', false)).toEqual({ code: '0070', type: 'jp' })
+  })
+
+  test('前後の空白を落として判定する', () => {
+    expect(matchInjectionTicker('  AAPL  ', true)).toEqual({ code: 'AAPL', type: 'us' })
+    expect(matchInjectionTicker('\n 7203 \n', true)).toEqual({ code: '7203', type: 'jp' })
+    for (const text of [null, undefined, '']) {
+      expect(matchInjectionTicker(text, true)).toBeNull()
+    }
   })
 })
 

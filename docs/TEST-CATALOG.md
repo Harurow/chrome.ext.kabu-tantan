@@ -3,13 +3,13 @@
 > **このファイルは `npm run docs:tests` で自動生成される。手で編集しない。**
 > 説明文を変えたい場合は `scripts/test-catalog.mjs` を編集する。
 
-テスト総数: **102**
+テスト総数: **115**
 
 テストの方針・手法は [TESTING.md](TESTING.md) を参照。
 
 ## Content Script（楽天証券 / SBI証券 / スクリーナー2種）
 
-`tests/content-script.spec.mjs` — 20 件
+`tests/content-script.spec.mjs` — 33 件
 
 context.route() で対象オリジンにフィクスチャ HTML を返し、実際の注入を検証する。固定待機が明けた後に要素が現れるフィクスチャで、注入の再試行（SPEC-CS-22）も見る。
 
@@ -32,11 +32,24 @@ context.route() で対象オリジンにフィクスチャ HTML を返し、実�
 | 13 | メニュー項目のクリック範囲 | 項目の文字の外を押しても、文字の上と同じ URL が開く |
 | 14 | メニュー項目のクリック範囲 | 項目と項目のあいだを押しても何も開かない |
 | 15 | メニュー項目のクリック範囲 | 項目をクリックしてもメニューは閉じない |
-| 16 | tradingview-cs.js: isSymbolShaped | EXCHANGE:CODE の形だけを行の値と見なす |
-| 17 | tradingview-cs.js: isSymbolShaped | 解釈できる値は必ず形を満たす（形の判定は解釈より狭くならない） |
-| 18 | tradingview-cs.js: parseExchangeSymbol | canvas の aria-label と行の属性値で同じ結果になる |
-| 19 | tradingview-cs.js: parseExchangeSymbol | 米国ティッカーは後続境界を見て、切り出せないときは何も返さない |
-| 20 | tradingview-cs.js: parseExchangeSymbol | 取引所を解釈できない・形が合わないものは何も返さない |
+| 16 | 米国株の行への注入 | 保有商品一覧（すべて）の米国株の行にメニューが出て、国内株の行は変わらない |
+| 17 | 米国株の行への注入 | 米国株の項目は url3 を持つサイトだけで、右クリックと同じ URL になる |
+| 18 | 米国株の行への注入 | url3 を持たないサイトだけが有効なら米国株の行にメニューを出さない |
+| 19 | 米国株の行への注入 | 保有商品一覧（すべて）は国内株式・米国株式の行だけに注入する |
+| 20 | 米国株の行への注入 | SBI ポートフォリオの外国株式の行にも注入する |
+| 21 | 米国株の行への注入 | us を付けていないランキングでは米国ティッカーの形のセルに注入しない |
+| 22 | 米国株の行への注入 | お気に入りは us を付けていないので米国ティッカーの形の行に注入しない |
+| 23 | 米国株の行への注入 | 遷移先を全部無効にすると国内株の行にもメニューを出さない |
+| 24 | 米国株の行への注入 | 同じコードが2回現れるセルでもメニューは1つ |
+| 25 | urls.js: matchInjectionTicker | 国内株を先に見て、空振りしたときだけ米国株を試す |
+| 26 | urls.js: matchInjectionTicker | 形しか見ないので、届かせてはいけないセルは抽出では防げない |
+| 27 | urls.js: matchInjectionTicker | allowUs が偽なら米国株は一切成立しない |
+| 28 | urls.js: matchInjectionTicker | 前後の空白を落として判定する |
+| 29 | tradingview-cs.js: isSymbolShaped | EXCHANGE:CODE の形だけを行の値と見なす |
+| 30 | tradingview-cs.js: isSymbolShaped | 解釈できる値は必ず形を満たす（形の判定は解釈より狭くならない） |
+| 31 | tradingview-cs.js: parseExchangeSymbol | canvas の aria-label と行の属性値で同じ結果になる |
+| 32 | tradingview-cs.js: parseExchangeSymbol | 米国ティッカーは後続境界を見て、切り出せないときは何も返さない |
+| 33 | tradingview-cs.js: parseExchangeSymbol | 取引所を解釈できない・形が合わないものは何も返さない |
 
 ## オプションページ
 
@@ -151,7 +164,7 @@ Service Worker のグローバルスコープを直接 evaluate して、純粋�
 | 26 | service_worker: retrySetup | 成功したら再試行を止める |
 | 27 | service_worker: retrySetup | 打ち切り時刻を過ぎたら止める |
 | 28 | service_worker: retrySetup | setup が例外を投げたら止める |
-| 29 | 米国ティッカーの後続境界: 3経路で同じ値 | 3経路とも同じ境界で、u フラグが付いている |
+| 29 | 米国ティッカーの後続境界: リテラル3本で同じ値 | リテラル3本とも同じ境界で、u フラグが付いている |
 
 ## 回帰テストとして重要なもの
 

@@ -563,11 +563,17 @@ test.describe('service_worker: retrySetup', () => {
   })
 })
 
-// FR-08 判定基準6: 銘柄コードを取り出す3経路（優先順位4の直書き / usCodePattern /
-// TradingView の parseExchangeSymbol）で後続境界の値を揃える。
+// FR-08 判定基準6: 銘柄コードを取り出す**リテラル3本**（urls.js の usCodePattern /
+// service_worker.js の優先順位4の直書き / TradingView の parseExchangeSymbol）で
+// 後続境界の値を揃える。
 // 実装は共有しない方針（ADR-0009 の 3）なので、揃っていることをソースで固定する。
-// 経路ごとに境界がずれると、同じ `NYSE:BRK.B` が経路によって別の結果になる
-test.describe('米国ティッカーの後続境界: 3経路で同じ値', () => {
+// 経路ごとに境界がずれると、同じ `NYSE:BRK.B` が経路によって別の結果になる。
+//
+// **通る経路は5本**（選択文字列2 ＋ TradingView ＋ 注入経路 ＋ ウォッチリスト）だが、
+// 注入経路（SPEC-TC-10）は新しいリテラルを作らず urls.js の usCodePattern を共有するため
+// リテラルは3本のまま（ADR-0014 の 3）。**読む対象に urls.js を足さないと、
+// 1.17.0 の移設で件数が 3→2 に落ちてここが落ちる**（＝移設を検知する。期待値は下げない）
+test.describe('米国ティッカーの後続境界: リテラル3本で同じ値', () => {
   // `/^…[A-Z]{1,5}…/フラグ` の形の正規表現リテラルを取り出す。
   // 境界に `/` は含まれないため、リテラルの区切りと衝突しない
   const usTickerPatternsOf = (relativePath) => {
@@ -582,12 +588,13 @@ test.describe('米国ティッカーの後続境界: 3経路で同じ値', () =>
     literal.slice(literal.indexOf('(?=$|'), literal.lastIndexOf('])') + 2)
 
   const patterns = [
+    ...usTickerPatternsOf('src/urls.js'),
     ...usTickerPatternsOf('src/service_worker.js'),
     ...usTickerPatternsOf('src/tradingview-cs.js')
   ]
 
-  test('3経路とも同じ境界で、u フラグが付いている', () => {
-    // 経路が増減したら気付けるように件数も固定する
+  test('リテラル3本とも同じ境界で、u フラグが付いている', () => {
+    // リテラルが増減したら気付けるように件数も固定する
     expect(patterns).toHaveLength(3)
 
     for (const literal of patterns) {

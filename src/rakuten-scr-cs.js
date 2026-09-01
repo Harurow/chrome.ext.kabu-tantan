@@ -84,7 +84,7 @@ const mutationObserverCallback = (keys) => {
   menuSelectors
     .forEach((menuSelector) => {
       $(menuSelector.selector)
-        .each((_, element) => attachMenu(element, keys))
+        .each((_, element) => attachMenu(element, keys, menuSelector.us === true))
     })
 }
 
@@ -92,33 +92,48 @@ const mutationObserverCallback = (keys) => {
  * 要素にメニューをつける
  * @param { HTMLElement } element
  * @param { string[] } keys
+ * @param { boolean } allowUs 米国株の抽出を許すか(menuSelectors の us。SPEC-CS-26)
  */
-const attachMenu = (element, keys) => {
+const attachMenu = (element, keys, allowUs) => {
   // 注入済みメニューの内側は対象にしない(二重注入の防止。SPEC-CS-22)
   // 注入したメニュー項目の<a>が検出用セレクタに再びヒットするため
   if ($(element).closest('span.x-kabu-root').length > 0) {
     return
   }
 
-  const text = $(element).text()
-  const match = text.trim().match(/[0-9][0-9ACDFGHJKLMNPRSTUWXY][0-9][0-9ACDFGHJKLMNPRSTUWXY]/g)
-
-  if (!match) {
+  // 注入済みの要素も対象にしない(1行1メニュー。FR-28 判定基準10)
+  // 最初のテキストノードで打ち切るため、同じコードが2回現れるセルでは
+  // 未置換のテキストノードが残る。再試行(SPEC-CS-22)やMutationObserverでパスは
+  // 繰り返されるので、打ち切りだけでは次のパスが2つ目を置換してしまう
+  if ($('span.x-kabu-root', element).length > 0) {
     return
   }
 
-  const tickerCode = match[0]
+  // 国内株を先に見て、空振りしたときだけ米国株を試す(SPEC-TC-10)
+  const ticker = matchInjectionTicker($(element).text(), allowUs)
+
+  if (!ticker) {
+    return
+  }
+
   const childNodes = element.childNodes
 
   for (let i = 0; i < childNodes.length; i++) {
     const node = childNodes[i]
-    if (node.nodeName !== '#text' || node.nodeValue.indexOf(tickerCode) === -1) {
+    if (node.nodeName !== '#text' || node.nodeValue.indexOf(ticker.code) === -1) {
       continue
     }
 
-    const menu = createMenu(keys, tickerCode, node.nodeValue, true)
-    $('ul.x-kabu-body', menu).css({ marginTop: -3 })
-    element.replaceChild(menu[0], node)
+    // 遷移先が0件ならメニューを出さない(SPEC-CS-06 / FR-28 判定基準4)
+    // 本サイトだけが戻り値へ追加でスタイルを当てるため、null を確かめてから触る
+    const menu = createMenu(keys, ticker.code, node.nodeValue, true, ticker.type)
+    if (menu) {
+      $('ul.x-kabu-body', menu).css({ marginTop: -3 })
+      element.replaceChild(menu[0], node)
+    }
+
+    // 1行につきメニューは1つ。最初のテキストノードで打ち切る(FR-28 判定基準10)
+    break
   }
 }
 

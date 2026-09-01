@@ -20,6 +20,13 @@ const attachAsync = async () => {
     return
   }
 
+  // 遷移先が1件も無ければ、どのページでも注入するものが無い(CLAUDE.md の共通パターン)
+  // 1.17.0 で createMenu が0件のとき null を返すようになったため、この門が無いと
+  // 静止条件(累計1件以上)が永久に偽になり、30秒間セレクタを評価し続ける(NFR-01)
+  if (keys.length === 0) {
+    return
+  }
+
   // URLが一致する対象だけを見る
   const targets = menuSelectors
     .filter((menuSelector) => (location.href.indexOf(menuSelector.url) !== -1))
@@ -37,7 +44,7 @@ const attachAsync = async () => {
  * 注入パスを1回走らせる
  * 「1件でも注入できたら成功」にすると段階的に描画される表で
  * 一部の行だけ注入して止まるため、静止(新規注入が0件)を成功条件にする(SPEC-CS-22)
- * @param { { title: string, url: string, selector: string }[] } targets
+ * @param { { title: string, url: string, selector: string, us?: boolean }[] } targets
  * @param { string[] } keys
  * @returns { boolean } 静止したか
  */
@@ -47,7 +54,7 @@ const attachPass = (targets, keys) => {
   // 設定に従い一つづつ試す
   targets.forEach((menuSelector) => {
     $(menuSelector.selector)
-      .each((_, element) => attachMenu(element, keys))
+      .each((_, element) => attachMenu(element, keys, menuSelector.us === true))
   })
 
   const after = $('span.x-kabu-root').length
@@ -60,54 +67,79 @@ const attachPass = (targets, keys) => {
  * 要素にメニューをつける
  * @param { HTMLElement } element
  * @param { string[] } keys
+ * @param { boolean } allowUs 米国株の抽出を許すか(menuSelectors の us。SPEC-CS-26)
  */
-const attachMenu = (element, keys) => {
+const attachMenu = (element, keys, allowUs) => {
   // 注入済みメニューの内側は対象にしない(二重注入の防止。SPEC-CS-22)
   // 注入したメニュー項目の<a>が検出用セレクタに再びヒットするため
   if ($(element).closest('span.x-kabu-root').length > 0) {
     return
   }
 
-  const text = $(element).text()
-  const match = text.trim().match(/[0-9][0-9ACDFGHJKLMNPRSTUWXY][0-9][0-9ACDFGHJKLMNPRSTUWXY]/g)
-
-  if (!match) {
+  // 注入済みの要素も対象にしない(1行1メニュー。FR-28 判定基準10)
+  // 最初のテキストノードで打ち切るため、同じコードが2回現れるセルでは
+  // 未置換のテキストノードが残る。再試行(SPEC-CS-22)やMutationObserverでパスは
+  // 繰り返されるので、打ち切りだけでは次のパスが2つ目を置換してしまう
+  if ($('span.x-kabu-root', element).length > 0) {
     return
   }
 
-  const tickerCode = match[0]
+  // 国内株を先に見て、空振りしたときだけ米国株を試す(SPEC-TC-10)
+  const ticker = matchInjectionTicker($(element).text(), allowUs)
+
+  if (!ticker) {
+    return
+  }
+
   const childNodes = element.childNodes
 
   for (let i = 0; i < childNodes.length; i++) {
     const node = childNodes[i]
-    if (node.nodeName !== '#text' || node.nodeValue.indexOf(tickerCode) === -1) {
+    if (node.nodeName !== '#text' || node.nodeValue.indexOf(ticker.code) === -1) {
       continue
     }
 
-    const menu = createMenu(keys, tickerCode, node.nodeValue)
-    element.replaceChild(menu[0], node)
+    // 遷移先が0件ならメニューを出さない(SPEC-CS-06 / FR-28 判定基準4)
+    const menu = createMenu(keys, ticker.code, node.nodeValue, false, ticker.type)
+    if (menu) {
+      element.replaceChild(menu[0], node)
+    }
+
+    // 1行につきメニューは1つ。最初のテキストノードで打ち切る(FR-28 判定基準10)
+    break
   }
 }
 
 /**
  * 改変情報
- * @type { { title: string, url: string, selector: string }[] }
+ * `us` は米国株の抽出を許すかどうか(opt-in。SPEC-CS-26 / ADR-0014 の 1)。
+ * 省略したエントリは国内株のみで、今日とバイト単位で同じ結果になる
+ * @type { { title: string, url: string, selector: string, us?: boolean }[] }
  */
 const menuSelectors = [
   {
     title: 'お気に入り',
     url: '/app/info_jp_prc_reg_lst.do;',
+    // us は付けない。米国株のお気に入りは別ページ(info_us_prc_reg_lst.do)で、
+    // このページに米国株の行は並ばない(実機で確定。ADR-0014 の 9-2)。
+    // 商品種別で絞れないセレクタなので、利得が無いなら opt-in しない
     selector: 'form#form table.tbl-data-01 td.align-C div.mbody nobr'
   },
   {
     title: 'お気に入り編集',
     url: '/app/info_jp_prc_reg_lst_edit.do;',
+    // us は付けない。理由はお気に入りと同じ(ADR-0014 の 9-2)
     selector: 'form table.tbl-data-01 td.align-C div.mbody nobr'
   },
   {
     title: '保有商品一覧・すべて',
     url: '/app/ass_all_possess_lst.do;',
-    selector: 'div#table_possess_data table.tbl-bold-border tr > td:contains("国内株式") + td'
+    // 許すラベルは「国内株式」と「米国株式」だけ。「外国株式」「株式」は中国株式・
+    // アセアン株式を含みうる。そこへ届くと `00700` に国内株の非アンカー抽出が当たり
+    // `0070` を開く(判定基準6違反)。「米国株式」は実DOM未確認で、外れても0件＝今日と同じ
+    selector: `div#table_possess_data table.tbl-bold-border tr > td:contains("国内株式") + td,
+               div#table_possess_data table.tbl-bold-border tr > td:contains("米国株式") + td`,
+    us: true
   },
   {
     title: '保有商品一覧・国内株式',
