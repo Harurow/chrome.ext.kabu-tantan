@@ -11,7 +11,7 @@ import { test, expect } from '@playwright/test'
 import { lint } from 'markdownlint-cli2/markdownlint/promise'
 import jsoncParse from 'markdownlint-cli2/parsers/jsonc'
 import { loadMenuSelectors, indexByKey, resolveSite, rootDir } from '../scripts/selector-check/load-selectors.mjs'
-import { sites, RAKUTEN_OPEN_QUERY } from '../scripts/selector-check/targets.mjs'
+import { sites, RAKUTEN_OPEN_QUERY, RAKUTEN_ORIGIN } from '../scripts/selector-check/targets.mjs'
 import { checkTargetAsync, OK, BROKEN, UNREACHED } from '../scripts/selector-check/check.mjs'
 import {
   planPrefixTracking,
@@ -65,7 +65,7 @@ import { renderReport } from '../scripts/selector-check/report.mjs'
 
 // 各 Content Script が持つべき検出用セレクタの件数
 const EXPECTED_COUNTS = {
-  'src/rakuten-cs.js': 12,
+  'src/rakuten-cs.js': 14,
   'src/rakuten-scr-cs.js': 1,
   'src/sbi-cs.js': 2,
   'src/sbi-scr-cs.js': 1,
@@ -116,6 +116,46 @@ test.describe('セレクタ定義', () => {
 
       expect(wanted.slice().sort(), `${site.label} の対象`).toEqual([...entries.keys()].sort())
       expect(new Set(wanted).size, `${site.label} の対象の重複`).toBe(wanted.length)
+    }
+  })
+
+  test('楽天証券の4ページは実測どおりのクエリを付けて直打ちする', () => {
+    // 2026-08-30 に利用者が提示したアドレスバーの写し（SPEC-SC-06「楽天証券4ページのクエリ」）。
+    // 1.15.0 まではここが**クエリ無し**で、`eventType` で処理を振り分ける `.do` に
+    // エラー画面を返されていた（ADR-0011 の 13）。値を推測で削るとその状態に戻る
+    const POSSESS = '?eventType=directInit&type=&sub_type=&local=&gmn=S&smn=01&lmn=01&fmn=01'
+    const MEASURED = {
+      お気に入り: '?eventType=init&gmn=J&smn=01&lmn=01&fmn=02',
+      お気に入り編集: '?eventType=init&pageNumber=1',
+      // 空値（`type=` / `sub_type=` / `local=`）も実測どおり持つ（規則1）
+      保有商品一覧・すべて: POSSESS,
+      保有商品一覧・国内株式: POSSESS
+    }
+
+    const site = sites.find((item) => item.site === 'rakuten')
+    const session = ';BV_SessionID=NNNN0123456789.0123456789NN'
+    const buildUrl = (key) => {
+      const { target, entry } = resolveSite(site).find((item) => item.target.key === key)
+      // 直打ちに戻っていること（`link` に戻すのは実測で駄目だったときだけ。ADR-0011 の 13 の段取り4）
+      expect(target.reach, key).toBe('goto')
+      const path = entry.url.endsWith(';') ? entry.url.slice(0, -1) : entry.url
+      return { url: target.url({ session, entry }), expectedPrefix: `${RAKUTEN_ORIGIN}${path}${session}` }
+    }
+
+    for (const [key, query] of Object.entries(MEASURED)) {
+      const { url, expectedPrefix } = buildUrl(key)
+      // パス + セッション + クエリ の順（実測の URL もこの並び。規則3）
+      expect(url, key).toBe(`${expectedPrefix}${query}`)
+    }
+
+    // 対象ごとに違うので共有定数にしない（規則2）。お気に入り2ページのクエリは互いに異なる
+    expect(MEASURED.お気に入り).not.toBe(MEASURED.お気に入り編集)
+
+    // 米国株の2ページは**未実測**。そのページを開くことだけを意味する `eventType=init` に絞る
+    // （国内株版の `gmn` / `pageNumber` は写さない。外れてもエラー画面＝⚠️ で今日より悪くならない）
+    for (const key of ['お気に入り・米国株', 'お気に入り編集・米国株']) {
+      const { url, expectedPrefix } = buildUrl(key)
+      expect(url, key).toBe(`${expectedPrefix}?eventType=init`)
     }
   })
 
@@ -939,7 +979,12 @@ test.describe('到達リンク', () => {
   })
 
   /**
-   * `checkTargetAsync()` を `reach: 'link'` のまま走らせる。
+   * `checkTargetAsync()` を `reach: 'link'` で走らせる。
+   *
+   * **`reach` はテスト側で注入する。** 1.18.0 で実データの4対象は `reach: 'goto'` に戻ったが
+   * （ADR-0011 の 13）、機構は `reach` の1語で往復できる状態に保つため、
+   * 配線はここで固定し続ける（SPEC-SC-26「結果が出るまで本節の記述と実装は消さない」）。
+   * `url`（退避先の組み立て URL）・`pageSelectors` は実データのまま使う。
    *
    * ページ側の関数（`collectAnchorsAsync` / `readPathnameAsync`）は**実物のコールバックを
    * Node 上で実行する**。引数しか参照しないので、`document` / `window` を差し替えれば動く。
@@ -948,7 +993,9 @@ test.describe('到達リンク', () => {
   // `readable: false` は「フレームを読めなかった」を模す（評価が例外で終わる）。
   // 読めないフレームは判定に影響しないが、件数だけは残る (SPEC-SC-26 の3原因)
   const runLinkTargetAsync = async ({ anchors = [], pathname = '', hits = {}, readable = true, site = rakutenSite() }) => {
-    const { target, entry } = resolveSite(site).find((item) => item.target.key === 'お気に入り')
+    const found = resolveSite(site).find((item) => item.target.key === 'お気に入り')
+    const entry = found.entry
+    const target = { ...found.target, reach: 'link' }
     const gotos = []
 
     const frame = {
@@ -1142,10 +1189,16 @@ test.describe('到達リンク', () => {
     // `check.mjs` は特定サイトの定数を名指しで import せず、検証中のサイト定義から引く
     // (SPEC-SC-26「値は「検証中のサイト定義」から引く」)。突き合わせが無いと、
     // 他サイトに `reach: 'link'` を付けたとき**別サイトのオリジンでハブを走査して黙って 0 件**になる。
-    // 0 件は `no-candidate` → 直打ち退避なので、例外も判定の変化も出ない (ADR-0011 の 9-6)
-    const linkSites = sites.filter((site) => site.targets.some((target) => target.reach === 'link'))
+    // 0 件は `no-candidate` → 直打ち退避なので、例外も判定の変化も出ない (ADR-0011 の 9-6)。
+    //
+    // 1.18.0 で実データの `reach: 'link'` は 0 件になった（4対象を `goto` に戻した。ADR-0011 の 13）。
+    // 検査の空振りを避けるため、対象にするのは「`link` を持ちうるサイト」
+    // ＝ `site.link` を持つか、`reach: 'link'` の対象があるサイト。
+    // `reach` の1語で往復できる状態を保つ、という SPEC-SC-26 の前提そのものを固定する
+    const linkSites = sites.filter((site) =>
+      site.link !== undefined || site.targets.some((target) => target.reach === 'link'))
 
-    // 検査が空振りしていないこと（`reach: 'link'` の対象が実在すること）
+    // 検査が空振りしていないこと（往復できるサイト定義が実在すること）
     expect(linkSites.length).toBeGreaterThan(0)
 
     for (const site of linkSites) {
@@ -1154,6 +1207,11 @@ test.describe('到達リンク', () => {
       expect(origin.startsWith('https://'), site.label).toBe(true)
       // パス・クエリを含まない単一のオリジンであること（ハブの判定に接頭辞として使う）
       expect(origin, site.label).toBe(new URL(origin).origin)
+    }
+
+    // `reach: 'link'` を持つサイトは必ず `link` を持つ（戻したときに黙って 0 件にならない）
+    for (const site of sites.filter((site) => site.targets.some((target) => target.reach === 'link'))) {
+      expect(site.link?.origin, site.label).toEqual(expect.any(String))
     }
 
     // 規則3: `link.origin` が無ければ走査そのものを行わず退避する。

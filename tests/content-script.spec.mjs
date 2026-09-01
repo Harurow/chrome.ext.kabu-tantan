@@ -117,7 +117,12 @@ const SBI_SCR_LATE_HTML = page$('銘柄スクリーニング', `<body>
 // rakuten-cs.js:「お気に入り」に米国ティッカーの形の行を混ぜる。
 // **このエントリには `us: true` を付けていない**ので何も起きないこと（opt-in）を見る。
 // 米国株のお気に入りは別ページ（`info_us_prc_reg_lst.do`）で、
-// このページに米国株の行は並ばない（実機で確定。ADR-0014 の 9-2）
+// このページに米国株の行は並ばない（実機で確定。ADR-0014 の 9-2）。
+//
+// **同じ HTML を米国株のお気に入り2ページ（下の URL）にも出す。**
+// URL だけが違う同じ入力で結果が反転するので、
+// 米国株ページで注入されること（1.18.0 / ADR-0014 の 9-1）と、
+// 国内株ページから `us: true` を外したままであること（9-2）を1つの対で担保できる
 const RAKUTEN_FAVORITES_US_HTML = page$('お気に入り', `<body>
   <form id="form">
     <table class="tbl-data-01">
@@ -131,6 +136,18 @@ const RAKUTEN_FAVORITES_US_HTML = page$('お気に入り', `<body>
     </table>
   </form>
 </body>`)
+
+// rakuten-cs.js:「お気に入り・米国株」「お気に入り編集・米国株」。
+// 米国株のお気に入りは**別 URL の別ページ**（ADR-0014 の 9）。**URL は実測**で、
+// **推測なのは DOM（セレクタ）だけ**なのでフィクスチャも国内株版と同じ構造にしてある
+// （⚠️ 実 DOM 未確認。SPEC-CS-07）。
+// 推測が外れたときの結果は2分岐で、benign なのは片方だけ（SPEC-CS-26）。
+// 空振りなら 0 件＝今日と同じだが、**別のセルを拾えば誤ったメニューが出る**。
+// 後者はフィクスチャでは再現しても仕様どおりの結果にしかならず、実機の目視で見る
+const RAKUTEN_US_FAVORITES_URL =
+  'https://member.rakuten-sec.co.jp/app/info_us_prc_reg_lst.do;BV_SessionID=TEST'
+const RAKUTEN_US_FAVORITES_EDIT_URL =
+  'https://member.rakuten-sec.co.jp/app/info_us_prc_reg_lst_edit.do;BV_SessionID=TEST'
 
 // 同じコードが2つのテキストノードに現れるセル（判定基準10）。
 // 1.16.1 までは該当するテキストノードを**すべて**置換していたのでメニューが2つ出た
@@ -146,7 +163,7 @@ const RAKUTEN_FAVORITES_DUP_HTML = page$('お気に入り', `<body>
 
 // rakuten-cs.js:「保有商品一覧・すべて」。**商品種別で走査対象を絞れる唯一のエントリ**で、
 // 判定基準7（株式以外の行に出さない）を自動で固定できるのはここだけ（SPEC-CS-26）。
-// 「米国株式」は実 DOM で未確認のラベル（外れたら 0 件＝今日と同じに倒れる）
+// ラベル「米国株式」は 2026-08-30 の実機で確認済み（変われば 0 件＝今日と同じに倒れる）
 const RAKUTEN_POSSESS_ALL_URL =
   'https://member.rakuten-sec.co.jp/app/ass_all_possess_lst.do;BV_SessionID=TEST'
 const RAKUTEN_POSSESS_ALL_HTML = page$('保有商品一覧', `<body>
@@ -637,6 +654,28 @@ test.describe('米国株の行への注入', () => {
 
     await expect(page.locator('span.x-kabu-root')).toHaveCount(1)
     expect(await injectedTextsAsync(page)).toEqual(['7203'])
+  })
+
+  // 判定基準1 / 2 / 5 / 8: 米国株のお気に入りは別ページ（1.18.0 で2エントリ追加。ADR-0014 の 9-1）。
+  // 上のテストと**同じ HTML**を米国株ページの URL で出す。URL 以外の入力は同じなので、
+  // 結果の差は `us: true` を付けたエントリに当たったかどうかだけになる
+  test('米国株のお気に入り2ページでは米国ティッカーの行にメニューが出る', async ({ page, serveFixture }) => {
+    for (const url of [RAKUTEN_US_FAVORITES_URL, RAKUTEN_US_FAVORITES_EDIT_URL]) {
+      await serveFixture(page, url, RAKUTEN_FAVORITES_US_HTML)
+
+      // 判定基準8: `BRK.B`（クラス株）と `ALPHABET`（6文字以上）は落ちる
+      await expect(page.locator('span.x-kabu-root')).toHaveCount(3)
+      expect(await injectedTextsAsync(page), url).toEqual(['7203', 'AAPL', 'T'])
+
+      // 判定基準2: 米国株の行は url3、国内株の行は url1（同じページに混ざっても取り違えない）
+      const hrefs = await page.locator('span.x-kabu-root').evaluateAll((roots) =>
+        roots.map((root) => root.querySelector('a[href*="kabutan.jp"]')?.getAttribute('href')))
+      expect(hrefs, url).toEqual([
+        'https://kabutan.jp/stock/?code=7203',
+        'https://us.kabutan.jp/stocks/AAPL',
+        'https://us.kabutan.jp/stocks/T'
+      ])
+    }
   })
 
   // 遷移先を全部無効にすると、国内株でもメニューを出さない（1.16.1 は空の箱を開いていた）。

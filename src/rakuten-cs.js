@@ -126,17 +126,44 @@ const menuSelectors = [
     selector: 'form#form table.tbl-data-01 td.align-C div.mbody nobr'
   },
   {
+    // 米国株のお気に入りは国内株とは別ページ(実機で確定。ADR-0014 の 9-1)。
+    // **url は実測**(利用者が提示したアドレスバー)。**推測なのは selector だけ**で、
+    // 国内株版と対称なテンプレートだろうと見て写した(⚠️ 実 DOM 未確認)。
+    // 対称だから推測したのではなく、提示された値がたまたま対称だっただけなので、
+    // 推測を測定に見せない(ADR-0011 の 13 の教訓)
+    //
+    // 外れ方は2分岐で、benign なのは片方だけ(SPEC-CS-26)
+    //   - 空振り(構造が違う)      → 0 件＝今日と同じ。害が無い
+    //   - 別のセルを拾う          → **誤ったメニューが出る**。市場名・通貨・区分などの
+    //                               1〜5文字の大文字トークンに usCodePattern が成立する
+    // 後者は実機の目視でしか気づけない。出たらこのセレクタを絞る(抽出規則は動かさない)
+    title: 'お気に入り・米国株',
+    url: '/app/info_us_prc_reg_lst.do;',
+    selector: 'form#form table.tbl-data-01 td.align-C div.mbody nobr',
+    // 商品種別で絞れないので、判定基準7(株式以外の行に出さない)は目視でしか担保できない
+    // (SPEC-CS-26「判定基準7 が構造で担保できないエントリ」)
+    us: true
+  },
+  {
     title: 'お気に入り編集',
     url: '/app/info_jp_prc_reg_lst_edit.do;',
     // us は付けない。理由はお気に入りと同じ(ADR-0014 の 9-2)
     selector: 'form table.tbl-data-01 td.align-C div.mbody nobr'
   },
   {
+    // 同上。**url は実測で、推測なのは selector だけ**。外れ方の2分岐も同じ
+    title: 'お気に入り編集・米国株',
+    url: '/app/info_us_prc_reg_lst_edit.do;',
+    selector: 'form table.tbl-data-01 td.align-C div.mbody nobr',
+    us: true
+  },
+  {
     title: '保有商品一覧・すべて',
     url: '/app/ass_all_possess_lst.do;',
     // 許すラベルは「国内株式」と「米国株式」だけ。「外国株式」「株式」は中国株式・
     // アセアン株式を含みうる。そこへ届くと `00700` に国内株の非アンカー抽出が当たり
-    // `0070` を開く(判定基準6違反)。「米国株式」は実DOM未確認で、外れても0件＝今日と同じ
+    // `0070` を開く(判定基準6違反)。「米国株式」は2026-08-30の実機で確認済みで、
+    // ラベルが変われば0件＝今日と同じに倒れる(SPEC-CS-26)
     selector: `div#table_possess_data table.tbl-bold-border tr > td:contains("国内株式") + td,
                div#table_possess_data table.tbl-bold-border tr > td:contains("米国株式") + td`,
     us: true

@@ -58,17 +58,60 @@ const rakutenUrl = (query = '') => (ctx) => {
 const RAKUTEN_RANKING_PAGE = 'div#str-main-inner div.mbody table.tbl-data-01'
 
 /**
- * 楽天証券の対象（12ページすべて。セレクタが同じでもページ単位で見る。FR-12）。
+ * 楽天証券の対象（14ページすべて。セレクタが同じでもページ単位で見る。FR-12）。
  *
- * お気に入り2・保有商品一覧2 は組み立て URL の直打ちがエラー画面に飛ばされるため、
- * ログイン済みページのリンクをたどる (SPEC-SC-26)。たどれなければ `url` の直打ちへ退避する。
- * 他の8対象は `reach: 'goto'` のままで経路を変えない（非退行。ADR-0011 の 6）。
+ * お気に入り2・保有商品一覧2 は 1.15.0 で `reach: 'link'` にしていたが、
+ * 直打ちがエラー画面に飛ばされていた原因は**組み立てる URL にクエリが無かったこと**だと
+ * 分かったため 1.18.0 で `reach: 'goto'` に戻した (SPEC-SC-06「楽天証券4ページのクエリ」/
+ * ADR-0011 の 13)。クエリは 2026-08-30 に利用者が提示したアドレスバーの写しで、
+ * **対象ごとに違うので共有定数にしない・実測どおりに写して推測で削らない**（規則1・2）。
+ *
+ * リンク経由の機構（`links.mjs`・資格審査・診断3種）は**消さない**。
+ * 実測で通ることが確認できるまで、`reach` の1語で往復できる状態に保つ（ADR-0011 の 13 の段取り4）。
  */
 const rakutenTargets = [
-  { key: 'お気に入り', reach: 'link', pageSelectors: ['form#form table.tbl-data-01'], requiresUserData: true },
-  { key: 'お気に入り編集', reach: 'link', pageSelectors: ['form table.tbl-data-01'], requiresUserData: true },
-  { key: '保有商品一覧・すべて', reach: 'link', pageSelectors: ['div#table_possess_data'], requiresUserData: true },
-  { key: '保有商品一覧・国内株式', reach: 'link', pageSelectors: ['table#poss-tbl-sp'], requiresUserData: true },
+  {
+    key: 'お気に入り',
+    pageSelectors: ['form#form table.tbl-data-01'],
+    requiresUserData: true,
+    query: '?eventType=init&gmn=J&smn=01&lmn=01&fmn=02'
+  },
+  {
+    // 米国株のお気に入りは**別ページ**（実機で確定。ADR-0014 の 9）。
+    // クエリは未実測で、そのページを開くことだけを意味する `eventType=init` に絞る（推測）。
+    // 外れてもエラー画面＝⚠️ で、今日（対象ですらない）より悪くならない
+    key: 'お気に入り・米国株',
+    pageSelectors: ['form#form table.tbl-data-01'],
+    requiresUserData: true,
+    query: '?eventType=init'
+  },
+  {
+    key: 'お気に入り編集',
+    pageSelectors: ['form table.tbl-data-01'],
+    requiresUserData: true,
+    query: '?eventType=init&pageNumber=1'
+  },
+  {
+    // 同上（未実測。国内株版の `pageNumber=1` は写さない）
+    key: 'お気に入り編集・米国株',
+    pageSelectors: ['form table.tbl-data-01'],
+    requiresUserData: true,
+    query: '?eventType=init'
+  },
+  {
+    key: '保有商品一覧・すべて',
+    pageSelectors: ['div#table_possess_data'],
+    requiresUserData: true,
+    // 空値（`type=` / `sub_type=` / `local=`）も実測どおり持つ。「空だから要らない」は当て推量
+    query: '?eventType=directInit&type=&sub_type=&local=&gmn=S&smn=01&lmn=01&fmn=01'
+  },
+  {
+    // パスだけが違い、クエリは保有商品一覧・すべてと同一（実測）
+    key: '保有商品一覧・国内株式',
+    pageSelectors: ['table#poss-tbl-sp'],
+    requiresUserData: true,
+    query: '?eventType=directInit&type=&sub_type=&local=&gmn=S&smn=01&lmn=01&fmn=01'
+  },
   { key: 'ランキング・売買代金', pageSelectors: [RAKUTEN_RANKING_PAGE] },
   { key: 'ランキング・出来高', pageSelectors: [RAKUTEN_RANKING_PAGE] },
   { key: 'ランキング・値上り・値下り', pageSelectors: [RAKUTEN_RANKING_PAGE] },
@@ -105,11 +148,12 @@ export const sites = [
     login: 'https://member.rakuten-sec.co.jp/',
     injected: 'span.x-kabu-root',
     prepare: [
-      '楽天証券にログインする（12ページはツールが自動で開く）',
-      'ログイン後の画面（トップページ）のタブを閉じずに Enter を押す（4ページはこのタブのリンクをたどる）',
-      'お気に入りに1銘柄以上、可能なら国内株式を1銘柄以上保有した口座で実行する（0件だと「破損」と区別できない）'
+      '楽天証券にログインする（14ページはツールが自動で開く）',
+      'ログイン後の画面のタブを閉じずに Enter を押す（このタブからセッションを借りる）',
+      'お気に入り（国内株・米国株の両方）に1銘柄以上、可能なら国内株式を1銘柄以上保有した口座で実行する（0件だと「破損」と区別できない）'
     ],
     // `reach: 'link'` の対象が使うサイト固有の値 (SPEC-SC-26「値は「検証中のサイト定義」から引く」)。
+    // 1.18.0 で `reach: 'link'` の対象は 0 件になったが、`reach` の1語で戻せるように残す
     // 組み立て URL と同じ定数を渡すので値がずれようがない (NFR-13)。
     // check.mjs はここから引く（定数を名指しで import しない）ため、
     // 他サイトに `reach: 'link'` を付けても楽天のオリジンでハブを走査してしまうことがない
