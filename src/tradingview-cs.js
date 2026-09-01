@@ -9,6 +9,26 @@ const contextMenuGraceMs = 1500
 const submenuCloseDelayMs = 150
 
 /**
+ * 右クリックメニューの**箱**のセレクタ(SPEC-CS-15 の `context-menu` の先頭部分)
+ *
+ * `closest()` に渡すのは箱で、検出用セレクタ `div.context-menu table` が指す
+ * **末端の table ではない**。よって `selectorOf('context-menu')` からは引けず、
+ * ここに書くしかない(先頭を切り出すパーサをsrcに増やすと、ずれたときの症状が
+ * 「closest()が何にも一致せず黙って何も起きない」になり、いちばん気づけない)。
+ * **二重管理を放置しないため、`selectorOf('context-menu')` がこの値で始まることを
+ * 自動テストで固定してある**(tests/tradingview.spec.mjs「祖先セレクタの整合」)
+ */
+const contextMenuBoxSelector = 'div.context-menu'
+
+/**
+ * チャート領域のセレクタ(SPEC-CS-15 の `chart-canvas` の先頭部分)
+ *
+ * 右クリックの起点判定(SPEC-CS-23)で見る**祖先**で、検出用セレクタが指す
+ * **canvas ではない**。理由と担保は contextMenuBoxSelector と同じ
+ */
+const chartWrapperSelector = 'div.chart-gui-wrapper'
+
+/**
  * ウォッチリストの行が銘柄を持つ属性の候補(推測値 / 実サイト未確認。SPEC-CS-23)
  * 近い順に見て、最初に `EXCHANGE:CODE` として解釈できた値を採る。
  * 変更するのはこの配列だけでよい(行の判定にも同じ配列から作ったセレクタを使う)
@@ -108,7 +128,7 @@ const resolveContextMenuOrigin = (target) => {
     return { kind: 'row', at: Date.now(), code: row.code, type: row.type }
   }
 
-  if ($(target).closest('div.chart-gui-wrapper').length > 0) {
+  if ($(target).closest(chartWrapperSelector).length > 0) {
     return { kind: 'chart', at: Date.now(), code: null, type: null }
   }
 
@@ -443,7 +463,7 @@ const addTickerMenuAsync = async (ctxMenu, code, type) => {
 
   // 縦位置の補正で書き換える前のmargin-topを控えておく(3行を取り除くときに元へ戻す)
   // 検出用セレクタ(context-menu)はtableを指すので、その外側のdivを基準にする
-  const ctxMenuBox = ctxMenu.closest('div.context-menu')[0]
+  const ctxMenuBox = ctxMenu.closest(contextMenuBoxSelector)[0]
   const savedMarginTop = ctxMenuBox?.style.marginTop ?? ''
   // ずらしたときだけ真になる。これで囲まないと、補正が走る前に0件・例外へ入った場合に
   // 触っていないインラインスタイルを書き戻してしまう(style=""が残る)
@@ -507,7 +527,7 @@ const fitContextMenuIntoWindow = (addedRow) => {
   }
 
   // 検出用セレクタ(context-menu)はtableを指すので、その外側のdivを基準にする
-  const menu = addedRow.closest('div.context-menu')[0]
+  const menu = addedRow.closest(contextMenuBoxSelector)[0]
   if (menu == null) {
     return false
   }
@@ -630,7 +650,7 @@ const openSubmenu = (parentRow, holderRow, code, brokerItems, linkItems) => {
  */
 const positionSubmenu = (submenu, parentRow) => {
   // 検出用セレクタ(context-menu)はtableを指すので、その外側のdivを基準にする
-  const parentMenu = parentRow.closest('div.context-menu')[0] ?? parentRow[0]
+  const parentMenu = parentRow.closest(contextMenuBoxSelector)[0] ?? parentRow[0]
   const menuRect = parentMenu.getBoundingClientRect()
   const rowRect = parentRow[0].getBoundingClientRect()
   const { width, height } = submenu[0].getBoundingClientRect()

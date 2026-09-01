@@ -29,6 +29,13 @@ const FILE_INFO = {
       '固定待機が明けた後に要素が現れるフィクスチャで、注入の再試行（SPEC-CS-22）も見る。',
     specs: 'SPEC-CS, SPEC-MF'
   },
+  'tradingview.spec.mjs': {
+    title: 'TradingView（拡張が自分で作った DOM の振る舞い）',
+    detail: 'menuSelectors / watchlistSymbolAttrs から組み立てたフィクスチャに、右クリックメニューと入れ子・「株Link」ボタンのメニューを再現して検証する。' +
+      '**このファイルが緑でも実サイトが壊れていないことにはならない**（改訂後の CON-08 / FR-26 判定基準7）。' +
+      '見ているのは自分たちのコードの退行だけで、サイト改修は npm run check:selectors（FR-12）と手動確認 A が見る。',
+    specs: 'SPEC-CS-24, SPEC-CS-25, SPEC-CS-27'
+  },
   'selector-defs.spec.mjs': {
     title: 'セレクタ定義（半自動検証の土台）',
     detail: 'ブラウザを起動せず、src/*-cs.js の menuSelectors と scripts/selector-check/targets.mjs の対応、および検証ツールの中断時の後始末を検証する。' +
@@ -49,7 +56,10 @@ const REGRESSION = {
   遅れて現れた: '固定待機が明けた後に現れた要素へ注入できなくなる退行の検出（FR-13 / SPEC-CS-22）',
   後から現れた: 'スクリーナーの常設監視が結果一覧の器に戻り、検索前に開いたタブで注入されなくなる退行の検出（FR-13）',
   二重注入: '再試行でパスを繰り返す設計になったことによる二重注入の検出（FR-13 判定基準3）',
-  retrySetup: '再試行が止まらず、他社サイト上でタイマーが走り続ける問題の検出（FR-13 判定基準2 / NFR-01）'
+  retrySetup: '再試行が止まらず、他社サイト上でタイマーが走り続ける問題の検出（FR-13 判定基準2 / NFR-01）',
+  未対応の記法: 'フィクスチャがセレクタと食い違ったまま緑になる状態の検出（改訂後の CON-08 の条件1・2 / FR-26 判定基準2）',
+  'Esc の送出': '代行クリックの戻りを握る delegating が消え、他社サイトへ Esc を2回投げる退行の検出（FR-25 / NFR-01）',
+  'margin-top を元に戻す': '遷移先0件でメニューを元に戻すとき、ずらした位置が痕跡として残る退行の検出（FR-24 / SPEC-CS-24 の手順5）'
 }
 
 const { stdout } = await execFileAsync(
@@ -124,11 +134,17 @@ lines.push('')
 
 lines.push('## 対象外', '')
 lines.push('| 対象 | 理由 |', '| --- | --- |')
-lines.push('| TradingView (`tradingview-cs.js`) | DOM がハッシュ付きクラス名で毎リリース変わる。フィクスチャ化しても実サイトとの乖離を検出できない (CON-08) |')
+lines.push('| TradingView の**実 DOM と見た目**（挿入先が実在するか / 模倣した見た目が揃っているか / サイト側メニューの開閉・スクロール） | フィクスチャでは実サイトとの乖離を検出できない (CON-08)。`npm run check:selectors` (FR-12) と手動確認 A が見る |')
+lines.push('| TradingView の**起点の判定**（FR-19）と**項目の集合と順序**（FR-07 / FR-18） | FR-26 の段階3・4 で自動テストへ移す予定。それまでは手動確認 A |')
 lines.push('| 楽天証券・内藤証券のセッション連携 | ログイン済みタブが前提のため自動化していない (CON-04) |')
 lines.push('| 楽天スーパースクリーナー / SBI銘柄スクリーニング の**見た目と実 DOM** | 注入そのものは 1.13.0 で自動化した（常設監視を document.body に上げたためフィクスチャで再現できる）。実 DOM との乖離は `npm run check:selectors` と手動確認 C-2 / C-4 で見る |')
 lines.push('')
 lines.push('これらは変更時に手動確認する。手順は [TESTING.md](TESTING.md) を参照。')
+lines.push('')
+lines.push('> **TradingView の自動テストが緑でも、実サイトが壊れていない根拠にはならない**')
+lines.push('> （改訂後の CON-08 の条件3 / FR-26 判定基準7）。見ているのは**自分たちのコードの退行だけ**で、')
+lines.push('> **サイト改修を見る目は1つも増えていない。** 手動確認が短くなったことを')
+lines.push('> 「TradingView は安全になった」と読み替えないこと。')
 lines.push('')
 
 const out = path.join(root, 'docs', 'TEST-CATALOG.md')

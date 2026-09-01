@@ -244,9 +244,11 @@ Playwright で拡張機能を実際に Chromium へロードして検証する�
 テストの一覧は [docs/TEST-CATALOG.md](docs/TEST-CATALOG.md)（`npm run docs:tests` で自動生成）。
 **テストを増減したらこれを再生成すること。**
 
-**TradingView は自動テスト対象外。** DOM がハッシュ付きクラス名で頻繁に変わるため、
-フィクスチャ化しても実サイトとの乖離を検出できない。
-変更時は [docs/MANUAL-CHECKLIST.md](docs/MANUAL-CHECKLIST.md) に従って利用者に確認を依頼する。
+**TradingView の自動テストは、拡張が自分で作った DOM の振る舞いだけを見る**
+（`tests/tradingview.spec.mjs`）。**緑でも実サイトが壊れていない根拠にはならない**（CON-08）。
+サイト側の DOM・見た目・挙動は `npm run check:selectors` と
+[docs/MANUAL-CHECKLIST.md](docs/MANUAL-CHECKLIST.md) の A セクションが見る。
+変更時は同チェックリストに従って利用者に確認を依頼する。
 
 検証の切り分け（自動 / 半自動 / 手動）は [docs/TESTING.md](docs/TESTING.md) を参照。
 
