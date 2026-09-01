@@ -5,16 +5,16 @@
 
 | | |
 | --- | --- |
-| 実行日時 | 2026-08-30 17:42 (JST) |
-| 拡張機能バージョン | 1.16.0 |
+| 実行日時 | 2026-09-01 12:43 (JST) |
+| 拡張機能バージョン | 1.18.0 |
 | Chromium | 151.0.7922.34 |
-| 総合判定 | ❌ 破損 1 件 / 未到達 4 件 / 未実施 8 件 |
+| 総合判定 | ❌ 破損 3 件 / 未到達 0 件 / 未実施 8 件 |
 
 ## サマリ
 
 | サイト | 対象 | ✅ 正常 | ❌ 破損 | ⚠️ 未到達 | — 未実施 |
 | --- | --- | --- | --- | --- | --- |
-| 楽天証券 | 12 | 7 | 1 | 4 | 0 |
+| 楽天証券 | 14 | 11 | 3 | 0 | 0 |
 | 楽天スーパースクリーナー | 1 | 0 | 0 | 0 | 1 |
 | SBI証券 | 2 | 0 | 0 | 0 | 2 |
 | SBI銘柄スクリーニング | 1 | 0 | 0 | 0 | 1 |
@@ -24,10 +24,12 @@
 
 | ページ | 判定 | 識別 | ヒット | 注入 | 備考 |
 | --- | --- | --- | --- | --- | --- |
-| お気に入り | ⚠️ | 0 | 0 | 0 | 到達方法: URL 直打ち（パス一致のリンクが GET 遷移の条件を満たさない）<br>資格を満たさなかった内訳: クエリ 1 件<br>資格を満たさなかったクエリのキー: `eventType`, `gmn`, `l-id`<br>先頭の `form#form` が 0 件 |
-| お気に入り編集 | ⚠️ | 0 | 0 | 0 | 到達方法: URL 直打ち（パス一致のリンクが見つからない）<br>ハブ 10 フレームを走査し、リンク 561 件のうちパス一致は 0 件<br>`form` まで 1 件 → `form table.tbl-data-01` で 0 件 |
-| 保有商品一覧・すべて | ⚠️ | 0 | 0 | 0 | 到達方法: URL 直打ち（パス一致のリンクが GET 遷移の条件を満たさない）<br>資格を満たさなかった内訳: クエリ 2 件<br>資格を満たさなかったクエリのキー: `eventType`, `fmn`, `gmn`, `l-id`, `lmn`, `smn`<br>先頭の `div#table_possess_data` が 0 件 |
-| 保有商品一覧・国内株式 | ⚠️ | 0 | 0 | 0 | 到達方法: URL 直打ち（パス一致のリンクが GET 遷移の条件を満たさない）<br>資格を満たさなかった内訳: クエリ 1 件<br>資格を満たさなかったクエリのキー: `eventType`, `fmn`, `gmn`, `l-id`, `lmn`, `local`, `smn`, `sub_type`, `type`<br>先頭の `table#poss-tbl-sp` が 0 件 |
+| お気に入り | ✅ | 1 | 70 | 35 | |
+| お気に入り・米国株 | ❌ | 0 | 0 | 0 | 先頭の `form#form` が 0 件<br>ページ識別セレクタは 0 件だが、題名から到達と判断した<br>利用者データ（お気に入り・保有銘柄）が 0 件でも同じ結果になる。登録状況を確認すること |
+| お気に入り編集 | ✅ | 1 | 70 | 35 | |
+| お気に入り編集・米国株 | ❌ | 1 | 0 | 0 | `form table.tbl-data-01` まで 1 件 → `form table.tbl-data-01 td.align-C` で 0 件<br>利用者データ（お気に入り・保有銘柄）が 0 件でも同じ結果になる。登録状況を確認すること |
+| 保有商品一覧・すべて | ✅ | 1 | 6 | 6 | |
+| 保有商品一覧・国内株式 | ✅ | 1 | 5 | 5 | |
 | ランキング・売買代金 | ✅ | 1 | 20 | 20 | |
 | ランキング・出来高 | ✅ | 1 | 20 | 20 | |
 | ランキング・値上り・値下り | ✅ | 1 | 20 | 20 | |
@@ -37,66 +39,37 @@
 | 国内株式・個別銘柄 | ✅ | 1 | 1 | 1 | |
 | 国内株式・株価検索 | ❌ | 0 | 0 | 0 | 先頭の `div#line1` が 0 件<br>ページ識別セレクタは 0 件だが、題名から到達と判断した |
 
-### お気に入りの手がかり
+### お気に入り・米国株の手がかり
 
 | 項目 | 内容 |
 | --- | --- |
-| 到達先の題名 | エラー \| 楽天証券[PC] |
-| 到達判定 | 未到達とみなす（題名が未到達の目印に当たる） |
+| 到達先の題名 | お気に入り銘柄情報-米国株式 \| お気に入り銘柄 \| マーケット \| 楽天証券[PC] |
+| 到達判定 | 到達したとみなす（題名が未到達の目印に当たらない） |
 | 見出し | `h1.hdg-l1-01` |
-| 主要コンテナ | `div.pcm-header`, `div.pcm-content`, `div#mwfooter`, `iframe`, `input#ratAccountId` |
+| 主要コンテナ | `div.pcm-header`, `div.pcm-content`, `div.mbody`, `iframe#suggest_frame0_1788234178686.mf_suggest_frame`, `iframe` |
 
-プレフィックス追跡（ページ識別セレクタ）
+プレフィックス追跡（検出用セレクタ）
 
 | 段階 | セレクタ | ヒット |
 | --- | --- | --- |
 | 1 | `form#form` | 0 |
 
-### お気に入り編集の手がかり
+### お気に入り編集・米国株の手がかり
 
 | 項目 | 内容 |
 | --- | --- |
-| 到達先の題名 | エラー \| 楽天証券[PC] |
-| 到達判定 | 未到達とみなす（題名が未到達の目印に当たる） |
+| 到達先の題名 | お気に入り銘柄情報-米国株式 \| お気に入り銘柄 \| マーケット \| 楽天証券[PC] |
+| 到達判定 | ページ識別セレクタ・検出用セレクタのいずれかがヒットしたため題名を見ていない |
 | 見出し | `h1.hdg-l1-01` |
-| 主要コンテナ | `div.pcm-header`, `div.pcm-content`, `div#mwfooter`, `iframe`, `input#ratAccountId` |
+| 主要コンテナ | `div.pcm-header`, `div.pcm-content`, `div.mbody`, `iframe`, `input#ratAccountId` |
 
-プレフィックス追跡（ページ識別セレクタ）
+プレフィックス追跡（検出用セレクタ）
 
 | 段階 | セレクタ | ヒット |
 | --- | --- | --- |
-| 1 | `form` | 1 |
-| 2 | `form table.tbl-data-01` | 0 |
-
-### 保有商品一覧・すべての手がかり
-
-| 項目 | 内容 |
-| --- | --- |
-| 到達先の題名 | エラー \| 楽天証券[PC] |
-| 到達判定 | 未到達とみなす（題名が未到達の目印に当たる） |
-| 見出し | `h1.hdg-l1-01` |
-| 主要コンテナ | `div.pcm-header`, `div.pcm-content`, `div#mwfooter`, `iframe`, `input#ratAccountId` |
-
-プレフィックス追跡（ページ識別セレクタ）
-
-| 段階 | セレクタ | ヒット |
-| --- | --- | --- |
-| 1 | `div#table_possess_data` | 0 |
-
-### 保有商品一覧・国内株式の手がかり
-
-| 項目 | 内容 |
-| --- | --- |
-| 到達先の題名 | エラー \| 楽天証券[PC] |
-| 到達判定 | 未到達とみなす（題名が未到達の目印に当たる） |
-| 見出し | `h1.hdg-l1-01` |
-| 主要コンテナ | `div.pcm-header`, `div.pcm-content`, `div#mwfooter`, `iframe`, `input#ratAccountId` |
-
-プレフィックス追跡（ページ識別セレクタ）
-
-| 段階 | セレクタ | ヒット |
-| --- | --- | --- |
-| 1 | `table#poss-tbl-sp` | 0 |
+| 1 | `form` | 2 |
+| 2 | `form table.tbl-data-01` | 1 |
+| 3 | `form table.tbl-data-01 td.align-C` | 0 |
 
 ### 国内株式・株価検索の手がかり
 
@@ -105,7 +78,7 @@
 | 到達先の題名 | 国内株式トップ \| 株価検索 \| 国内株式トップ \| 国内株式 \| 楽天証券[PC] |
 | 到達判定 | 到達したとみなす（題名が未到達の目印に当たらない） |
 | 見出し | `h1.hdg-l1-01`, `h3.hdg-l3-01`, `h2.index-hdg-l2.mb10`, `h2.flat-hdg-l2-01`, `h2.hdg-l2-01` |
-| 主要コンテナ | `div.pcm-header`, `div.pcm-content`, `div.mbody`, `iframe#suggest_frame0_1788079325519.mf_suggest_frame`, `iframe` |
+| 主要コンテナ | `div.pcm-header`, `div.pcm-content`, `div.mbody`, `iframe#suggest_frame0_1788234207112.mf_suggest_frame`, `iframe` |
 
 プレフィックス追跡（検出用セレクタ）
 
@@ -118,8 +91,10 @@
 | ページ | 検出用セレクタ |
 | --- | --- |
 | お気に入り | `form#form table.tbl-data-01 td.align-C div.mbody nobr` |
+| お気に入り・米国株 | `form#form table.tbl-data-01 td.align-C div.mbody nobr` |
 | お気に入り編集 | `form table.tbl-data-01 td.align-C div.mbody nobr` |
-| 保有商品一覧・すべて | `div#table_possess_data table.tbl-bold-border tr > td:contains("国内株式") + td` |
+| お気に入り編集・米国株 | `form table.tbl-data-01 td.align-C div.mbody nobr` |
+| 保有商品一覧・すべて | `div#table_possess_data table.tbl-bold-border tr > td:contains("国内株式") + td, div#table_possess_data table.tbl-bold-border tr > td:contains("米国株式") + td` |
 | 保有商品一覧・国内株式 | `table#poss-tbl-sp tr td table tr td nobr` |
 | ランキング・売買代金 | `div#str-main-inner div.mbody table.tbl-data-01 tr td:nth-of-type(2)` |
 | ランキング・出来高 | `div#str-main-inner div.mbody table.tbl-data-01 tr td:nth-of-type(2)` |

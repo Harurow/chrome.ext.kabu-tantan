@@ -127,20 +127,23 @@ const menuSelectors = [
   },
   {
     // 米国株のお気に入りは国内株とは別ページ(実機で確定。ADR-0014 の 9-1)。
-    // **url は実測**(利用者が提示したアドレスバー)。**推測なのは selector だけ**で、
-    // 国内株版と対称なテンプレートだろうと見て写した(⚠️ 実 DOM 未確認)。
-    // 対称だから推測したのではなく、提示された値がたまたま対称だっただけなので、
-    // 推測を測定に見せない(ADR-0011 の 13 の教訓)
+    // **url も selector も実測**(利用者のアドレスバーと DevTools。2026-09-01)。
+    // 1.18.0 は国内株版を写した推測で、起点・セル・中身の3箇所とも外れていた
+    // (ADR-0014 の 9-5)。実 DOM は国内株版とは別テンプレートで、専用の id を持つ
+    //   <table id="pcmm-foreign-stock" class="tbl-data-01">
+    //     <tr><td class="valign-M">注文</td>
+    //         <td><div class="mbody"> NVDA </div></td>  ← ティッカー(2列目・nobr 無し)
+    //         <td>銘柄名</td><td>市場</td><td class="align-R">数値</td>
     //
-    // 外れ方は2分岐で、benign なのは片方だけ(SPEC-CS-26)
-    //   - 空振り(構造が違う)      → 0 件＝今日と同じ。害が無い
-    //   - 別のセルを拾う          → **誤ったメニューが出る**。市場名・通貨・区分などの
-    //                               1〜5文字の大文字トークンに usCodePattern が成立する
-    // 後者は実機の目視でしか気づけない。出たらこのセレクタを絞る(抽出規則は動かさない)
+    // **ティッカーの列を位置で絞る**(ADR-0014 の 9-6)。`td div.mbody` を全部渡すと
+    // 銘柄名の列に届き、`APPLE INC` に `us APPLE` が成立して**別銘柄のページを開く**
+    // (判定基準6・7 違反)。「市場は米国、銘柄名は日本語だから弾かれる」は
+    // 日本語表記の銘柄名にしか効かない代理指標で、ETF や英字表記で崩れる。
+    // id・列位置・`div.mbody` の3条件を重ねてあり、どれか1つ外れれば0件に倒れる
     title: 'お気に入り・米国株',
     url: '/app/info_us_prc_reg_lst.do;',
-    selector: 'form#form table.tbl-data-01 td.align-C div.mbody nobr',
-    // 商品種別で絞れないので、判定基準7(株式以外の行に出さない)は目視でしか担保できない
+    selector: 'table#pcmm-foreign-stock tr > td:nth-of-type(2) div.mbody',
+    // 商品種別の列は無いので、判定基準7(株式以外の行に出さない)は列の位置と目視で担保する
     // (SPEC-CS-26「判定基準7 が構造で担保できないエントリ」)
     us: true
   },
@@ -151,10 +154,12 @@ const menuSelectors = [
     selector: 'form table.tbl-data-01 td.align-C div.mbody nobr'
   },
   {
-    // 同上。**url は実測で、推測なのは selector だけ**。外れ方の2分岐も同じ
+    // **url は実測で、selector は一覧ページの写し**(⚠️ 編集ページの実 DOM は未確認)。
+    // 一覧と同じ `table#pcmm-foreign-stock` を要求するので、当たらなければ0件＝誤爆なし
+    // (ADR-0014 の 9-6)。確かめるのは次回の実機確認と `npm run check:selectors`
     title: 'お気に入り編集・米国株',
     url: '/app/info_us_prc_reg_lst_edit.do;',
-    selector: 'form table.tbl-data-01 td.align-C div.mbody nobr',
+    selector: 'table#pcmm-foreign-stock tr > td:nth-of-type(2) div.mbody',
     us: true
   },
   {
