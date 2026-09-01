@@ -4,14 +4,18 @@
  * **出力するのはセレクタ文字列・件数・判定・例外メッセージだけ**（ホワイトリスト）。
  * URL・Cookie・ページ本文・`aria-label` の全文は組み立てない (NFR-12 / CON-03)。
  */
-import { OK, BROKEN, UNREACHED, SKIPPED } from './check.mjs'
+import { OK, BROKEN, UNREACHED, SKIPPED, EXCLUDED } from './check.mjs'
 
 const SYMBOL = {
   [OK]: '✅',
   [BROKEN]: '❌',
   [UNREACHED]: '⚠️',
-  [SKIPPED]: '—'
+  [SKIPPED]: '—',
+  [EXCLUDED]: '👤'
 }
+
+/** 判定の記号を持たない状態（理由を備考に出す）。総合判定の件数には混ぜない */
+const NO_JUDGE = [SKIPPED, EXCLUDED]
 
 /** 表のセルに入れられる形にする（改行・パイプを潰す） */
 const cell = (value) => String(value ?? '')
@@ -90,6 +94,24 @@ const renderDiagnostics = (result) => {
 }
 
 /**
+ * 「サイト / 対象 / 理由」だけの節を組み立てる（未実施・対象外で共用）。
+ * 0 件でも節ごと省かない。節が消えると「そもそも無いのか」が読めなくなる
+ */
+const renderReasonSection = (heading, rows) => {
+  const lines = [`## ${heading}`, '']
+  if (rows.length === 0) {
+    lines.push('なし。', '')
+    return lines
+  }
+  lines.push('| サイト | 対象 | 理由 |', '| --- | --- | --- |')
+  for (const result of rows) {
+    lines.push(`| ${cell(result.siteLabel)} | ${cell(result.title)} | ${cell(result.reason)} |`)
+  }
+  lines.push('')
+  return lines
+}
+
+/**
  * @param { {
  *   generatedAt: Date,
  *   version: string,
@@ -102,6 +124,8 @@ export const renderReport = ({ generatedAt, version, browserVersion, sites, resu
   const broken = count(results, BROKEN)
   const unreached = count(results, UNREACHED)
   const skipped = count(results, SKIPPED)
+  // 対象外は判定ではないので総合判定の記号にも件数にも影響させない (SPEC-SC-10 の申し送り)
+  const excluded = count(results, EXCLUDED)
   const overallSymbol = broken > 0 ? '❌' : (unreached > 0 ? '⚠️' : '✅')
 
   const lines = [
@@ -115,17 +139,17 @@ export const renderReport = ({ generatedAt, version, browserVersion, sites, resu
     `| 実行日時 | ${formatTimestamp(generatedAt)} |`,
     `| 拡張機能バージョン | ${version} |`,
     `| Chromium | ${browserVersion} |`,
-    `| 総合判定 | ${overallSymbol} 破損 ${broken} 件 / 未到達 ${unreached} 件 / 未実施 ${skipped} 件 |`,
+    `| 総合判定 | ${overallSymbol} 破損 ${broken} 件 / 未到達 ${unreached} 件 / 未実施 ${skipped} 件（対象外 ${excluded} 件は判定に含めない） |`,
     '',
     '## サマリ',
     '',
-    '| サイト | 対象 | ✅ 正常 | ❌ 破損 | ⚠️ 未到達 | — 未実施 |',
-    '| --- | --- | --- | --- | --- | --- |'
+    '| サイト | 対象 | ✅ 正常 | ❌ 破損 | ⚠️ 未到達 | — 未実施 | 👤 対象外 |',
+    '| --- | --- | --- | --- | --- | --- | --- |'
   ]
 
   for (const site of sites) {
     const rows = results.filter((result) => result.site === site.site)
-    lines.push(`| ${cell(site.label)} | ${rows.length} | ${count(rows, OK)} | ${count(rows, BROKEN)} | ${count(rows, UNREACHED)} | ${count(rows, SKIPPED)} |`)
+    lines.push(`| ${cell(site.label)} | ${rows.length} | ${count(rows, OK)} | ${count(rows, BROKEN)} | ${count(rows, UNREACHED)} | ${count(rows, SKIPPED)} | ${count(rows, EXCLUDED)} |`)
   }
   lines.push('')
 
@@ -136,7 +160,7 @@ export const renderReport = ({ generatedAt, version, browserVersion, sites, resu
     lines.push(`## ${cell(site.label)}`, '')
     lines.push('| ページ | 判定 | 識別 | ヒット | 注入 | 備考 |', '| --- | --- | --- | --- | --- | --- |')
     for (const result of rows) {
-      const notes = [result.status === SKIPPED ? result.reason : '', ...result.notes].filter(Boolean).map(cell).join('<br>')
+      const notes = [NO_JUDGE.includes(result.status) ? result.reason : '', ...result.notes].filter(Boolean).map(cell).join('<br>')
       lines.push(row(cell(result.title), SYMBOL[result.status], num(result.pageHits), num(result.hits), num(result.injectedHits), notes))
     }
     lines.push('')
@@ -153,17 +177,9 @@ export const renderReport = ({ generatedAt, version, browserVersion, sites, resu
     lines.push('')
   }
 
-  lines.push('## 未実施の対象', '')
-  const skippedRows = results.filter((result) => result.status === SKIPPED)
-  if (skippedRows.length === 0) {
-    lines.push('なし。', '')
-  } else {
-    lines.push('| サイト | 対象 | 理由 |', '| --- | --- | --- |')
-    for (const result of skippedRows) {
-      lines.push(`| ${cell(result.siteLabel)} | ${cell(result.title)} | ${cell(result.reason)} |`)
-    }
-    lines.push('')
-  }
+  lines.push(...renderReasonSection('未実施の対象', results.filter((result) => result.status === SKIPPED)))
+  // 対象外は行ごと消さない。消すと「なぜこの対象が無いのか」が結果ファイルから分からなくなる
+  lines.push(...renderReasonSection('対象外の対象（人が確認する）', results.filter((result) => result.status === EXCLUDED)))
 
   lines.push('## 判定の読み方', '')
   lines.push('| 記号 | 意味 |', '| --- | --- |')
@@ -171,6 +187,7 @@ export const renderReport = ({ generatedAt, version, browserVersion, sites, resu
   lines.push('| ❌ | **ページに到達したと判断できるのに**検出用セレクタが 0 件。サイト改修でセレクタが壊れた疑い |')
   lines.push('| ⚠️ | ページに到達したと判断できない（題名が未到達の目印に当たる／題名から判断できない）。ページを開けていない |')
   lines.push('| — | 未実施（`--only` で除外・ログインしていない・対象のタブが開かれていない） |')
+  lines.push('| 👤 | 対象外。ツールの仕組みでは到達できないため人が確認する。**判定ではないので破損・未到達・未実施のどれにも数えない** |')
   lines.push('')
   lines.push('「注入」は拡張機能が実際に挿入した要素の数（参考値。判定には使わない）。', '')
 

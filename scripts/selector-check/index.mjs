@@ -18,7 +18,7 @@ import { execFileSync } from 'node:child_process'
 import { chromium } from '@playwright/test'
 import { rootDir, resolveSite } from './load-selectors.mjs'
 import { sites, siteKeys } from './targets.mjs'
-import { checkTargetAsync, finishTradingViewAsync, createBootstrapScript, sanitize, OK, BROKEN, UNREACHED, SKIPPED } from './check.mjs'
+import { checkTargetAsync, createSkippedResult, finishTradingViewAsync, createBootstrapScript, sanitize, OK, BROKEN, UNREACHED, SKIPPED, EXCLUDED } from './check.mjs'
 import { renderReport } from './report.mjs'
 
 const USAGE = `
@@ -336,13 +336,15 @@ const runAsync = async (options) => {
       const targets = resolveSite(site)
 
       if (!inScope(site)) {
-        targets.forEach(({ target, entry }) => results.push(skip(site, target, entry, '`--only` の対象外')))
+        targets.forEach(({ target, entry }) => results.push(createSkippedResult(site, target, entry, '`--only` の対象外')))
         continue
       }
 
       if (site.site === 'rakuten' && !session) {
-        console.log('\n楽天証券: ログイン済みのタブが見つかりません → 12対象は未実施にします')
-        targets.forEach(({ target, entry }) => results.push(skip(site, target, entry, '楽天証券にログインしていない')))
+        // 対象外は未実施に混ぜない（結果ファイルと同じ数え方にする）
+        const willSkip = targets.filter(({ target }) => !target.excluded).length
+        console.log(`\n楽天証券: ログイン済みのタブが見つかりません → ${willSkip} 対象は未実施にします`)
+        targets.forEach(({ target, entry }) => results.push(createSkippedResult(site, target, entry, '楽天証券にログインしていない')))
         continue
       }
 
@@ -380,24 +382,7 @@ const runAsync = async (options) => {
   return { results, out: options.out }
 }
 
-const symbolOf = (status) => ({ [OK]: '✅', [BROKEN]: '❌', [UNREACHED]: '⚠️', [SKIPPED]: '—' })[status]
-
-/** 未実施の結果を作る（判定はせず理由だけ残す） */
-const skip = (site, target, entry, reason) => ({
-  site: site.site,
-  siteLabel: site.label,
-  key: target.key,
-  title: entry.title,
-  selector: entry.selector,
-  status: SKIPPED,
-  reason,
-  pageHits: null,
-  hits: null,
-  injectedHits: null,
-  notes: [],
-  // 未実施は手がかりを採らない (SPEC-SC-20)
-  diagnostics: null
-})
+const symbolOf = (status) => ({ [OK]: '✅', [BROKEN]: '❌', [UNREACHED]: '⚠️', [SKIPPED]: '—', [EXCLUDED]: '👤' })[status]
 
 /* ------------------------------------------------------------------ *
  * エントリポイント
@@ -428,9 +413,11 @@ try {
   const broken = results.filter((r) => r.status === BROKEN).length
   const unreached = results.filter((r) => r.status === UNREACHED).length
   const skipped = results.filter((r) => r.status === SKIPPED).length
+  // 対象外は終了コードにも判定の件数にも効かせない
+  const excluded = results.filter((r) => r.status === EXCLUDED).length
 
   if (!dryRun) {
-    console.log(`\n❌ 破損 ${broken} 件 / ⚠️ 未到達 ${unreached} 件 / — 未実施 ${skipped} 件 → ${path.relative(rootDir, out)}`)
+    console.log(`\n❌ 破損 ${broken} 件 / ⚠️ 未到達 ${unreached} 件 / — 未実施 ${skipped} 件 / 👤 対象外 ${excluded} 件 → ${path.relative(rootDir, out)}`)
   }
 
   if (broken > 0) {

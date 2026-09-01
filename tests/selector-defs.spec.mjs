@@ -11,8 +11,8 @@ import { test, expect } from '@playwright/test'
 import { lint } from 'markdownlint-cli2/markdownlint/promise'
 import jsoncParse from 'markdownlint-cli2/parsers/jsonc'
 import { loadMenuSelectors, indexByKey, resolveSite, rootDir } from '../scripts/selector-check/load-selectors.mjs'
-import { sites, RAKUTEN_OPEN_QUERY, RAKUTEN_ORIGIN } from '../scripts/selector-check/targets.mjs'
-import { checkTargetAsync, OK, BROKEN, UNREACHED } from '../scripts/selector-check/check.mjs'
+import { sites, RAKUTEN_ORIGIN } from '../scripts/selector-check/targets.mjs'
+import { checkTargetAsync, createSkippedResult, OK, BROKEN, UNREACHED, SKIPPED, EXCLUDED } from '../scripts/selector-check/check.mjs'
 import {
   planPrefixTracking,
   summarizeTracking,
@@ -37,30 +37,6 @@ import {
   REACH_UNREACHED,
   REACH_UNKNOWN
 } from '../scripts/selector-check/diagnostics.mjs'
-import {
-  matchesTargetPath,
-  targetPathOf,
-  pickLink,
-  describeReach,
-  describeRejected,
-  describeQueryKeys,
-  describeScan,
-  readPathnameAsync,
-  MAX_CANDIDATES,
-  MAX_QUERY_KEYS,
-  REJECT_CONDITIONS,
-  REJECT_RAW_HREF,
-  REJECT_SCHEME,
-  REJECT_ORIGIN,
-  REJECT_PATH,
-  REJECT_INLINE_HANDLER,
-  REJECT_QUERY,
-  LINK_FOLLOWED,
-  LINK_NO_CANDIDATE,
-  LINK_NOT_QUALIFIED,
-  LINK_PATH_MISMATCH_NOTE,
-  LINK_TRUNCATED_NOTE
-} from '../scripts/selector-check/links.mjs'
 import { renderReport } from '../scripts/selector-check/report.mjs'
 
 // 各 Content Script が持つべき検出用セレクタの件数
@@ -117,6 +93,54 @@ test.describe('セレクタ定義', () => {
       expect(wanted.slice().sort(), `${site.label} の対象`).toEqual([...entries.keys()].sort())
       expect(new Set(wanted).size, `${site.label} の対象の重複`).toBe(wanted.length)
     }
+  })
+
+  // ページ識別セレクタは検出用セレクタの祖先から起こす (SPEC-SC-04 / 05)。
+  // 祖先でない値が紛れても、**別の要素にたまたま当たれば識別 1 件を返して ✅ になり**、
+  // `ページ識別セレクタの見直しが必要` の警告すら出ない（SPEC-SC-05 の自己検出の限界）。
+  // 実際に `お気に入り編集・米国株` が国内株版の値のまま気づかれずに残った（1.19.0 で修正）。
+  // 祖先ではあるが文字列の接頭辞にならない対象だけ、理由を書いてここに挙げる
+  const NOT_PREFIXED = {
+    'rakuten/ランキング・楽天内': '識別・検出とも5系統のカンマ区切りで、祖先だが接頭辞にはならない',
+    'tradingview/chart-canvas': '識別セレクタは「チャート画面が描画されたか」を見る別系統（ハッシュ付きクラスを祖先に使わない）',
+    'tradingview/toolbar-container': '同上',
+    'tradingview/overlap-root': '同上',
+    'tradingview/context-menu': '右クリックで生成されるオーバーレイ層が識別。検出用はその中の別ツリー'
+  }
+
+  /**
+   * ページ識別セレクタが検出用セレクタの祖先か（文字列の接頭辞で見る）。
+   *
+   * **トークン境界で切る。** 素の `startsWith()` だと `table` や `form` のような
+   * 過度に緩い識別セレクタが素通りし（`'table#pcmm-foreign-stock tr…'.startsWith('table')`）、
+   * この番人が防ごうとしている「別の要素にたまたま当たって識別 1 件」をそのまま通してしまう
+   */
+  const isAncestorSelector = (selector, pageSelector) =>
+    selector === pageSelector || selector.startsWith(`${pageSelector} `)
+
+  test('ページ識別セレクタは検出用セレクタの接頭辞になっている（例外は明示する）', () => {
+    // 番人自身の境界を固定する。素の `startsWith()` に戻ると次の1行目が true に化ける
+    expect(isAncestorSelector('table#pcmm-foreign-stock tr > td', 'table')).toBe(false)
+    expect(isAncestorSelector('table#pcmm-foreign-stock tr > td', 'table#pcmm-foreign-stock')).toBe(true)
+    expect(isAncestorSelector('div#overlap-manager-root', 'div#overlap-manager-root')).toBe(true)
+
+    const exceptions = []
+
+    for (const site of sites) {
+      for (const { target, entry } of resolveSite(site)) {
+        const id = `${site.site}/${target.key}`
+        if ((target.pageSelectors ?? []).some((selector) => isAncestorSelector(entry.selector, selector))) {
+          // 接頭辞になったなら例外表から外す（古い言い訳を残さない）
+          expect(NOT_PREFIXED[id], `${id} は接頭辞になっている。例外表から外すこと`).toBeUndefined()
+        } else {
+          exceptions.push(id)
+          expect(NOT_PREFIXED[id], `${id}: 祖先でない識別セレクタは理由を書いて明示する`).toBeTruthy()
+        }
+      }
+    }
+
+    // 例外が黙って増えないこと
+    expect(exceptions.sort()).toEqual(Object.keys(NOT_PREFIXED).sort())
   })
 
   test('楽天証券の4ページは実測どおりのクエリを付けて直打ちする', () => {
@@ -209,6 +233,37 @@ test.describe('セレクタ定義', () => {
           expect(entry.selector.toLowerCase(), `${site.source}: ${entry.title}`).not.toContain(name)
         }
       }
+    }
+  })
+
+  // --- CON-10 のガード -----------------------------------------------------
+  // 「他社サイトでフォームを送信しない・リンクを踏まない」は散文では守れない。
+  // 実際に遷移する側（`check.mjs`）のソースを文字列として検査し、機械で固定する。
+  //
+  // **担保は守る対象と同じ場所に置く。** 1.15.0 の版はこの検査を `links.mjs` の節に
+  // 置いていたため、`links.mjs` の撤去（1.19.0）と一緒に消え、担保だけが散文に戻っていた。
+  // ここは `check.mjs` を直接読むので、`check.mjs` が在るかぎり生きる。
+  //
+  // 対象外にした株価検索は**フォーム送信でしか結果画面に行けない**ページで、
+  // 「対象に戻したい」と思ったとき真っ先に書きたくなるのがまさにこの呼び出しになる。
+  // **そのため `check.mjs` にはコメントにも当該の呼び出し形を書けない**（検査が文字列だから）
+
+  test('check.mjs は右クリック以外のクリック・フォーム送信を持たない', () => {
+    const file = path.join(rootDir, 'scripts', 'selector-check', 'check.mjs')
+    const source = fs.readFileSync(file, 'utf8')
+
+    // 空振り検査。読めていない・パスが変わったときに
+    // 「何も見つからないので合格」になるのを防ぐ（これが無いと検査そのものが空手形になる）
+    expect(source, `${file} を読めていない`).toContain('page.goto(')
+
+    // クリックはちょうど1件だけ。それが TradingView の右クリック（CON-10 の許容操作）で、
+    // `page.mouse.click(` は `.click(` を含むので「1件かつ mouse」でその1件が特定できる
+    expect(source.match(/\.click\(/g) ?? [], `${file} のクリック`).toHaveLength(1)
+    expect(source, `${file} の唯一のクリックが右クリックでない`).toContain('page.mouse.click(')
+
+    // フォーム送信は形を問わず現れない
+    for (const forbidden of ['.submit(', 'requestSubmit']) {
+      expect(source, `${file}: ${forbidden} は書けない`).not.toContain(forbidden)
     }
   })
 })
@@ -739,658 +794,100 @@ test.describe('手がかり', () => {
 })
 
 /**
- * ポータルのリンクをたどる到達 (SPEC-SC-26)。
+ * 検証ツールの対象外（👤）。
  *
- * `links.mjs` の純関数と、`check.mjs` の `reach: 'link'` 分岐を検査する。
- * ログインが要る経路は自動テストにできないため (CON-10)、ページ側は生の値を返し、
- * 資格審査と選択は Node 側の純関数で行う分担にしてある（ADR-0011 の 8）。
- * ページ側のコールバックは引数しか参照しないので Node 上でそのまま走らせる。
- * **ブラウザは起動しない。**
+ * ツールの仕組みでは到達できないと分かっていて、確認を人に委ねた対象。
+ * 楽天証券の株価検索は**壊れていない**（2026-09-01 に利用者が実機で確認）が、
+ * 検索が POST でアドレスが変わらず、フォーム送信は CON-10 で行わないため到達できない。
+ * **判定（✅/❌/⚠️）にも未実施（—）にも混ぜない。** 混ぜると「毎回やり残しが1件ある」
+ * 恒久的な異常表示になり、本当の破損・やり残しに気づけなくなる。
+ * ブラウザは起動しない。
  */
-test.describe('到達リンク', () => {
-  // 手がかりは `menuSelectors[].url` だけ。楽天証券ポータルの実 DOM を見て起こした値は使わない
-  const FAVORITE = '/app/info_jp_prc_reg_lst.do;'
-  const FAVORITE_EDIT = '/app/info_jp_prc_reg_lst_edit.do;'
-  const ORIGIN = 'https://member.rakuten-sec.co.jp'
-  const SESSION = ';BV_SessionID=NNNN0123456789.0123456789NN'
-
-  /** 資格を満たす候補（テストごとに1条件だけ落として使う） */
-  const qualified = (path = `${ORIGIN}/app/info_jp_prc_reg_lst.do${SESSION}`) => ({
-    rawHref: path,
-    href: path,
-    hasInlineHandler: false
-  })
-
-  test('matchesTargetPath() が .do とパスパラメータ付きに一致しクエリ・フラグメントを無視する', () => {
-    // 完全一致
-    expect(matchesTargetPath('/app/info_jp_prc_reg_lst.do', FAVORITE)).toBe(true)
-    // パスパラメータ（楽天証券はセッションを `;` で持つ）
-    expect(matchesTargetPath('/app/info_jp_prc_reg_lst.do;BV_SessionID=NNNN.0123456789NN', FAVORITE)).toBe(true)
-    // `menuSelectors` 側の末尾 `;` が無い定義（`market_ranking_rakuten.do` など）でも同じ
-    expect(matchesTargetPath('/app/info_jp_prc_reg_lst.do', '/app/info_jp_prc_reg_lst.do')).toBe(true)
-
-    // クエリ・フラグメントは判定に使わない（URL.pathname には出ないが、混ざっても結果を変えない）
-    expect(matchesTargetPath(new URL(`${ORIGIN}/app/info_jp_prc_reg_lst.do?eventType=init#top`).pathname, FAVORITE)).toBe(true)
-    expect(matchesTargetPath('/app/info_jp_prc_reg_lst.do?eventType=init', FAVORITE)).toBe(true)
-    expect(matchesTargetPath('/app/info_jp_prc_reg_lst.do#top', FAVORITE)).toBe(true)
-
-    // 空の定義は何にも一致させない（誤って全リンクを拾わない）
-    expect(matchesTargetPath('/app/info_jp_prc_reg_lst.do', '')).toBe(false)
-  })
-
-  test('matchesTargetPath() が別ページを取り違えない', () => {
-    // 前方一致だと `_edit` 側が本体に当たりうる。規則は「完全一致 or `;` が続く」だけ
-    expect(matchesTargetPath('/app/info_jp_prc_reg_lst_edit.do', FAVORITE)).toBe(false)
-    expect(matchesTargetPath('/app/info_jp_prc_reg_lst_edit.do;BV_SessionID=NNNN', FAVORITE)).toBe(false)
-    expect(matchesTargetPath('/app/info_jp_prc_reg_lst.do', FAVORITE_EDIT)).toBe(false)
-
-    // 逆方向（`_edit` の定義には `_edit` のパスだけが当たる）
-    expect(matchesTargetPath('/app/info_jp_prc_reg_lst_edit.do', FAVORITE_EDIT)).toBe(true)
-    expect(matchesTargetPath('/app/info_jp_prc_reg_lst_edit.do;BV_SessionID=NNNN', FAVORITE_EDIT)).toBe(true)
-  })
-
-  test('pickLink() が資格を満たす候補のうち先頭の href を返す', () => {
-    const first = qualified(`${ORIGIN}/app/info_jp_prc_reg_lst.do;BV_SessionID=1`)
-    const second = qualified(`${ORIGIN}/app/info_jp_prc_reg_lst.do;BV_SessionID=2`)
-
-    // document order の先頭から見て、最初に資格を満たしたものを採る (SPEC-SC-26)。
-    // たどれた場合は内訳を出さないので、落ちた候補があっても空で返す (SPEC-SC-26 の規則5)
-    expect(pickLink([{ ...qualified(), hasInlineHandler: true }, first, second], { entryUrl: FAVORITE, origin: ORIGIN }))
-      .toEqual({ href: first.href, reason: LINK_FOLLOWED, rejected: {}, queryKeys: [] })
-    expect(describeReach(LINK_FOLLOWED)).toBe('到達方法: ポータルのリンクをたどった')
-  })
-
-  test('pickLink() が資格を満たさない候補を1条件ずつ落として除外する', () => {
-    const context = { entryUrl: FAVORITE, origin: ORIGIN, openQuery: RAKUTEN_OPEN_QUERY }
-    const base = qualified()
-
-    // 1条件だけ崩した候補を並べる。どれも単独で除外されること（＝各条件が効いていること）と、
-    // **どの条件で落ちたか**まで見る（次の一手が条件ごとに正反対のため。SPEC-SC-26 の「退避理由の内訳」）
-    const rejected = {
-      'javascript: スキーム': [{ rawHref: 'javascript:void(0)', href: 'javascript:void(0)', hasInlineHandler: false }, REJECT_SCHEME],
-      '# 始まり': [{ ...base, rawHref: '#' }, REJECT_RAW_HREF],
-      '空の href': [{ ...base, rawHref: '' }, REJECT_RAW_HREF],
-      '空白だけの href': [{ ...base, rawHref: '   ' }, REJECT_RAW_HREF],
-      別オリジン: [{ rawHref: 'https://www.rakuten-sec.co.jp/app/info_jp_prc_reg_lst.do', href: 'https://www.rakuten-sec.co.jp/app/info_jp_prc_reg_lst.do', hasInlineHandler: false }, REJECT_ORIGIN],
-      'http スキーム': [{ rawHref: 'http://member.rakuten-sec.co.jp/app/info_jp_prc_reg_lst.do', href: 'http://member.rakuten-sec.co.jp/app/info_jp_prc_reg_lst.do', hasInlineHandler: false }, REJECT_SCHEME],
-      別パス: [{ ...base, rawHref: `${ORIGIN}/app/info_jp_prc_reg_lst_edit.do`, href: `${ORIGIN}/app/info_jp_prc_reg_lst_edit.do` }, REJECT_PATH],
-      インラインハンドラ付き: [{ ...base, hasInlineHandler: true }, REJECT_INLINE_HANDLER],
-      // スキームを確かめられないので条件2 で落とす
-      '解決できない href': [{ ...base, href: 'not a url' }, REJECT_SCHEME],
-      // 条件6。同じパスでもクエリで操作が変わる（削除・解除など）ものは採らない
-      操作を切り替えるクエリ: [{ ...base, href: `${base.href}?eventType=delete` }, REJECT_QUERY]
-    }
-
-    for (const [label, [candidate, condition]] of Object.entries(rejected)) {
-      const picked = pickLink([candidate], context)
-      expect(picked.href, label).toBeNull()
-      expect(picked.reason, label).toBe(LINK_NOT_QUALIFIED)
-      // 数えるのは**最初に落ちた条件**1つだけ
-      expect(picked.rejected, label).toEqual({ [condition]: 1 })
-    }
-
-    // まとめて渡しても資格を満たすものが1つも無ければ `not-qualified`
-    const all = pickLink(Object.values(rejected).map(([candidate]) => candidate), context)
-    expect(all.href).toBeNull()
-    expect(all.reason).toBe(LINK_NOT_QUALIFIED)
-    // 崩していない候補は通る（上の除外が条件由来であることの対照）
-    expect(pickLink([base], context))
-      .toEqual({ href: base.href, reason: LINK_FOLLOWED, rejected: {}, queryKeys: [] })
-
-    expect(describeReach(LINK_NOT_QUALIFIED))
-      .toBe('到達方法: URL 直打ち（パス一致のリンクが GET 遷移の条件を満たさない）')
-  })
-
-  test('pickLink() がクエリを見て「開くだけ」のリンクだけを採る（資格6）', () => {
-    // 楽天証券の `.do` は同一パスのクエリで操作を切り替える。パスだけで採ると、
-    // 行ごとの操作リンク（削除・解除など）が document order の先頭にあれば踏んでしまう (CON-10)
-    const context = { entryUrl: FAVORITE, origin: ORIGIN, openQuery: RAKUTEN_OPEN_QUERY }
-    const link = (query) => qualified(`${ORIGIN}/app/info_jp_prc_reg_lst.do${SESSION}${query}`)
-
-    // 通る形。`pinned` は値まで一致、`anyValue` は値を問わない。
-    // (a) `anyValue` のキーは値が何でも通る／(b) `pinned` のキーは無くてもよい
-    for (const query of [
-      '', '?eventType=init',
-      '?eventType=init&gmn=J&l-id=xxxx',            // 2026-08-30 に実測したお気に入りの形
-      '?gmn=J', '?l-id=header_favorite',            // `pinned` が無くても通る
-      '?eventType=init&gmn=J&fmn=1&lmn=01&smn=02',  // `anyValue` は値を問わない
-      // `anyValue` は**空値でも通る**。`pinned` の `?eventType=` は落ちる（下）ので、
-      // この非対称は意図したもの（値を見ないキーに「空だから危ない」と言える根拠が無い）
-      '?l-id='
-    ]) {
-      expect(pickLink([link(query)], context), `"${query}"`)
-        .toEqual({ href: link(query).href, reason: LINK_FOLLOWED, rejected: {}, queryKeys: [] })
-    }
-
-    // 落ちる形。(c) どちらにも無いキーは落ちる（許可列挙）／(d) 重複キーは `anyValue` でも落ちる。
-    // 落ちた条件は6（クエリ）で、`RAKUTEN_OPEN_QUERY` を広げうるかの判断材料になる
-    for (const query of [
-      '?eventType=delete',                  // `pinned` の値違い
-      // 本命の形。**メニュー階層を伴う操作リンク**（`anyValue` を足しても操作は通さない）
-      '?eventType=delete&gmn=J',
-      '?eventType=',                        // 空値も値違い（`anyValue` の空値とは扱いが違う）
-      '?eventtype=init',                    // 大小違い（どちらの集合にも無い）
-      '?rowNo=3', '?eventType=init&rowNo=3', // 未知のキー
-      // 「絞り込み」と読めるが確証が無いキーは許さない (CON-10。ADR-0011 の 11)
-      '?local=1', '?type=1', '?sub_type=1', '?eventType=init&gmn=J&type=1',
-      '?eventType=init&eventType=init',     // 重複キー（`pinned`）
-      '?gmn=J&gmn=K'                        // 重複キー（`anyValue` でも落とす）
-    ]) {
-      const picked = pickLink([link(query)], context)
-      expect(picked.href, query).toBeNull()
-      expect(picked.reason, query).toBe(LINK_NOT_QUALIFIED)
-      expect(picked.rejected, query).toEqual({ [REJECT_QUERY]: 1 })
-    }
-
-    // 先頭に操作リンクが並んでいても、後ろの「開くだけ」のリンクを採る
-    expect(pickLink([link('?eventType=delete'), link('?rowNo=1'), link('?gmn=J')], context))
-      .toEqual({ href: link('?gmn=J').href, reason: LINK_FOLLOWED, rejected: {}, queryKeys: [] })
-
-    // 許すクエリを渡さなければクエリ付きは一切通らない（安全側の既定。規則7）。
-    // 片方だけ渡した場合も、渡さなかった側は空集合に倒れる（`?? {}` / `?? []` の既定）
-    const partial = [
-      // [ラベル, openQuery, `?eventType=init` が通るか, `?gmn=J` が通るか]
-      ['未指定', undefined, false, false],
-      ['pinned だけ', { pinned: RAKUTEN_OPEN_QUERY.pinned }, true, false],
-      ['anyValue だけ', { anyValue: RAKUTEN_OPEN_QUERY.anyValue }, false, true]
-    ]
-    for (const [label, openQuery, pinnedOk, anyValueOk] of partial) {
-      for (const [query, allowed] of [['?eventType=init', pinnedOk], ['?gmn=J', anyValueOk]]) {
-        const picked = pickLink([link(query)], { entryUrl: FAVORITE, origin: ORIGIN, openQuery })
-        const at = `${label} ${query}`
-        expect(picked.href, at).toBe(allowed ? link(query).href : null)
-        expect(picked.reason, at).toBe(allowed ? LINK_FOLLOWED : LINK_NOT_QUALIFIED)
-        expect(picked.rejected, at).toEqual(allowed ? {} : { [REJECT_QUERY]: 1 })
-      }
-      // どの既定でもクエリ無しは通る（規則1）
-      expect(pickLink([link('')], { entryUrl: FAVORITE, origin: ORIGIN, openQuery }).reason, label)
-        .toBe(LINK_FOLLOWED)
-    }
-
-    // 許す値の情報源は組み立て URL と同じ（`targets.mjs` の1箇所。新しい推測値を増やさない）。
-    // `RAKUTEN_STOCK_QUERY` は `pinned` から組み立てる
-    const stockUrl = rakutenSite().targets
-      .find((target) => target.key === '国内株式・個別銘柄')
-      .url({ session: SESSION, entry: { url: '/app/info_jp_prc_dtl.do;' } })
-    expect(new URL(stockUrl).search.startsWith(`?${new URLSearchParams(RAKUTEN_OPEN_QUERY.pinned)}`)).toBe(true)
-    // 組み立て URL が持つメニュー階層のキーは `anyValue` 側で許してある（同じキーを二重に定義しない）
-    for (const key of ['gmn', 'smn', 'lmn', 'fmn']) {
-      expect(RAKUTEN_OPEN_QUERY.anyValue, key).toContain(key)
-    }
-  })
-
-  test('pickLink() が候補 0 件のとき no-candidate を返し、退避の文言が not-qualified と異なる', () => {
-    const context = { entryUrl: FAVORITE, origin: ORIGIN }
-
-    // 候補が無ければ審査そのものが起きないので、内訳も空になる（11・12 は出ない。備考 13 だけ）
-    expect(pickLink([], context)).toEqual({ href: null, reason: LINK_NO_CANDIDATE, rejected: {}, queryKeys: [] })
-    expect(pickLink(undefined, context)).toEqual({ href: null, reason: LINK_NO_CANDIDATE, rejected: {}, queryKeys: [] })
-
-    // 「リンクが無い」と「リンクはあるが素の a href でない」は次の一手が違う（ADR-0011 の 7）。
-    // 結果ファイルを読む人が区別できるよう、文言を必ず分ける
-    expect(describeReach(LINK_NO_CANDIDATE)).toBe('到達方法: URL 直打ち（パス一致のリンクが見つからない）')
-    expect(describeReach(LINK_NO_CANDIDATE)).not.toBe(describeReach(LINK_NOT_QUALIFIED))
-    expect(new Set([LINK_FOLLOWED, LINK_NO_CANDIDATE, LINK_NOT_QUALIFIED].map(describeReach)).size).toBe(3)
-
-    // 備考は markdownlint に掛かる。山括弧を含めない (SPEC-SC-26 / `結果ファイルの書式` 18)
-    for (const reason of [LINK_FOLLOWED, LINK_NO_CANDIDATE, LINK_NOT_QUALIFIED]) {
-      expect(describeReach(reason), reason).not.toMatch(/[<>]/)
-    }
-    expect(LINK_PATH_MISMATCH_NOTE).not.toMatch(/[<>]/)
-
-    // 切り捨ての1行も退避理由と混ざらない（「見ていない」を「資格を満たさない」と読ませない）
-    expect(LINK_TRUNCATED_NOTE).toContain(String(MAX_CANDIDATES))
-    expect(LINK_TRUNCATED_NOTE).not.toMatch(/[<>]/)
-    for (const reason of [LINK_FOLLOWED, LINK_NO_CANDIDATE, LINK_NOT_QUALIFIED]) {
-      expect(LINK_TRUNCATED_NOTE, reason).not.toBe(describeReach(reason))
-    }
-  })
-
-  test('readPathnameAsync() はページ側で判定せず pathname をそのまま返す', async () => {
-    // 一致規則を持つのは `matchesTargetPath()` の1箇所だけ。ページ側にも同じ2条件を書くと
-    // 片方だけ緩んでも自動テストが掛からない（ページ側はブラウザが要る）ため、判定を持たせない
-    const stubFrame = { evaluate: (fn) => fn() }
-    const original = globalThis.window
-
-    try {
-      for (const pathname of [
-        '/app/info_jp_prc_reg_lst.do',
-        `/app/info_jp_prc_reg_lst.do${SESSION}`,
-        '/app/error.do'
-      ]) {
-        globalThis.window = { location: { pathname } }
-        expect(await readPathnameAsync(stubFrame)).toBe(pathname)
-      }
-    } finally {
-      globalThis.window = original
-    }
-  })
-
-  // --- `reach: 'link'` の分岐（ブラウザ無しで丸ごと通す） ---------------------
-
-  /** 楽天証券のサイト定義（リポジトリの実データをそのまま使う） */
+test.describe('検証ツールの対象外', () => {
   const rakutenSite = () => sites.find((item) => item.site === 'rakuten')
+  const targetOf = (key) => resolveSite(rakutenSite()).find((item) => item.target.key === key)
 
-  /** ページ側が見る `a[href]` の代役。属性は生の値だけを持つ */
-  const anchorOf = (href, { rawHref = href, inlineHandler = false } = {}) => ({
-    href,
-    getAttribute: () => rawHref,
-    attributes: inlineHandler ? [{ name: 'href' }, { name: 'onclick' }] : [{ name: 'href' }]
-  })
+  test('対象外の対象は定義から消さず、理由の文字列を持つ', () => {
+    const excluded = sites.flatMap((site) => site.targets
+      .filter((target) => target.excluded)
+      .map((target) => `${site.site}: ${target.key}`))
 
-  /**
-   * `checkTargetAsync()` を `reach: 'link'` で走らせる。
-   *
-   * **`reach` はテスト側で注入する。** 1.18.0 で実データの4対象は `reach: 'goto'` に戻ったが
-   * （ADR-0011 の 13）、機構は `reach` の1語で往復できる状態に保つため、
-   * 配線はここで固定し続ける（SPEC-SC-26「結果が出るまで本節の記述と実装は消さない」）。
-   * `url`（退避先の組み立て URL）・`pageSelectors` は実データのまま使う。
-   *
-   * ページ側の関数（`collectAnchorsAsync` / `readPathnameAsync`）は**実物のコールバックを
-   * Node 上で実行する**。引数しか参照しないので、`document` / `window` を差し替えれば動く。
-   * 切り捨ての数え方までスタブに書き写さずに済む（NFR-13）。
-   */
-  // `readable: false` は「フレームを読めなかった」を模す（評価が例外で終わる）。
-  // 読めないフレームは判定に影響しないが、件数だけは残る (SPEC-SC-26 の3原因)
-  const runLinkTargetAsync = async ({ anchors = [], pathname = '', hits = {}, readable = true, site = rakutenSite() }) => {
-    const found = resolveSite(site).find((item) => item.target.key === 'お気に入り')
-    const entry = found.entry
-    const target = { ...found.target, reach: 'link' }
-    const gotos = []
+    // 増えたらここで気づく。「ツールで確認できないから外す」を無自覚に増やさない
+    expect(excluded).toEqual(['rakuten: 国内株式・株価検索'])
 
-    const frame = {
-      url: () => `${ORIGIN}/app/home.do`,
-      evaluate: async (fn, arg) => {
-        if (arg && typeof arg === 'object' && 'max' in arg) {
-          if (!readable) {
-            throw new Error('frame is not readable')
-          }
-          globalThis.document = { querySelectorAll: () => anchors }
-          try {
-            return await fn(arg)
-          } finally {
-            delete globalThis.document
-          }
-        }
-        if (arg === undefined) {
-          globalThis.window = { location: { pathname } }
-          try {
-            return await fn()
-          } finally {
-            delete globalThis.window
-          }
-        }
-        // 手がかり採取（オブジェクト引数）と件数（文字列引数）は他のテストと同じ形で模す
-        if (arg && typeof arg === 'object') {
-          return { title: 'お気に入り | 楽天証券[PC]', headings: [], containers: [] }
-        }
-        return { count: hits[arg] ?? 0 }
+    for (const site of sites) {
+      for (const target of site.targets.filter((item) => item.excluded)) {
+        // 理由は結果ファイルの備考と節にそのまま載る。空だと「なぜ無いのか」が読めない
+        expect(typeof target.excluded, target.key).toBe('string')
+        expect(target.excluded.trim().length, target.key).toBeGreaterThan(0)
+        // 定義は残す。`excluded` の1語を外すだけで検証が復活する状態に保つ
+        expect((target.pageSelectors ?? []).length, target.key).toBeGreaterThan(0)
       }
     }
+  })
 
-    const page = {
-      isClosed: () => false,
-      url: () => `${ORIGIN}/app/home.do`,
-      frames: () => [frame],
-      mainFrame: () => frame,
-      goto: async (url, options) => { gotos.push({ url, options }) },
-      waitForTimeout: async () => {}
-    }
+  test('対象外の対象は遷移も件数の評価もせず、判定の4状態のどれにもならない', async () => {
+    const site = rakutenSite()
+    const { target, entry } = targetOf('国内株式・株価検索')
 
+    // 触れたら落ちるランナー。遷移も件数の評価も**起きない**ことを配線で固定する
+    const explode = () => { throw new Error('対象外の対象で呼ばれてはならない') }
     const runner = {
-      context: { pages: () => [page] },
-      page,
-      lastFrame: null,
-      session: SESSION
+      context: { pages: explode },
+      page: { goto: explode, waitForTimeout: explode },
+      lastFrame: { evaluate: explode },
+      session: ''
     }
 
-    return { entry, target, gotos, result: await checkTargetAsync(runner, site, target, entry, new Map()) }
-  }
+    const result = await checkTargetAsync(runner, site, target, entry, new Map())
 
-  test('リンクをたどれたら、その href へ referer 付きで遷移して件数を数える', async () => {
-    const site = rakutenSite()
-    const { entry } = resolveSite(site).find((item) => item.target.key === 'お気に入り')
-    const href = `${ORIGIN}${targetPathOf(entry.url)}${SESSION}`
-
-    const { gotos, result } = await runLinkTargetAsync({
-      anchors: [anchorOf(href)],
-      pathname: `${targetPathOf(entry.url)}${SESSION}`,
-      hits: { 'form#form table.tbl-data-01': 1, [entry.selector]: 3, 'span.x-kabu-root': 3 }
-    })
-
-    expect(gotos).toHaveLength(1)
-    expect(gotos[0].url).toBe(href)
-    // referer はアンカーを見つけたフレームの URL (ADR-0011 の 3)
-    expect(gotos[0].options.referer).toBe(`${ORIGIN}/app/home.do`)
-    expect(result.status).toBe(OK)
-    expect(result.hits).toBe(3)
-    // 到達方法の1行は判定を問わず備考の先頭に出る (SPEC-SC-23 の備考 8)
-    expect(result.notes[0]).toBe(describeReach(LINK_FOLLOWED))
-    // href・referer・pathname は結果に載せない (NFR-12)
-    expect(JSON.stringify(result)).not.toContain('BV_SessionID')
-  })
-
-  test('操作を切り替えるクエリのリンクが先頭にあっても踏まない', async () => {
-    // C-1 の回帰。`.do` は同一パスのクエリで操作が変わるため、パス一致だけで先頭を採ると
-    // 実口座で削除・解除の GET を踏みうる (CON-10)
-    const site = rakutenSite()
-    const { entry } = resolveSite(site).find((item) => item.target.key === 'お気に入り')
-    const openHref = `${ORIGIN}${targetPathOf(entry.url)}${SESSION}`
-
-    const { gotos } = await runLinkTargetAsync({
-      anchors: [anchorOf(`${openHref}?eventType=delete&rowNo=1`), anchorOf(openHref)],
-      pathname: `${targetPathOf(entry.url)}${SESSION}`,
-      hits: { 'form#form table.tbl-data-01': 1, [entry.selector]: 3, 'span.x-kabu-root': 3 }
-    })
-
-    expect(gotos).toHaveLength(1)
-    expect(gotos[0].url).toBe(openHref)
-  })
-
-  test('たどった先が対象ページでなければ件数を数えず、理由が「開けなかった」にならない', async () => {
-    const { result } = await runLinkTargetAsync({
-      anchors: [anchorOf(`${ORIGIN}/app/info_jp_prc_reg_lst.do${SESSION}`)],
-      // 楽天証券がエラー画面へ飛ばした場合。ページは開けているので「開けなかった」ではない
-      pathname: '/app/error.do',
-      hits: { 'form#form table.tbl-data-01': 1, 'span.x-kabu-root': 3 }
-    })
-
-    expect(result.status).toBe(UNREACHED)
-    expect(result.reason).toBe('たどった先が対象ページでない')
-    expect(result.notes).toContain(LINK_PATH_MISMATCH_NOTE)
-    // 別ページで検出用セレクタがたまたま当たって ✅ を出さないよう、数えない (SPEC-SC-26)
+    expect(result.status).toBe(EXCLUDED)
+    // 判定の4状態のどれでもない ＝ 終了コード（❌/⚠️）にも未実施の件数にも効かない
+    for (const status of [OK, BROKEN, UNREACHED, SKIPPED]) {
+      expect(result.status, status).not.toBe(status)
+    }
+    // 件数を数えていないので null のまま。⚠️/❌ ではないので手がかりも採らない (SPEC-SC-20)
     expect(result.pageHits).toBeNull()
     expect(result.hits).toBeNull()
     expect(result.injectedHits).toBeNull()
+    expect(result.diagnostics).toBeNull()
+    // 理由は targets.mjs の文字列がそのまま入る（二重管理しない）
+    expect(result.reason).toBe(target.excluded)
+    // 検出用セレクタは残る（結果ファイルの「検証したセレクタ」の表から消えない）
+    expect(result.selector).toBe(entry.selector)
   })
 
-  test('候補を上限で切り捨てたら、退避の理由と別の1行で区別できる', async () => {
-    // 上限より後ろに有資格のアンカーがあっても見えない。`not-qualified`（＝素の a href でない）と
-    // 同じ文言だけを出すと、次の一手を誤らせる
-    const base = `${ORIGIN}/app/info_jp_prc_reg_lst.do${SESSION}`
-    const anchors = Array.from({ length: MAX_CANDIDATES + 1 }, (_, i) =>
-      anchorOf(`${base}?rowNo=${i}`))
+  test('対象外の対象は手動チェックリストに項目がある', () => {
+    // ツールから外すだけで人の確認も無いと、その対象は**誰も見ていない**状態になる
+    // (FR-30 判定基準7)。チェックリストに `key` が現れることまでを機械で見る。
+    // 中身の手順までは見ない（脆くなるため）。見るのは「項目が在るか」だけ
+    const checklist = fs.readFileSync(path.join(rootDir, 'docs', 'MANUAL-CHECKLIST.md'), 'utf8')
 
-    const { target, gotos, result } = await runLinkTargetAsync({
-      anchors,
-      pathname: '/app/error.do',
-      hits: {}
-    })
-
-    expect(result.notes).toContain(describeReach(LINK_NOT_QUALIFIED))
-    expect(result.notes).toContain(LINK_TRUNCATED_NOTE)
-    // 退避なので組み立て URL を直打ちする（1.13.0 までと同じ観測に戻る）
-    expect(gotos).toHaveLength(1)
-    expect(gotos[0].url).toBe(target.url({ session: SESSION, entry: { url: '/app/info_jp_prc_reg_lst.do;' } }))
-    // 直打ちへ退避したときはパス確認を掛けない（着いた先が違っても件数は数える）
-    expect(result.pageHits).toBe(0)
+    for (const site of sites) {
+      for (const target of site.targets.filter((item) => item.excluded)) {
+        expect(checklist, `${site.site}/${target.key} の項目が MANUAL-CHECKLIST.md に無い`)
+          .toContain(target.key)
+      }
+    }
   })
 
-  test('切り捨てが起きていなければ、切り捨ての1行は出ない', async () => {
-    const base = `${ORIGIN}/app/info_jp_prc_reg_lst.do${SESSION}`
-    const { result } = await runLinkTargetAsync({
-      anchors: [anchorOf(base, { inlineHandler: true })],
-      pathname: '/app/error.do',
-      hits: {}
-    })
+  test('対象外は --only やログイン無しで外れても未実施に落ちない', () => {
+    const site = rakutenSite()
+    const excluded = targetOf('国内株式・株価検索')
+    const normal = targetOf('国内株式・個別銘柄')
 
-    expect(result.notes).toContain(describeReach(LINK_NOT_QUALIFIED))
-    expect(result.notes).not.toContain(LINK_TRUNCATED_NOTE)
-  })
-
-  test('links.mjs のソースにクリック・フォーム送信が現れない', () => {
-    // CON-10 の構造的な担保。リンクは**踏まず**、資格審査を通した href へ goto するだけにする。
-    // `addEventListener` で付いたハンドラは外から見えないため、クリックすると
-    // 実体が POST・フォーム送信であるリンクを踏む可能性を消せない (ADR-0011 の 3)
-    const source = fs.readFileSync(path.join(rootDir, 'scripts', 'selector-check', 'links.mjs'), 'utf8')
-
-    expect(source).not.toContain('.click(')
-    expect(source).not.toContain('submit(')
-    // 検査が空振りしていないこと（ファイルを読めており、goto する経路が実在すること）
-    expect(source).toContain('matchesTargetPath')
-  })
-
-  test('check.mjs の遷移する側もクリックせず、goto に渡る URL が2つに限られる', () => {
-    // 実際に `page.goto()` を呼ぶのは `check.mjs` 側。担保が一番要る行がここにある。
-    // 「たどれなかったらクリックで再試行」を足すとしたら書かれる場所もここ
-    const source = fs.readFileSync(path.join(rootDir, 'scripts', 'selector-check', 'check.mjs'), 'utf8')
-
-    /** トップレベルの関数1つ分（次の行頭 `}` まで）を切り出す */
-    const functionBody = (name) => {
-      const start = source.indexOf(`const ${name} = `)
-      expect(start, name).toBeGreaterThan(0)
-      const end = source.indexOf('\n}\n', start)
-      expect(end, name).toBeGreaterThan(start)
-      return source.slice(start, end)
+    // 検証を回さない経路（`--only` の対象外・楽天証券にログインしていない）でも
+    // 対象外は対象外のまま。`—` に混ぜると本当のやり残しと区別がつかなくなる
+    for (const reason of ['`--only` の対象外', '楽天証券にログインしていない']) {
+      const result = createSkippedResult(site, excluded.target, excluded.entry, reason)
+      expect(result.status, reason).toBe(EXCLUDED)
+      expect(result.reason, reason).toBe(excluded.target.excluded)
     }
 
-    // ファイル全体で許すクリックは TradingView の右クリック1箇所だけ (CON-10 の許容操作)
-    expect(source.match(/\.click\(/g)).toHaveLength(1)
-    expect(source).toContain('page.mouse.click(')
-    expect(source).not.toContain('submit(')
-
-    // リンク経由の到達に関わる2関数には、その1箇所も現れない
-    for (const name of ['findPortalLinkAsync', 'followPortalLinkAsync']) {
-      expect(functionBody(name), name).not.toContain('click')
-      expect(functionBody(name), name).not.toContain('submit')
-    }
-
-    // 遷移するのは1関数・1箇所だけで、渡す URL は「資格審査を通した href」か「組み立て URL」
-    const follow = functionBody('followPortalLinkAsync')
-    expect(follow.match(/\.goto\(/g)).toHaveLength(1)
-    expect(follow).toContain('const url = link.href ?? buildUrl(target, runner, entry)')
-    expect(follow).toContain('await page.goto(url,')
-    // 到達後のパス確認も Node 側の純関数を通す（ページ側に規則を持たせない）
-    expect(follow).toContain('matchesTargetPath(await readPathnameAsync(')
-    expect(functionBody('findPortalLinkAsync')).not.toContain('goto')
-  })
-
-  test('reach: link を持つサイトは link.origin を持ち、無ければハブを走査せず退避する', async () => {
-    // `check.mjs` は特定サイトの定数を名指しで import せず、検証中のサイト定義から引く
-    // (SPEC-SC-26「値は「検証中のサイト定義」から引く」)。突き合わせが無いと、
-    // 他サイトに `reach: 'link'` を付けたとき**別サイトのオリジンでハブを走査して黙って 0 件**になる。
-    // 0 件は `no-candidate` → 直打ち退避なので、例外も判定の変化も出ない (ADR-0011 の 9-6)。
-    //
-    // 1.18.0 で実データの `reach: 'link'` は 0 件になった（4対象を `goto` に戻した。ADR-0011 の 13）。
-    // 検査の空振りを避けるため、対象にするのは「`link` を持ちうるサイト」
-    // ＝ `site.link` を持つか、`reach: 'link'` の対象があるサイト。
-    // `reach` の1語で往復できる状態を保つ、という SPEC-SC-26 の前提そのものを固定する
-    const linkSites = sites.filter((site) =>
-      site.link !== undefined || site.targets.some((target) => target.reach === 'link'))
-
-    // 検査が空振りしていないこと（往復できるサイト定義が実在すること）
-    expect(linkSites.length).toBeGreaterThan(0)
-
-    for (const site of linkSites) {
-      const origin = site.link?.origin
-      expect(origin, site.label).toEqual(expect.any(String))
-      expect(origin.startsWith('https://'), site.label).toBe(true)
-      // パス・クエリを含まない単一のオリジンであること（ハブの判定に接頭辞として使う）
-      expect(origin, site.label).toBe(new URL(origin).origin)
-    }
-
-    // `reach: 'link'` を持つサイトは必ず `link` を持つ（戻したときに黙って 0 件にならない）
-    for (const site of sites.filter((site) => site.targets.some((target) => target.reach === 'link'))) {
-      expect(site.link?.origin, site.label).toEqual(expect.any(String))
-    }
-
-    // 規則3: `link.origin` が無ければ走査そのものを行わず退避する。
-    // 資格を満たすアンカーを置いても、他サイトのオリジンを流用して拾いに行かない
-    const { target, entry } = resolveSite(rakutenSite()).find((item) => item.target.key === 'お気に入り')
-    // 組み立て URL と区別できるように、ポータル側の href はセッションを変えておく
-    const portalSession = ';BV_SessionID=PORTAL0123456789.0123456789NN'
-    const href = `${ORIGIN}${targetPathOf(entry.url)}${portalSession}`
-    const { gotos, result } = await runLinkTargetAsync({
-      site: { ...rakutenSite(), link: undefined },
-      anchors: [anchorOf(href)],
-      pathname: `${targetPathOf(entry.url)}${portalSession}`,
-      hits: {}
-    })
-
-    expect(result.notes).toContain(describeReach(LINK_NO_CANDIDATE))
-    expect(gotos).toHaveLength(1)
-    expect(gotos[0].url).toBe(target.url({ session: SESSION, entry }))
-    expect(gotos[0].url).not.toBe(href)
-  })
-
-  test('資格を満たさなかった条件ごとの件数が、条件番号の順で1行になる', async () => {
-    // 一語の `not-qualified` では次の一手が決まらない。クエリなら許す集合を広げうるが、
-    // インラインハンドラなら到達方法そのものを諦める（分岐が正反対。ADR-0011 の 10）
-    const context = { entryUrl: FAVORITE, origin: ORIGIN, openQuery: RAKUTEN_OPEN_QUERY }
-    const link = (query) => qualified(`${ORIGIN}/app/info_jp_prc_reg_lst.do${SESSION}${query}`)
-
-    const picked = pickLink([
-      link('?eventType=delete'),
-      { ...link('?rowNo=1'), hasInlineHandler: true }, // 条件5 で落ちる（条件6 までは見ない）
-      link('?rowNo=2'),
-      { ...link(''), rawHref: '#' },
-      link('?rowNo=3')
-    ], context)
-
-    // 候補ごとに数えるのは**最初に落ちた条件**1つだけ
-    expect(picked.rejected).toEqual({ [REJECT_RAW_HREF]: 1, [REJECT_INLINE_HANDLER]: 1, [REJECT_QUERY]: 3 })
-
-    // 件数の降順ではなく条件番号の順（実行間で並びが動くと差分が読めない）。0 件の条件は書かない
-    expect(describeRejected(picked.rejected))
-      .toBe(`資格を満たさなかった内訳: ${REJECT_RAW_HREF} 1 件 / ${REJECT_INLINE_HANDLER} 1 件 / ${REJECT_QUERY} 3 件`)
-    expect(describeRejected({ [REJECT_QUERY]: 2, [REJECT_ORIGIN]: 1 }))
-      .toBe(`資格を満たさなかった内訳: ${REJECT_ORIGIN} 1 件 / ${REJECT_QUERY} 2 件`)
-
-    // 名前は固定の6語だけ（サイトの DOM にも URL にも依存しない。SPEC-SC-14）
-    expect(REJECT_CONDITIONS).toEqual([
-      REJECT_RAW_HREF, REJECT_SCHEME, REJECT_ORIGIN, REJECT_PATH, REJECT_INLINE_HANDLER, REJECT_QUERY
-    ])
-    expect(new Set(REJECT_CONDITIONS).size).toBe(6)
-    // 備考は markdownlint に掛かる。山括弧を含めない (SPEC-SC-23 の 8〜13)
-    expect(describeRejected(picked.rejected)).not.toMatch(/[<>]/)
-    // 1件も無ければ行を作らない（たどれた場合・`no-candidate` では出さない。規則5）
-    expect(describeRejected({})).toBeNull()
-    expect(describeRejected(undefined)).toBeNull()
-
-    // 配線: `not-qualified` で退避したとき、到達方法の1行に続いて備考に出る (SPEC-SC-23 の備考 11)
-    const { result } = await runLinkTargetAsync({
-      anchors: [anchorOf(`${ORIGIN}${targetPathOf(FAVORITE)}${SESSION}?rowNo=1`)],
-      pathname: '/app/error.do',
-      hits: {}
-    })
-    expect(result.notes).toContain(describeReach(LINK_NOT_QUALIFIED))
-    expect(result.notes).toContain(`資格を満たさなかった内訳: ${REJECT_QUERY} 1 件`)
-  })
-
-  test('資格6 で落ちたクエリのキー名が、伏せ字と上限を通してバッククォート付きで出る', async () => {
-    // 許す集合を広げてよいかは**キーの意味**で決まる。値は判断に要らないので出さない
-    // (SPEC-SC-14 / ADR-0011 の 7 の 5)
-    const context = { entryUrl: FAVORITE, origin: ORIGIN, openQuery: RAKUTEN_OPEN_QUERY }
-    const link = (query) => qualified(`${ORIGIN}/app/info_jp_prc_reg_lst.do${SESSION}${query}`)
-
-    // キー名だけを集める。同じキーが何度出ても1つ
-    const picked = pickLink([link('?rowNo=1&eventType=init'), link('?rowNo=2')], context)
-    expect(picked.queryKeys).toEqual(['rowNo', 'eventType', 'rowNo'])
-    expect(describeQueryKeys(picked.queryKeys))
-      .toBe('資格を満たさなかったクエリのキー: `eventType`, `rowNo`')
-
-    // 値は1文字も出さない
-    expect(describeQueryKeys(picked.queryKeys)).not.toContain('=')
-    expect(describeQueryKeys(picked.queryKeys)).not.toContain('init')
-
-    // アルファベット順（実行間で並びが動かないように）
-    expect(describeQueryKeys(['zzz', 'aaa', 'mmm']))
-      .toBe('資格を満たさなかったクエリのキー: `aaa`, `mmm`, `zzz`')
-
-    // SPEC-SC-22 の不記録判定を通す。セッションらしいキー名は伏せる
-    const withheld = describeQueryKeys(['BV_SessionID', 'eventType'])
-    expect(isSuspiciousToken('BV_SessionID')).toBe(true)
-    expect(withheld).toContain(`\`${TOKEN_WITHHELD}\``)
-    expect(withheld).not.toContain('BV_SessionID')
-    // 伏せ字は**必ずバッククォートの内側**。素で出ると MD033 で `npm run lint:md` が落ちる
-    expect(withheld.replace(/`[^`]*`/g, '')).not.toMatch(/[<>]/)
-
-    // 長いキー名は消毒（120文字）で切る。ハイフン・ドット区切りは
-    // `isSuspiciousToken` の長い英数字列の規則に当たらないため、ここが唯一の上限になる
-    const longKey = 'ab-'.repeat(60)
-    expect(isSuspiciousToken(longKey)).toBe(false)
-    const long = describeQueryKeys([longKey])
-    expect(long).toContain(sanitize(longKey))
-    expect(long).not.toContain(longKey)
-    expect(sanitize(longKey).length).toBe(MAX_TEXT)
-
-    // バッククォートを含むキーはコードスパンを壊すので伏せる
-    expect(describeQueryKeys(['ro`wNo'])).toBe(`資格を満たさなかったクエリのキー: \`${TOKEN_WITHHELD}\``)
-    // 伏せ字・消毒を通した後もバッククォートの対応が崩れない（コードスパンの数が偶数）
-    for (const keys of [[longKey], ['ro`wNo'], ['BV_SessionID', 'eventType']]) {
-      expect(describeQueryKeys(keys).match(/`/g).length % 2).toBe(0)
-    }
-
-    // 上限 10 個で切る
-    const many = Array.from({ length: MAX_QUERY_KEYS + 5 }, (_, i) => `k${String(i).padStart(2, '0')}`)
-    expect(describeQueryKeys(many).match(/`/g)).toHaveLength(MAX_QUERY_KEYS * 2)
-    expect(describeQueryKeys(many)).toContain('`k00`')
-    expect(describeQueryKeys(many)).not.toContain('`k10`')
-
-    // 条件6 で落ちた候補が無ければ行を作らない（規則5）
-    expect(describeQueryKeys([])).toBeNull()
-    expect(describeQueryKeys(undefined)).toBeNull()
-    expect(pickLink([{ ...link(''), hasInlineHandler: true }], context).queryKeys).toEqual([])
-
-    // 配線: 内訳の1行に続いて備考に出る (SPEC-SC-23 の備考 12)
-    const { result } = await runLinkTargetAsync({
-      anchors: [anchorOf(`${ORIGIN}${targetPathOf(FAVORITE)}${SESSION}?rowNo=1&eventType=init`)],
-      pathname: '/app/error.do',
-      hits: {}
-    })
-    expect(result.notes).toContain('資格を満たさなかったクエリのキー: `eventType`, `rowNo`')
-    // キーの値・href・セッションは載せない (NFR-12)
-    expect(JSON.stringify(result)).not.toContain('BV_SessionID')
-  })
-
-  test('no-candidate のときは走査の規模が1行になる', async () => {
-    // 「リンクが無い」には3つの原因（ハブが無い／フレームを読めていない／本当に無い）があり、
-    // 文言だけでは区別できない。出すのは件数だけで、URL もページ名も出さない (SPEC-SC-26)
-    expect(describeScan({ frames: 2, links: 137, matched: 0 }))
-      .toBe('ハブ 2 フレームを走査し、リンク 137 件のうちパス一致は 0 件')
-    // ハブが1つも無かった場合（利用者がログイン後のタブを閉じた）と読み分けられる
-    expect(describeScan({ frames: 0, links: 0, matched: 0 }))
-      .toBe('ハブ 0 フレームを走査し、リンク 0 件のうちパス一致は 0 件')
-    expect(describeScan(undefined)).toBe('ハブ 0 フレームを走査し、リンク 0 件のうちパス一致は 0 件')
-    expect(describeScan({ frames: 1, links: 3, matched: 0 })).not.toMatch(/[<>]/)
-
-    // 「フレームを読めていない」と「本当にリンクが 0 件」は、どちらも `links 0` になる。
-    // 読めなかった数を別に出さないと3原因のうち2つが区別できない
-    expect(describeScan({ frames: 2, links: 0, matched: 0, unreadable: 2 }))
-      .toBe('ハブ 2 フレームを走査し、リンク 0 件のうちパス一致は 0 件（うち読めなかったフレーム 2 件）')
-    // 0 件のときは1行の書式を変えない（読めているのにリンクが無い、が素直に読める）
-    expect(describeScan({ frames: 2, links: 0, matched: 0, unreadable: 0 }))
-      .toBe('ハブ 2 フレームを走査し、リンク 0 件のうちパス一致は 0 件')
-    expect(describeScan({ frames: 1, links: 0, matched: 0, unreadable: 1 })).not.toMatch(/[<>]/)
-
-    // 配線: パスを含まないリンクしか無いフレームを走査した場合 (SPEC-SC-23 の備考 13)
-    const { result } = await runLinkTargetAsync({
-      anchors: [
-        anchorOf(`${ORIGIN}/app/home.do`),
-        anchorOf(`${ORIGIN}/app/info_jp_prc_dtl.do${SESSION}`),
-        anchorOf('https://www.rakuten-sec.co.jp/')
-      ],
-      pathname: '/app/error.do',
-      hits: {}
-    })
-
-    expect(result.notes).toContain(describeReach(LINK_NO_CANDIDATE))
-    expect(result.notes).toContain(describeScan({ frames: 1, links: 3, matched: 0 }))
-    // `no-candidate` では資格審査そのものが起きないので、内訳・キーの行は出ない（互いに排他）
-    expect(result.notes.some((note) => note.startsWith('資格を満たさなかった'))).toBe(false)
-
-    // 配線: フレームを読めなかった場合。走査したフレーム数はそのままで、
-    // 読めなかった数が別に出る（`links 0` を「本当にリンクが無い」と読み違えない）
-    const unreadable = await runLinkTargetAsync({
-      anchors: [anchorOf(`${ORIGIN}${targetPathOf(FAVORITE)}${SESSION}`)],
-      pathname: '/app/error.do',
-      hits: {},
-      readable: false
-    })
-
-    expect(unreadable.result.notes).toContain(describeReach(LINK_NO_CANDIDATE))
-    expect(unreadable.result.notes)
-      .toContain(describeScan({ frames: 1, links: 0, matched: 0, unreadable: 1 }))
+    // 対象外でない対象は従来どおり未実施になり、渡した理由がそのまま残る
+    const skipped = createSkippedResult(site, normal.target, normal.entry, '`--only` の対象外')
+    expect(skipped.status).toBe(SKIPPED)
+    expect(skipped.reason).toBe('`--only` の対象外')
   })
 })
 
@@ -1477,6 +974,34 @@ test.describe('結果ファイルの書式', () => {
     const { content } = await lint({ strings: { content: report }, config: markdownlintConfig() })
     const violations = content.map((v) => `${v.lineNumber}: ${v.ruleNames.join('/')} ${v.errorDetail ?? ''}`.trim())
     expect(violations, report).toEqual([])
+  })
+
+  test('対象外は総合判定・未実施に混ざらず、専用の列と節に出る', async () => {
+    // 理由は targets.mjs の実データから引く（結果ファイル側で文言を持ち直さない）
+    const target = sites.find((site) => site.site === 'rakuten').targets
+      .find((item) => item.key === '国内株式・株価検索')
+    const reason = target.excluded
+
+    const report = renderReport(reportInput([
+      { ...baseResult, key: '国内株式・個別銘柄', title: '国内株式・個別銘柄', status: 'ok', pageHits: 1, hits: 3 },
+      { ...baseResult, status: EXCLUDED, reason, pageHits: null, hits: null, injectedHits: null }
+    ]))
+
+    // 総合判定は ✅ のまま。破損・未到達・未実施はいずれも 0 件（恒久的な赤信号を出さない）
+    expect(report).toContain('| 総合判定 | ✅ 破損 0 件 / 未到達 0 件 / 未実施 0 件（対象外 1 件は判定に含めない） |')
+    // サマリでは独立した列になる（2対象のうち ✅ 1 件・対象外 1 件）
+    expect(report).toContain('| 楽天証券 | 2 | 1 | 0 | 0 | 0 | 1 |')
+    // 行ごと消さない。判定の列は 👤 で、件数は数えていないので `—`、理由が備考に入る
+    expect(report).toContain(`| 国内株式・株価検索 | 👤 | — | — | — | ${reason} |`)
+    // 「未実施の対象」には現れない ＝ 本当のやり残しと読み分けられる
+    expect(report).toContain('## 未実施の対象\n\nなし。')
+    expect(report).toContain('## 対象外の対象（人が確認する）')
+    expect(report).toContain(`| 楽天証券 | 国内株式・株価検索 | ${reason} |`)
+    // 記号の意味も表に出す（読み手が ❌ や — と取り違えない）
+    expect(report).toContain('| 👤 | 対象外。')
+
+    const { content } = await lint({ strings: { content: report }, config: markdownlintConfig() })
+    expect(content.map((v) => `${v.lineNumber}: ${v.ruleNames.join('/')}`), report).toEqual([])
   })
 
   test('手がかり節に到達判定の行が必ず1行出る', async () => {
