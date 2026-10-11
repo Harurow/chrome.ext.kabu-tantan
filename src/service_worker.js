@@ -414,7 +414,7 @@ const getRakutenSecUrlAsync = async (type, code) => {
   if (sessionId) {
     switch (type) {
       case 'jp':
-        url = `https://member.rakuten-sec.co.jp/app/info_jp_prc_stock.do;BV_SessionID=${sessionId}?eventType=init&dscrCd=${code}&marketCd=1&chartPeriod=1&dscrCd=6526&gmn=J&smn=01&lmn=01&fmn=01`
+        url = `https://member.rakuten-sec.co.jp/app/info_jp_prc_stock.do;BV_SessionID=${sessionId}?eventType=init&dscrCd=${code}&marketCd=1&chartPeriod=1&gmn=J&smn=01&lmn=01&fmn=01`
         break
       case 'us':
         url = `https://member.rakuten-sec.co.jp/app/info_us_prc_stock.do;BV_SessionID=${sessionId}?eventType=init&tickerCd=${code}&chartType=&l-id=mem_us_fu_a_a`

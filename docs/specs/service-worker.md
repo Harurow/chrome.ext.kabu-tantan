@@ -112,10 +112,20 @@ chrome.runtime.onInstalled.addListener((details) => {
 2. タブ URL から `/[;?&]BV_SessionID=([^?&]+)/` でセッション ID を抽出（最初に見つかったもの）
 3. セッション ID があれば銘柄ページ URL を組み立てる
 
-| type | URL |
-| --- | --- |
-| `jp` | `https://member.rakuten-sec.co.jp/app/info_jp_prc_stock.do;BV_SessionID=<id>?eventType=init&dscrCd=<code>&…` |
-| `us` | `https://member.rakuten-sec.co.jp/app/info_us_prc_stock.do;BV_SessionID=<id>?eventType=init&tickerCd=<code>&…` |
+> **1.20.2 から。** 1.20.1 までの `jp` の URL は `…&chartPeriod=1&dscrCd=6526&gmn=J…` と
+> **`dscrCd` を2つ持ち、2つ目が直書きの `6526`** だった。初期実装（5265886）からの残骸で、銘柄コードとは無関係。
+
+| type | パス | クエリ（**完全形。省略しない**） |
+| --- | --- | --- |
+| `jp` | `/app/info_jp_prc_stock.do;BV_SessionID=<id>` | `?eventType=init&dscrCd=<code>&marketCd=1&chartPeriod=1&gmn=J&smn=01&lmn=01&fmn=01` |
+| `us` | `/app/info_us_prc_stock.do;BV_SessionID=<id>` | `?eventType=init&tickerCd=<code>&chartType=&l-id=mem_us_fu_a_a` |
+
+- オリジンは両方とも `https://member.rakuten-sec.co.jp`
+- **`jp` のクエリは `dscrCd` を1つだけ持ち、その値は `<code>`（銘柄コード）であること。**
+  パラメータの並びも上表のとおりとする
+- `jp` のクエリは実サイト検証ツールの `RAKUTEN_STOCK_QUERY`（`scripts/selector-check/targets.mjs`。
+  SPEC-SC-06）と、銘柄コード部分（`7203`）を除いて同一。片方を変えるときはもう片方を確認する
+  （両者はコードを共有しない。ツールは `src/` を読み込まないため）
 
 **ログイン済みタブが無ければ `null`** を返し、メニューに項目を出さない。
 
@@ -130,8 +140,13 @@ chrome.runtime.onInstalled.addListener((details) => {
 > TradingView の右クリックメニューでは `<a href>` として**ページの DOM に書き出していた**（SPEC-CS-28）。
 
 - 要件: FR-06, NFR-03, CON-04
-- 検証: `auto`（`tests/service-worker.spec.mjs` の describe **`service_worker: 証券会社の応答`**。SPEC-MSG-06）／
-  `manual`（楽天証券にログインした状態で TradingView を開き、メニューに出ること）
+- 検証: `auto`（`tests/service-worker.spec.mjs` の describe **`service_worker: 証券会社の応答`**。SPEC-MSG-06）
+  - **`楽天証券の国内株 URL は dscrCd を1つだけ持ち、値は銘柄コードである`**（1.20.2 で追加済み）:
+    `rakuten-sec:open`（`code: '7203'`, `type: 'jp'`）で `chrome.tabs.create` に渡った URL について、
+    `new URL(url).searchParams.getAll('dscrCd')` が `['7203']` と等しく、
+    `new URL(url).search` が `?eventType=init&dscrCd=7203&marketCd=1&chartPeriod=1&gmn=J&smn=01&lmn=01&fmn=01` と完全一致すること
+  - `manual`（楽天証券にログインした状態で TradingView を開き、メニューに出ること。
+    国内株の項目を開き、指定した銘柄の個別銘柄ページが表示されること）
 
 ## SPEC-SW-07 内藤証券 URL の生成
 

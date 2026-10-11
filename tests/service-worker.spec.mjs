@@ -489,6 +489,20 @@ test.describe('service_worker: 証券会社の応答', () => {
     expect(created[0]).toContain('7203')
   })
 
+  // SPEC-SW-06: 回帰テスト。1.20.1 までは直書きの `&dscrCd=6526` が2つ目の dscrCd として残っていた
+  test('楽天証券の国内株 URL は dscrCd を1つだけ持ち、値は銘柄コードである', async ({ serviceWorker }) => {
+    const { created } = await callBrokerHandlersAsync(serviceWorker, {
+      'https://member.rakuten-sec.co.jp/*':
+        `https://member.rakuten-sec.co.jp/app/home.do;BV_SessionID=${SECRET}?eventType=init`
+    }, ['rakuten-sec:open'])
+
+    expect(created).toHaveLength(1)
+    const url = new URL(created[0])
+    expect(url.searchParams.getAll('dscrCd')).toEqual(['7203'])
+    // パラメータの並びも仕様の表どおりであること
+    expect(url.search).toBe('?eventType=init&dscrCd=7203&marketCd=1&chartPeriod=1&gmn=J&smn=01&lmn=01&fmn=01')
+  })
+
   test('内藤証券の info と open の応答に URL を含めない', async ({ serviceWorker }) => {
     const { responses, created } = await callBrokerHandlersAsync(serviceWorker, {
       'https://*.qhit.net/naito/iswebptt2/*':

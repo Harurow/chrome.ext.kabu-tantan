@@ -6,7 +6,7 @@
 
 - **拡張機能名:** 株リンク
 - **Manifest:** v3
-- **バージョン:** `src/manifest.json` の `version`（`package.json` と一致させる。`npm run validate` が検証する）
+- **バージョン:** `src/manifest.json` の `version`（`package.json` / `package-lock.json` と一致させる。`npm run validate` が検証する）
 - **ライセンス:** MIT
 
 ## クイックスタート
@@ -224,14 +224,17 @@ async function attachAsync () {
    ```
 
 2. `npm test` を実行する（`externalUrls` の整合性テストが走る）
-3. `src/manifest.json` と `package.json` の `version` を更新する
+3. `src/manifest.json` と `package.json` の `version` を更新し、`npm install --package-lock-only` で lock を同期する
 
 > `key` は `chrome.storage.sync` に保存される識別子。変更すると既存ユーザーの設定が失われる。
 
 ### バージョニング
 
-セマンティックバージョニング。`src/manifest.json` と `package.json` の**両方**を更新する
-（`npm run validate` が不一致を検出する）。
+セマンティックバージョニング。`src/manifest.json` と `package.json` の**両方**を更新し、
+`npm install --package-lock-only` で `package-lock.json` を同期する
+（`npm run validate` が3者の不一致を検出する。SPEC-MF-09）。
+
+> `package.json` を手で書き換えるだけだと lock が追随しない。1.10.0〜1.20.1 の間、lock の version は 1.10.0 のまま止まっていた。
 
 ## テスト
 

@@ -16,12 +16,14 @@
 - 要件: FR-01, FR-11, CON-01
 - 検証: `validate`（必須フィールド、バージョン形式、`__MSG_` キーの実在）
 
-## SPEC-MF-02 バージョンの二重管理
+## SPEC-MF-02 バージョンの一致
 
 `src/manifest.json` と `package.json` の `version` は常に一致させる。
 
 > SPEC-MF-01 の表に実際のバージョン値を書き写さない。過去に書き写した値が 1.11.0 のまま
 > 古くなっていた。値の情報源は `src/manifest.json` と `package.json` だけにする。
+
+`package-lock.json` の `version` も同じ値に揃える（SPEC-MF-09）。
 
 - 要件: NFR-06
 - 検証: `validate`（不一致で exit 1）
@@ -100,3 +102,43 @@
 
 - 要件: FR-05
 - 検証: `manual`（拡張アイコンをクリックしてオプションページが開くこと）
+
+## SPEC-MF-09 package-lock.json のバージョン同期
+
+> **1.20.2 から。**
+
+実装: `scripts/validate-manifest.mjs`（`npm run validate`）
+
+`package-lock.json`（リポジトリ直下。git 管理下）の次の2箇所が `package.json` の `version` と一致すること。
+
+| 検査対象 | 不一致時 |
+| --- | --- |
+| `version`（トップレベル） | fail |
+| `packages[""].version` | fail |
+| `package-lock.json` が存在しない・JSON として読めない・`packages[""]` が無い | fail |
+
+- 不一致を warn にしない（exit 1 にする）
+- fail のメッセージは、2行目以降に直し方として **`npm install --package-lock-only`** を含める。
+  形式は既存の `version 不一致` に揃える。例:
+
+  ```text
+  ❌ version 不一致: package-lock.json の version=1.10.0 / package.json=1.20.2
+     → package.json を正として `npm install --package-lock-only` で package-lock.json を同期する
+  ```
+
+- 比較の正は `package.json`。lock を手で書き換える案内はしない
+- 既存の検査（SPEC-MF-01 / 02 / 04〜07）の順序・メッセージは変えない。成功時の `✅` 行も変えない
+
+> **経緯。** 1.10.0〜1.20.1 の間、`package-lock.json` の `version` と `packages[""].version` は
+> `1.10.0` のまま止まっていた。バージョンを `package.json` の手書きで上げており、
+> `npm install` を伴わない版上げでは lock が追随しないため。validate は
+> `src/manifest.json` と `package.json` しか比べておらず、検出できなかった。
+> lock は 1.20.2 の作業ツリーで `npm install --package-lock-only` により同期した。
+
+- 要件: NFR-06
+- 検証: `validate`（本節の検査そのもの）／`manual`:
+  1. `npm run validate` が exit 0 で終わること（同期済みの状態）
+  2. `package-lock.json` のトップレベル `version` を `0.0.0` に書き換えて `npm run validate` を実行し、
+     exit 1 になり、メッセージに `package-lock.json` と `npm install --package-lock-only` が出ること
+  3. 同様に `packages[""].version` だけを書き換えた場合も exit 1 になること
+  4. 書き換えた値を元に戻し、exit 0 に戻ること

@@ -47,6 +47,27 @@ if (manifest.version !== pkg.version) {
   fail(`version 不一致: manifest.json=${manifest.version} / package.json=${pkg.version}`)
 }
 
+// --- package-lock.json のバージョン（SPEC-MF-09） ---
+// 版上げを package.json の手書きで行うと lock が追随しないため、ここで検出する
+const lockSyncHint = '\n   → package.json を正として `npm install --package-lock-only` で package-lock.json を同期する'
+let lock = null
+try {
+  lock = JSON.parse(await readFile(path.join(root, 'package-lock.json'), 'utf8'))
+} catch (e) {
+  fail(`package-lock.json を読めません: ${e.code ?? e.message}${lockSyncHint}`)
+}
+if (lock) {
+  if (lock.version !== pkg.version) {
+    fail(`version 不一致: package-lock.json の version=${lock.version} / package.json=${pkg.version}${lockSyncHint}`)
+  }
+  const rootPackage = lock.packages?.['']
+  if (!rootPackage) {
+    fail(`package-lock.json に packages[""] がありません${lockSyncHint}`)
+  } else if (rootPackage.version !== pkg.version) {
+    fail(`version 不一致: package-lock.json の packages[""].version=${rootPackage.version} / package.json=${pkg.version}${lockSyncHint}`)
+  }
+}
+
 // --- アイコン ---
 for (const [size, ref] of Object.entries(manifest.icons ?? {})) {
   if (!await exists(ref)) {
