@@ -44,7 +44,7 @@ flowchart TD
 | 担当 | 責務 | 書き換えてよい場所 |
 | --- | --- | --- |
 | `analyst` | 利用者と対話して要件を決める | `docs/requirements/` |
-| `architect` | 要件から設計・仕様を起こす | `docs/specs/`, `docs/ARCHITECTURE.md` |
+| `architect` | 要件から設計・仕様を起こす | `docs/requirements/`, `docs/specs/`, `docs/ARCHITECTURE.md`, `docs/adr/` |
 | `developer` | 仕様に従って実装する | `src/`, `tests/`, `scripts/`, ルート設定 |
 | `reviewer` | 実装と文書を突き合わせて検証する | なし（読み取り専用） |
 

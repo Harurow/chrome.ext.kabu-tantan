@@ -40,7 +40,7 @@ flowchart TD
 | --- | --- | --- | --- |
 | `lead` | 全体調整。工程を回す | opus | なし（自分では作らない） |
 | `analyst` | 利用者と対話して要件を決める | opus | `docs/requirements/` |
-| `architect` | 要件から設計・仕様を起こす | opus | `docs/specs/`, `docs/ARCHITECTURE.md` |
+| `architect` | 要件から設計・仕様を起こす | opus | `docs/requirements/`, `docs/specs/`, `docs/ARCHITECTURE.md`, `docs/adr/` |
 | `developer` | 仕様に従って実装する | opus | `src/`, `tests/`, `scripts/`, ルート設定 |
 | `reviewer` | 実装と文書を突き合わせて検証する | opus | **なし（読み取り専用）** |
 

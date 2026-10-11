@@ -493,7 +493,7 @@ chrome.runtime.onInstalled.addListener((details) => {
 | 4 | `left: 300, top: 200` を指定 | `left: 300`・`top: 200` で開いた。指定しないと `0, 0` |
 | 5 | `width: 50, height: 50` を指定 | `86×73` に広げられた（下限がある。値は環境依存と推測） |
 | 6 | 小窓のページのボタンで `window.close()` | 閉じた（`page` の `close` イベント。その後 `popup` のウィンドウは0）。`chrome.tabs.update` で別の URL に移った後でも閉じた |
-| 7 | 小窓のページの `innerWidth` / `innerHeight` | **1280×720**（ウィンドウは 440×260）。Playwright が既定のビューポートに置き換える。**実際のウィンドウでの収まりは自動テストで測れない**（SPEC-NT-05） |
+| 7 | 小窓のページの `innerWidth` / `innerHeight` | **1280×720**（試したときのウィンドウは 440×260。現行の定数は 440×280 で、表示領域が置き換わる点は同じ）。Playwright が既定のビューポートに置き換える。**実際のウィンドウでの収まりは自動テストで測れない**（SPEC-NT-05） |
 | 8 | 小窓のページの `document.hasFocus()` | `true` |
 
 ### 検証（SPEC-SW-10）
