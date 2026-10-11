@@ -102,7 +102,7 @@ const remakeContextMenus = () => {
 | --- | --- |
 | `auto` | `tests/service-worker.spec.mjs` の describe **`service_worker: コンテキストメニューの再構築`**（1.20.3 で追加）。下の4件が SPEC-SW-02 の分。**同じ describe の5件目 `storage に残った未知のキーは読み飛ばし、エラーを出さない` は SPEC-ST-03 の自動テスト 2**（2026-10-11 追加） |
 | `review` | 契機のハンドラ（SPEC-SW-03）が `remakeContextMenus()` を呼ぶだけであること。`removeAll` / `create` の呼び出しが `rebuildContextMenusAsync()` / `createContextMenuAsync()` の外に無いこと |
-| `manual` | 下の「手動確認」（`docs/MANUAL-CHECKLIST.md` **D-2**） |
+| `manual`（**任意**） | 下の「手動確認」（`docs/MANUAL-CHECKLIST.md` **D-2**）。**Chrome の画面の表示そのもの**（エラー欄・右クリックメニューの描画）だけを見る。依頼の対象にしない（2026-10-11 に必須から変更） |
 
 **自動テスト（describe `service_worker: コンテキストメニューの再構築`）:**
 
@@ -130,13 +130,52 @@ const remakeContextMenus = () => {
 - 1件目・4件目は 1.20.2 の実装では失敗する作りである（1件目は記録が `removeAll, removeAll, …` の順になり `lastError` が出る。
   4件目は B が呼び出し時点で設定を読むので2区間目が `keys` になる）
 
-**手動確認（`docs/MANUAL-CHECKLIST.md` D-2。手順は同じ）:**
+**手動確認（`docs/MANUAL-CHECKLIST.md` D-2。任意。手順は同じ）:**
 
 1. `chrome://extensions` の株リンクのカードからエラーの一覧を開き、表示中のエラーをすべて消す（ボタンの表示名は Chrome の版・表示言語で異なる）
 2. `chrome://extensions` の一覧に戻り、株リンクのカードにある Service Worker のリンク（例: 「ビューを検査」の横の `service worker`。表示名は版・表示言語で異なる）から DevTools を開き、コンソールで `remakeContextMenus(); remakeContextMenus()` を実行する
 3. コンソールにもエラー欄にも `Unchecked runtime.lastError` と `remakeContextMenus:` が出ないこと
 4. 任意のページで `7203` を選択して右クリックし、株リンクの項目が**有効な遷移先ごとに1回ずつ**、オプションページの並び順で並ぶこと
-5. 拡張を再読み込みしたあと（`onInstalled`）も、エラー欄が空のままであること
+
+**自動テストとの分担（2026-10-11 に整理。FR-26 判定基準 3 と同じく、自動と手動で同じことを二重に持たない）:**
+
+| 旧手動確認 | 自動テストが代わっている範囲 | 手動に残るもの |
+| --- | --- | --- |
+| 手順 3（作り直しを2回続けてもエラーが出ない） | `並行して呼んでも create の lastError が出ない` が `create` の `lastError` 0件と `console.error` 0回を確かめる。現行実装では、メニュー構築がエラー欄に出す経路はこの2つしか無い（下記） | エラー欄の**表示**。Playwright から読めない（下記の実測） |
+| 手順 4（1回ずつ・設定の順） | 同じテストの呼び出し記録 `['removeAll', ...keys, 'removeAll', ...keys]` の完全一致と `lastError` 0件で、最後に登録された項目が `keys` の順に1回ずつであることが決まる（同じ id の2回目の `create` は `duplicate id` で失敗することを3件目のテストが実際に起こして確かめている）。設定変更の重なりは4件目 | 右クリックメニューの**描画**。作った順に描くのは Chrome の振る舞い。登録済みの項目を読み出す API は `chrome.contextMenus` に無い（事実）。Playwright からブラウザ自身の右クリックメニューを開いて読めるかは試していない（推測では読めない） |
+| 旧手順 5（拡張を再読み込みしたあともエラー欄が空） | **確認から外した**（不具合を見分けられない。下記の実測） | なし |
+
+- **メニュー構築がエラー欄に出す経路（実装の読み取り。事実）:** `create` は必ず `createContextMenuAsync()` 経由で、
+  そのコールバックが `chrome.runtime.lastError` を読む。したがって現行実装は `create` から `Unchecked runtime.lastError` を出さない。
+  `removeAll` は Promise 形式で、失敗は reject になる。どちらの失敗も `remakeContextMenus()` の `.catch` が
+  `console.error('remakeContextMenus:', …)` に1回出す。`review` 行の「`removeAll` / `create` の呼び出しが2関数の外に無い」がこの前提を守る
+- **任意にした理由:** 手動に残るのはエラー欄と右クリックメニューの**Chrome による表示**だけで、拡張のコードの退行はそこに現れる前に自動テストで落ちる。
+  表示の確認は「1.20.3 の是正を利用者の Chrome で一度見届ける」意味しか持たず、`src/service_worker.js` を変えるたびに繰り返す価値が無い。
+  削除せず任意で残すのは、元の利用者報告がエラー欄の表示だったため（見届けたいときの手順として残す）。
+  FR-05 は手動確認を ✅ の条件にしていない（FR-05 の「手動確認」欄）ので、任意にしても FR-05 の状態は動かない
+
+**実測（2026-10-11。メインセッションの使い捨てスクリプト。リポジトリには入れていない）— エラー欄は Playwright から読めない:**
+
+| 項目 | 内容 |
+| --- | --- |
+| 方法 | 既存テストと同じ `chromium.launchPersistentContext('', { channel: 'chromium', args: ['--disable-extensions-except=…', '--load-extension=…'] })` で 1.20.2（7405875 の `src/`）を読み込む。`chrome://extensions` を開き `chrome.developerPrivate.updateProfileConfiguration({ inDeveloperMode: true })` で開発者モードを有効にする。Service Worker で `remakeContextMenus(); remakeContextMenus()` を実行し、`chrome.developerPrivate.getExtensionInfo(id)` の `runtimeErrors` を読む |
+| 事実 1 | 不具合そのものは再現する。`create` を差し替えてコールバックで数えると、1.20.2 で `lastError` が **22 件**出た |
+| 事実 2 | `runtimeErrors` は**常に空**。ヘッドレス／画面あり、Preferences に `extensions.ui.developer_mode: true` を書いて起動、`--error-console` フラグの組み合わせ4通りと画面ありの計5回とも空 |
+| 事実 3 | 比較用に Service Worker で出した `console.error('KTT-PROBE …')` と `setTimeout(() => { throw … })` も `runtimeErrors` に載らなかった。この環境ではエラー欄そのものに何も記録されない |
+| 結論 | エラー欄の表示は Playwright から確かめられない。原因（`lastError` と `console.error`）は自動テストが直接記録して0件を確かめている |
+
+**実測（2026-10-11。architect の使い捨てスクリプト。リポジトリには入れていない）— 再読み込み:**
+
+| 項目 | 内容 |
+| --- | --- |
+| 再読み込みの再現 | **できた。** 上と同じ起動方法で、`chrome://extensions` で開発者モードを有効にしたうえで `chrome.developerPrivate.reload(id, { failQuietly: true })`、または Service Worker から `chrome.runtime.reload()` を呼ぶと、新しい Service Worker が立ち上がり `context` の `serviceworker` イベントが来た（各1回） |
+| 再現しなかった条件 | 開発者モードを有効にせず `chrome://extensions` も開かずに `chrome.runtime.reload()` を呼んだ1回は、新しい Service Worker が立ち上がらず、拡張のページが `net::ERR_BLOCKED_BY_CLIENT` になった。**どちらの差が効いているかは切り分けていない** |
+| 再読み込みで起きる作り直し | 1.20.2 と現行（1.20.3）の `src/` を作業用ディレクトリに複製し、`service_worker.js` の先頭に `create` / `removeAll` / `onInstalled` を記録する処理を足して、`developerPrivate.reload` を2回ずつ実行した。**両版とも毎回** `onInstalled` の `reason` は `update`、`removeAll` 1回・`create` 22回・`lastError` **0件**。初回インストール時（`reason: 'install'`）も両版とも同じ |
+| 結論 | 再読み込みは作り直しを1回起こすだけで、重なりを作らない。**1.20.2 でもエラーが出ないので、旧手順 5 は不具合を見分けられない。** 自動化もしない（見分ける力の無い確認を移しても守るものが無い） |
+
+- **SPEC-CS-19 の「拡張機能の再読み込みは Playwright から再現できず」は本件には当てはまらない。** 上のとおり再読み込みそのものは再現できた。
+  SPEC-CS-19 が自動化できないとしている本体は「切断状態（古いタブの Content Script）」で、そちらが再現できるかは確かめていない（SPEC-CS-19 に注記した）
+- 推測（未検証）: 利用者の Chrome でも、再読み込みだけでは他の契機（`onStartup` / `storage.onChanged`）は起きず、重ならない。Playwright の Chromium と同じ結果になると見ている
 
 > Chrome 本体の更新（`onInstalled` の `chrome_update` と `onStartup` の重なり）は手元で再現できないため、自動テストに委ねる。
 

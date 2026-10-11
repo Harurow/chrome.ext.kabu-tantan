@@ -1329,7 +1329,12 @@ TradingView だけ、起動時に DOM を追加する処理（`createKabuLinkMen
 
 - 要件: NFR-14, NFR-01, NFR-05, CON-01, CON-03
 - 検証: `manual`（**自動テストにできない**。拡張機能の再読み込みは Playwright から再現できず、
-  切断状態は Chrome の内部状態のため。`docs/MANUAL-CHECKLIST.md` G-1〜G-7。
+  切断状態は Chrome の内部状態のため。
+  〔2026-10-11 追記〕**拡張機能の再読み込みそのものは Playwright から再現できた**（開発者モードを有効にして
+  `chrome.developerPrivate.reload` または `chrome.runtime.reload()`。実測は SPEC-SW-02 の「手動確認」）。
+  再読み込みの後に**古いタブの Content Script が切断状態になるところまで再現できるか**は確かめていない。
+  本節を自動テストにできないとする判断は、それを確かめるまで変えない。
+  手順は `docs/MANUAL-CHECKLIST.md` G-1〜G-7。
   加えて、canvas 監視に門を足した 1.13.0 の正常時の非退行は
   **A-8**（銘柄が無い画面でボタンが隠れる）で見る。判定基準3。
   **ボタンの表示切替は (a) なので段階5 で自動テストへ移せる**（FR-26。切断状態そのものは移せない））／
