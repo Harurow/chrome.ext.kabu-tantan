@@ -1,6 +1,6 @@
 {
   "name": "chrome.ext.kabu-tantan",
-  "version": "1.20.2",
+  "version": "1.20.3",
   "private": true,
   "description": "証券会社サイトから外部の株式情報ページへ遷移するリンクを追加する Chrome 拡張機能「株リンク」",
   "homepage": "https://github.com/Harurow/chrome.ext.kabu-tantan",

@@ -110,6 +110,7 @@ export default [
         getUrl: 'readonly',
         compareVersion: 'readonly',
         shouldOpenOptionsPage: 'readonly',
+        remakeContextMenus: 'readonly',
         onMessageRakutenSecInfoAsync: 'readonly',
         onMessageRakutenSecOpenAsync: 'readonly',
         onMessageNaitoSecInfoAsync: 'readonly',

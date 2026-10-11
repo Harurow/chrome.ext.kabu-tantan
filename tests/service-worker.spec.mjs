@@ -536,6 +536,193 @@ test.describe('service_worker: 証券会社の応答', () => {
   })
 })
 
+// SPEC-SW-02 / SPEC-SW-03: コンテキストメニューの再構築を直列化する。
+// 回帰テスト: f3af82f〜1.20.2 は排他が無く、契機が近接すると
+// get → get → removeAll → removeAll → create×N → create×N と交錯し、
+// 後の回の create が全件 duplicate id で失敗していた
+test.describe('service_worker: コンテキストメニューの再構築', () => {
+  /**
+   * 起動時（onInstalled）の再構築を待ち切ってから、`chrome.contextMenus.removeAll` /
+   * `chrome.contextMenus.create` / `console.error` を記録付きに差し替える。
+   * 記録は Service Worker の `globalThis.kttMenuRecorder` に置き、各テストの evaluate から使う。
+   * `removeAll` は記録してから `recorder.removeAll` に渡すので、テストはそこを差し替えて失敗や待機を作る。
+   * `context` はテストごとに作り直されるので差し替えを戻す処理は要らない
+   * @returns {Promise<string[]>} 期待するキーの列（有効キーのうち externalUrlsMap にあるもの）
+   */
+  const installMenuRecorderAsync = (serviceWorker) =>
+    serviceWorker.evaluate(async () => {
+      await remakeContextMenus()
+      const keys = (await getEnableLinkKeysAsync()).filter((key) => externalUrlsMap[key])
+
+      const originalRemoveAll = chrome.contextMenus.removeAll.bind(chrome.contextMenus)
+      const originalCreate = chrome.contextMenus.create.bind(chrome.contextMenus)
+      const originalError = console.error.bind(console)
+      // create のコールバックが呼ばれたかを1件ずつ持つ。
+      // 完了を待たない実装でも lastError を取りこぼさないよう、記録を返す前に全件待つ
+      const callbacks = []
+      const recorder = {
+        calls: [],
+        lastErrors: [],
+        errors: [],
+        originalRemoveAll,
+        removeAll: originalRemoveAll,
+        resultAsync: async () => {
+          await Promise.all(callbacks)
+          return { calls: recorder.calls, lastErrors: recorder.lastErrors, errors: recorder.errors }
+        }
+      }
+
+      chrome.contextMenus.removeAll = () => {
+        recorder.calls.push('removeAll')
+        return recorder.removeAll()
+      }
+      // 渡されたコールバックの有無にかかわらず自前のコールバックで呼び、
+      // lastError を記録してから渡されたコールバックを同期で呼ぶ（lastError はその間だけ読める）
+      chrome.contextMenus.create = (properties, callback) => {
+        recorder.calls.push(properties.id)
+        let settle
+        callbacks.push(new Promise((resolve) => { settle = resolve }))
+        return originalCreate(properties, () => {
+          const message = chrome.runtime.lastError?.message
+          if (message) {
+            recorder.lastErrors.push(message)
+          }
+          try {
+            callback?.()
+          } finally {
+            settle()
+          }
+        })
+      }
+      console.error = (...args) => {
+        recorder.errors.push(args.map(String).join(' '))
+        originalError(...args)
+      }
+
+      globalThis.kttMenuRecorder = recorder
+      return keys
+    })
+
+  test('並行して呼んでも create の lastError が出ない', async ({ serviceWorker }) => {
+    const keys = await installMenuRecorderAsync(serviceWorker)
+
+    const { calls, lastErrors, errors } = await serviceWorker.evaluate(async () => {
+      await Promise.all([remakeContextMenus(), remakeContextMenus()])
+      return globalThis.kttMenuRecorder.resultAsync()
+    })
+
+    expect(lastErrors).toEqual([])
+    expect(errors).toEqual([])
+    // 交錯していれば removeAll, removeAll, … の順になる
+    expect(calls).toEqual(['removeAll', ...keys, 'removeAll', ...keys])
+  })
+
+  test('前の再構築が失敗しても次の再構築は走る', async ({ serviceWorker }) => {
+    const keys = await installMenuRecorderAsync(serviceWorker)
+
+    const { settled, calls, lastErrors, errors } = await serviceWorker.evaluate(async () => {
+      const recorder = globalThis.kttMenuRecorder
+      let count = 0
+      recorder.removeAll = () => {
+        count += 1
+        return count === 1 ? Promise.reject(new Error('KTT-TEST')) : recorder.originalRemoveAll()
+      }
+
+      const settled = await Promise.all([remakeContextMenus(), remakeContextMenus()])
+        .then(() => 'fulfilled', (error) => `rejected: ${error}`)
+      return { settled, ...await recorder.resultAsync() }
+    })
+
+    expect(settled).toBe('fulfilled')
+    expect(errors).toHaveLength(1)
+    expect(errors[0]).toContain('KTT-TEST')
+    // 1回目は removeAll の失敗で中断し create を1件も呼ばない。2回目は全件を順に作る
+    expect(calls).toEqual(['removeAll', 'removeAll', ...keys])
+    expect(lastErrors).toEqual([])
+  })
+
+  test('create の失敗を console.error に出し、残りの項目も作る', async ({ serviceWorker }) => {
+    const keys = await installMenuRecorderAsync(serviceWorker)
+    // 先頭キーと末尾キーを区別できること
+    expect(keys.length).toBeGreaterThan(1)
+
+    const { settled, calls, lastErrors, errors } = await serviceWorker.evaluate(async () => {
+      const recorder = globalThis.kttMenuRecorder
+      // 既存の項目が残るので、create は実際に duplicate id で失敗する
+      recorder.removeAll = async () => {}
+
+      const settled = await remakeContextMenus()
+        .then(() => 'fulfilled', (error) => `rejected: ${error}`)
+      return { settled, ...await recorder.resultAsync() }
+    })
+
+    expect(settled).toBe('fulfilled')
+    // 1件目の失敗で止まらない
+    expect(calls.filter((call) => call !== 'removeAll')).toEqual(keys)
+    // 前提: 全件が実際に失敗している
+    expect(lastErrors).toHaveLength(keys.length)
+    expect(errors).toHaveLength(1)
+    expect(errors[0]).toContain('duplicate id')
+    expect(errors[0]).toContain(keys[0])
+    expect(errors[0]).toContain(keys.at(-1))
+  })
+
+  test('各回は自分の番になった時点の設定で作る', async ({ serviceWorker }) => {
+    const keys = await installMenuRecorderAsync(serviceWorker)
+    // 設定変更の前後で項目の列が区別できること
+    expect(keys.length).toBeGreaterThan(1)
+
+    const { calls } = await serviceWorker.evaluate(async (firstKey) => {
+      const recorder = globalThis.kttMenuRecorder
+      let reached
+      const reachedFirst = new Promise((resolve) => { reached = resolve })
+      let release
+      const held = new Promise((resolve) => { release = resolve })
+      let count = 0
+      recorder.removeAll = async () => {
+        count += 1
+        if (count === 1) {
+          reached()
+          await held
+        }
+        return recorder.originalRemoveAll()
+      }
+
+      // A と B を積んでから設定を変える。
+      // A の番はマイクロタスクで始まるので、A が設定を読んで removeAll で止まるまで待ってから set する
+      // (待たずに set すると、A の get が set より後に出て変更後の設定を読む)
+      remakeContextMenus()
+      remakeContextMenus()
+      await reachedFirst
+      await chrome.storage.sync.set({ enableLinkKeys: { [firstKey]: 0 } })
+
+      release()
+      await remakeContextMenus()
+      return recorder.resultAsync()
+    }, keys[0])
+
+    // removeAll で区切った区間ごとの create の id 列
+    const sections = []
+    for (const call of calls) {
+      if (call === 'removeAll' || sections.length === 0) {
+        sections.push([])
+      }
+      if (call !== 'removeAll') {
+        sections.at(-1).push(call)
+      }
+    }
+
+    // A・B・onChanged 由来の回・待ち切りの回（onChanged の到着時機は問わない）
+    expect(sections.length).toBeGreaterThanOrEqual(3)
+    // A は自分の番が来た時点（設定の変更前）の設定で作る
+    expect(sections[0]).toEqual(keys)
+    // B 以降は変更後の設定で作る。B が呼び出し時点で設定を読んでいれば keys になる
+    for (const section of sections.slice(1)) {
+      expect(section).toEqual([keys[0]])
+    }
+  })
+})
+
 test.describe('urls.js: makeUrl', () => {
   test('${code} を置換する', async ({ serviceWorker }) => {
     const url = await serviceWorker.evaluate(() =>

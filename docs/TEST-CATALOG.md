@@ -3,7 +3,7 @@
 > **このファイルは `npm run docs:tests` で自動生成される。手で編集しない。**
 > 説明文を変えたい場合は `scripts/test-catalog.mjs` を編集する。
 
-テスト総数: **141**
+テスト総数: **145**
 
 テストの方針・手法は [TESTING.md](TESTING.md) を参照。
 
@@ -119,7 +119,7 @@ chrome-extension:// のオプションページを開き、表示・操作・保
 
 ## Service Worker / 共有モジュール
 
-`tests/service-worker.spec.mjs` — 37 件
+`tests/service-worker.spec.mjs` — 41 件
 
 Service Worker のグローバルスコープを直接 evaluate して、純粋なロジックを検証する。
 
@@ -154,16 +154,20 @@ Service Worker のグローバルスコープを直接 evaluate して、純粋�
 | 25 | service_worker: 証券会社の応答 | 楽天証券の国内株 URL は dscrCd を1つだけ持ち、値は銘柄コードである |
 | 26 | service_worker: 証券会社の応答 | 内藤証券の info と open の応答に URL を含めない |
 | 27 | service_worker: 証券会社の応答 | ログイン済みタブが無ければ available は false で、タブを開かない |
-| 28 | urls.js: makeUrl | ${code} を置換する |
-| 29 | urls.js: makeUrl | ${code:0} は先頭1文字に置換する |
-| 30 | urls.js: makeUrl | ${exchange} は指定時のみ置換する |
-| 31 | urls.js: exchanges | 取引所コードは大文字英字のみで、市場種別は jp / us のいずれか |
-| 32 | urls.js: externalUrls の整合性 | key が一意で必須フィールドが揃っている |
-| 33 | urls.js: externalUrls の整合性 | url1 は必ず ${code} を含む |
-| 34 | service_worker: retrySetup | 成功したら再試行を止める |
-| 35 | service_worker: retrySetup | 打ち切り時刻を過ぎたら止める |
-| 36 | service_worker: retrySetup | setup が例外を投げたら止める |
-| 37 | 米国ティッカーの後続境界: リテラル3本で同じ値 | リテラル3本とも同じ境界で、u フラグが付いている |
+| 28 | service_worker: コンテキストメニューの再構築 | 並行して呼んでも create の lastError が出ない |
+| 29 | service_worker: コンテキストメニューの再構築 | 前の再構築が失敗しても次の再構築は走る |
+| 30 | service_worker: コンテキストメニューの再構築 | create の失敗を console.error に出し、残りの項目も作る |
+| 31 | service_worker: コンテキストメニューの再構築 | 各回は自分の番になった時点の設定で作る |
+| 32 | urls.js: makeUrl | ${code} を置換する |
+| 33 | urls.js: makeUrl | ${code:0} は先頭1文字に置換する |
+| 34 | urls.js: makeUrl | ${exchange} は指定時のみ置換する |
+| 35 | urls.js: exchanges | 取引所コードは大文字英字のみで、市場種別は jp / us のいずれか |
+| 36 | urls.js: externalUrls の整合性 | key が一意で必須フィールドが揃っている |
+| 37 | urls.js: externalUrls の整合性 | url1 は必ず ${code} を含む |
+| 38 | service_worker: retrySetup | 成功したら再試行を止める |
+| 39 | service_worker: retrySetup | 打ち切り時刻を過ぎたら止める |
+| 40 | service_worker: retrySetup | setup が例外を投げたら止める |
+| 41 | 米国ティッカーの後続境界: リテラル3本で同じ値 | リテラル3本とも同じ境界で、u フラグが付いている |
 
 ## TradingView（拡張が自分で作った DOM の振る舞い）
 

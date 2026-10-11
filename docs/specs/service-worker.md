@@ -19,28 +19,148 @@ Service Worker のグローバルスコープに入る。
 
 ## SPEC-SW-02 コンテキストメニューの構築
 
-`remakeContextMenus()` が以下を行う。
+> **1.20.3 で修正した。** f3af82f（2023-07）から 1.20.2 まで、`remakeContextMenus()` は
+> `getEnableLinkKeysAsync()` → `removeAll()` → `create()` を順に行う**排他の無い async 関数**だった。
+> 契機（SPEC-SW-03）が近接して2回来ると `A:get → B:get → A:removeAll → B:removeAll → A:create×N → B:create×N`
+> と交錯し、**B の `create` が全件 `duplicate id` で失敗していた。** `create` にコールバックが無いため、
+> chrome://extensions のエラー欄に `Unchecked runtime.lastError: Cannot create item with duplicate id <key>` が
+> 有効なキーの件数だけ出ていた（2026-10-11 利用者報告。FR-05 判定基準 3 に反していた。Service Worker 上で `remakeContextMenus(); remakeContextMenus()`
+> を `await` なしで呼ぶと再現し、`await` で直列に呼ぶと 0 件）。
+> メニューは先行側の `create` で揃うので見た目はほぼ変わらないが、**2回の間に設定が変わると、
+> 古い設定と新しい設定の和集合のメニューになりうる**（B の `get` が A の `removeAll` より前に走るため。FR-05 判定基準 1・2）。
+> **直列化が要るのは、`removeAll` と `create` の組がメニュー全体を置き換える操作で、
+> 2組が重なると置き換えの途中に別の置き換えが割り込むから。** MV3 の Service Worker は同時に1インスタンスしか
+> 動かないので、メモリ上の直列化で足りる。
+> 実行中の再構築に後続の呼び出しを相乗りさせる（合流する）作りにはしない。契機は起動・更新・設定変更に限られ頻度が低く、
+> 単純さを優先する。
+> 1.20.2 との差分は3点: 再構築の直列化（下の「直列化」）、`create` の完了待ちと失敗の扱い（「1回の再構築」の手順 3〜4）、
+> `remakeContextMenus()` の戻り値（「戻り値」。1.20.2 は1回分の async 関数の Promise で、失敗すると reject した）。
 
-1. `getEnableLinkKeysAsync()` で有効キーを順序付きで取得
-2. `chrome.contextMenus.removeAll()` で全削除
-3. 各キーについて `chrome.contextMenus.create({ id: key, title, contexts: ['selection'] })`
+### 構成
 
+`src/service_worker.js` のトップレベルに置く。
+
+| 名前 | 種別 | 役割 |
+| --- | --- | --- |
+| `contextMenusQueue` | `let`（初期値 `Promise.resolve()`） | 再構築の直列化に使う Promise チェーンの末尾 |
+| `remakeContextMenus()` | `const` の関数（`async` にしない） | 1回分の再構築をチェーンの末尾に積み、その回の完了を待てる Promise を返す。契機（SPEC-SW-03）から呼ぶのはこの関数だけ |
+| `rebuildContextMenusAsync()` | `const` の `async` 関数 | 1回分の再構築（下の手順 1〜4）。`remakeContextMenus()` 以外から呼ばない |
+| `createContextMenuAsync(properties)` | `const` の関数 | `chrome.contextMenus.create(properties, callback)` を Promise にする。コールバック内で `chrome.runtime.lastError` があれば `new Error(lastError.message)` で reject、無ければ resolve |
+
+- `chrome.contextMenus.removeAll()` / `chrome.contextMenus.create()` を呼ぶのは `rebuildContextMenusAsync()` と
+  `createContextMenuAsync()` の中だけとする
+
+### 直列化
+
+```javascript
+const remakeContextMenus = () => {
+  contextMenusQueue = contextMenusQueue
+    .then(() => rebuildContextMenusAsync())
+    .catch((error) => {
+      console.error('remakeContextMenus:', error)
+    })
+  return contextMenusQueue
+}
+```
+
+| 項目 | 振る舞い |
+| --- | --- |
+| 実行順 | 呼び出し順に1回ずつ実行する。前の回が終わる（成功・失敗とも）までは次の回を始めない |
+| 設定の読み出し | 各回が**自分の番になった時点で** `getEnableLinkKeysAsync()` を呼ぶ。呼び出し時点では読まない。したがって**最後の回は、その回が始まった時点の最新の設定を反映する** |
+| 合流 | しない。N 回呼べば N 回再構築する |
+| 前の回の失敗 | チェーンを止めない。失敗は `console.error` に1回出し、次の回はそのまま走る |
+| Service Worker の停止 | チェーンはメモリ上にしか無い。停止後の次の起動では空のチェーンから始まる（停止をまたいだ直列化はしない。同時に動くインスタンスが無いため不要） |
+
+### 1回の再構築（`rebuildContextMenusAsync()`）
+
+1. `getEnableLinkKeysAsync()` で有効キーを順序付きで取得する
+2. `await chrome.contextMenus.removeAll()` で全削除する
+3. 有効キーを順に処理する。`externalUrlsMap` に無いキーはスキップする（SPEC-ST-03）。
+   それ以外は `await createContextMenuAsync({ id: key, title: externalUrlsMap[key].title, contexts: ['selection'] })` で
+   **1件ずつ完了を待つ**。**失敗しても残りのキーの作成を続ける**（失敗したキーと `Error.message` を記録する）
+4. 手順 3 で1件以上失敗していれば、`Error` を投げる。`message` は失敗した**全キー**と各キーの `lastError.message` を含む
+   （例: `contextMenus.create failed: minkabu.jp/stock: Cannot create item with duplicate id minkabu.jp/stock; kabutan.jp/stock: …`）
+
+- 手順 1・2 が失敗（reject）した回は、その場で中断する（`create` を1件も呼ばない）。失敗の扱いは「直列化」の表のとおり
+- `create` を1件ずつ待つのは、項目の並び（＝オプションページの並び順。FR-05 判定基準 1）を呼び出しの到着順に頼らないため
+- `create` の失敗を握りつぶさない。**直列化後に `create` が失敗したら、それは本件とは別の不具合**なので
+  `console.error`（chrome://extensions のエラー欄に出る）で見えるようにする
 - `contexts: ['selection']` なので**文字列選択時のみ**表示される
-- `externalUrlsMap` に無いキーはスキップする（SPEC-ST-03）
 
-- 要件: FR-05
-- 検証: `manual`（文字列を選択して右クリック）
+### 戻り値
+
+`remakeContextMenus()` は、**その呼び出しで積んだ回が終わったとき**に `undefined` で fulfill する Promise を返す。
+
+- その回が失敗しても **reject しない**（失敗は `.catch` で `console.error` 済み）。
+  契機のハンドラは戻り値を待たない（SPEC-SW-03）ので、reject させると `Uncaught (in promise)` が重ねて出るため
+- 同じ回の前に積まれた回もすべて終わっているので、`await remakeContextMenus()` は**それまでに積まれた全再構築の完了待ち**としても使える
+  （テストはこれで起動時の `onInstalled` 由来の再構築を待ち切ってから始める）
+
+### 検証（SPEC-SW-02）
+
+| 種別 | 内容 |
+| --- | --- |
+| `auto` | `tests/service-worker.spec.mjs` の describe **`service_worker: コンテキストメニューの再構築`**（1.20.3 で追加）。下の4件 |
+| `review` | 契機のハンドラ（SPEC-SW-03）が `remakeContextMenus()` を呼ぶだけであること。`removeAll` / `create` の呼び出しが `rebuildContextMenusAsync()` / `createContextMenuAsync()` の外に無いこと |
+| `manual` | 下の「手動確認」 |
+
+**自動テスト（describe `service_worker: コンテキストメニューの再構築`）:**
+
+共通の前処理（`installMenuRecorderAsync`）: `serviceWorker.evaluate` の中で、まず `await remakeContextMenus()` で
+起動時（`onInstalled`）の再構築を待ち切る。期待するキーの列 `keys` は
+`(await getEnableLinkKeysAsync()).filter((key) => externalUrlsMap[key])`。
+`chrome.contextMenus.removeAll` / `chrome.contextMenus.create` / `console.error` を代入で差し替え、呼び出しを記録する。
+
+- `removeAll`: `'removeAll'` を記録してから、差し替え可能な委譲先（初期値は元の `removeAll`）を呼ぶ。各テストは委譲先を差し替えて失敗や待機を作る
+- `create`: `id` を記録する。渡されたコールバックの有無にかかわらず自前のコールバックで元の `create` を呼び、
+  その中で `chrome.runtime.lastError?.message` を記録してから、渡されたコールバックがあれば**同期で**呼ぶ（`lastError` はその間だけ読める）
+- `console.error`: 引数を文字列化して記録し、元の関数にも渡す
+- 記録を返す前に、**`create` のコールバックが全件呼ばれるのを待つ**（完了を待たない実装でも `lastError` を取りこぼさないため）
+- `context` はテストごとに作り直されるので差し替えを戻す処理は要らない（既存の `証券会社の応答` と同じ）
+
+| テスト名 | 手順 | 期待 |
+| --- | --- | --- |
+| `並行して呼んでも create の lastError が出ない` | `await Promise.all([remakeContextMenus(), remakeContextMenus()])` | 記録した `lastError` が0件。`console.error` が0回。呼び出しの記録が `['removeAll', ...keys, 'removeAll', ...keys]` と完全一致（交錯していない） |
+| `前の再構築が失敗しても次の再構築は走る` | `removeAll` を「1回目だけ `Promise.reject(new Error('KTT-TEST'))`、2回目以降は元の関数」に差し替え、`await Promise.all([remakeContextMenus(), remakeContextMenus()])` | `Promise.all` が fulfill する（どちらの戻り値も reject しない）。`console.error` が1回で、引数に `KTT-TEST` を含む。呼び出しの記録が `['removeAll', 'removeAll', ...keys]` と完全一致（1回目は `removeAll` の失敗で中断し `create` を1件も呼ばない。2回目は全件を順に作る）。`lastError` が0件 |
+| `create の失敗を console.error に出し、残りの項目も作る` | 前提として `keys.length > 1` を確かめる（先頭キーと末尾キーを区別するため）。`removeAll` を何もしない `async () => {}` に差し替える（既存の項目が残るので、`create` は実際に `duplicate id` で失敗する）。`await remakeContextMenus()` | 戻り値が fulfill する。`create` が `keys` の全件について順に呼ばれる（1件目の失敗で止まらない）。前提として、記録した `lastError` が `keys.length` 件ある（全件が実際に失敗している）。`console.error` がちょうど1回で、その文字列化に `duplicate id`・`keys` の先頭キー・末尾キーを含む |
+| `各回は自分の番になった時点の設定で作る` | 前提として `keys.length > 1` を確かめる（変更の前後で項目の列を区別するため）。`removeAll` の1回目だけ、**到達した時点で合図を出し**、テスト側で解放するまで待たせる。A = `remakeContextMenus()`、B = `remakeContextMenus()` を `await` なしで呼ぶ。**合図を待ってから**（＝A が設定を読み終え、1回目の `removeAll` で止まってから）`await chrome.storage.sync.set({ enableLinkKeys: { [keys[0]]: 0 } })`。その後 1回目の `removeAll` を解放し、`await remakeContextMenus()` で待ち切る | 記録を `removeAll` で区切った各区間の `create` の id 列が、1区間目は `keys`、2区間目以降はすべて `[keys[0]]`。区間は3つ以上（A・B・`onChanged` 由来の回・待ち切りの回。`onChanged` の到着時機は問わない） |
+
+- 4件目で合図を待つのは、A の回が**マイクロタスクで始まる**ため（`remakeContextMenus()` は `.then` で回を始める）。
+  A・B を呼んだ直後に同期で `set` すると、A の `get` が `set` より後になり、仕様どおりの実装でも1区間目が `[keys[0]]` になる
+- 1件目・4件目は 1.20.2 の実装では失敗する作りである（1件目は記録が `removeAll, removeAll, …` の順になり `lastError` が出る。
+  4件目は B が呼び出し時点で設定を読むので2区間目が `keys` になる）
+
+**手動確認:**
+
+1. `chrome://extensions` で株リンクの「エラー」を開き、「すべて消去」する
+2. 同じ画面の「Service Worker」リンクから DevTools を開き、コンソールで `remakeContextMenus(); remakeContextMenus()` を実行する
+3. コンソールにもエラー欄にも `Unchecked runtime.lastError` と `remakeContextMenus:` が出ないこと
+4. 任意のページで `7203` を選択して右クリックし、株リンクの項目が**有効な遷移先ごとに1回ずつ**、オプションページの並び順で並ぶこと
+5. 拡張を再読み込みしたあと（`onInstalled`）も、エラー欄が空のままであること
+
+> Chrome 本体の更新（`onInstalled` の `chrome_update` と `onStartup` の重なり）は手元で再現できないため、自動テストに委ねる。
+
+- 要件: FR-05（判定基準 1〜3）
 
 ## SPEC-SW-03 再構築の契機
 
 | イベント | 動作 |
 | --- | --- |
-| `chrome.runtime.onInstalled` | 再構築 |
-| `chrome.runtime.onStartup` | 再構築 |
-| `chrome.storage.onChanged` | 再構築 |
+| `chrome.runtime.onInstalled` | `remakeContextMenus()` を呼ぶ（SPEC-SW-04 の判定より前） |
+| `chrome.runtime.onStartup` | `remakeContextMenus()` を呼ぶ |
+| `chrome.storage.onChanged` | `remakeContextMenus()` を呼ぶ（変更されたキー・領域は見ない） |
 
-- 要件: FR-05
-- 検証: `manual`
+- どのハンドラも `remakeContextMenus()` の戻り値を**待たない**（`await` も `return` もしない）
+- **契機は重なりうる。** 重なっても SPEC-SW-02 の直列化により1回ずつ順に実行され、最後の回が最新の設定を反映する。
+  重なる組み合わせとして次を想定する（いずれも推測。実測していない）。1.20.2 までは重なると交錯していた（SPEC-SW-02 の経緯）
+  - Chrome 本体の更新後の起動: `onInstalled`（`reason: 'chrome_update'`）と `onStartup` がほぼ同時に来る
+  - 起動直後の設定の同期: 他端末からの `storage.sync` の同期による `onChanged` と `onStartup`
+  - オプションページでの連続保存: `onChanged` が続けて来る
+
+- 要件: FR-05（判定基準 2・3）
+- 検証: `auto`（SPEC-SW-02 の describe `service_worker: コンテキストメニューの再構築`。重なりを `remakeContextMenus()` の並行呼び出しで再現する。
+  `onInstalled` / `onStartup` を合成発火する手段は無い）／`review`（ハンドラが `remakeContextMenus()` を呼ぶだけであること）／
+  `manual`（SPEC-SW-02 の手動確認に加え、オプションページで遷移先を1つ外して保存し、右クリックメニューからその項目だけが消えること）
 
 ## SPEC-SW-04 オプションページを自動で開く条件（FR-10）
 

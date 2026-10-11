@@ -1,23 +1,80 @@
 importScripts('./urls.js')
 
-const remakeContextMenus = async () => {
-  // 利用するURLリスト
+/**
+ * コンテキストメニューの再構築を直列化するPromiseチェーンの末尾(SPEC-SW-02)
+ * removeAllとcreateの組はメニュー全体の置き換えなので、2組が重なると
+ * 後の組のcreateが全件duplicate idで失敗する(f3af82f〜1.20.2)。
+ * Service Workerは同時に1インスタンスしか動かないので、メモリ上の直列化で足りる。
+ * remakeContextMenusより上で宣言する(TDZ回避)
+ */
+let contextMenusQueue = Promise.resolve()
+
+/**
+ * コンテキストメニューの再構築を1回分チェーンの末尾に積む(SPEC-SW-02)
+ * 契機(SPEC-SW-03)から呼ぶのはこの関数だけ。呼び出し順に1回ずつ実行し、合流はしない。
+ * 失敗はconsole.errorに出してチェーンを止めない
+ * @returns {Promise<void>} この呼び出しで積んだ回が終わるとfulfillする。失敗してもrejectしない
+ */
+const remakeContextMenus = () => {
+  contextMenusQueue = contextMenusQueue
+    .then(() => rebuildContextMenusAsync())
+    .catch((error) => {
+      console.error('remakeContextMenus:', error)
+    })
+  return contextMenusQueue
+}
+
+/**
+ * コンテキストメニューを1回分作り直す(SPEC-SW-02)
+ * 直列化を経ずに呼ぶと交錯するため、remakeContextMenus以外から呼ばない
+ * @returns {Promise<void>} createが1件以上失敗した場合は、失敗した全キーを含むErrorでreject
+ */
+const rebuildContextMenusAsync = async () => {
+  // 利用するURLリスト(自分の番になった時点の設定を読む)
   const keys = await getEnableLinkKeysAsync()
 
   // コンテキストメニューを一旦全て削除
   await chrome.contextMenus.removeAll()
 
   // 有効なURLリストをコンテキストメニューへ追加
-  keys.forEach((key) => {
-    if (externalUrlsMap[key]) {
-      chrome.contextMenus.create({
+  // 並び(FR-05 判定基準1)を到着順に頼らないよう1件ずつ完了を待ち、失敗しても残りは作る
+  const failures = []
+  for (const key of keys) {
+    if (!externalUrlsMap[key]) {
+      continue
+    }
+    try {
+      await createContextMenuAsync({
         id: key,
         title: externalUrlsMap[key].title,
         contexts: ['selection']
       })
+    } catch (error) {
+      failures.push(`${key}: ${error.message}`)
+    }
+  }
+
+  if (failures.length > 0) {
+    throw new Error(`contextMenus.create failed: ${failures.join('; ')}`)
+  }
+}
+
+/**
+ * chrome.contextMenus.createをPromiseにする(SPEC-SW-02)
+ * lastErrorはコールバックの中でしか読めないので、コールバック内で判定する
+ * @param {chrome.contextMenus.CreateProperties} properties
+ * @returns {Promise<void>} lastErrorがあればそのmessageを持つErrorでreject
+ */
+const createContextMenuAsync = (properties) => new Promise((resolve, reject) => {
+  chrome.contextMenus.create(properties, () => {
+    const lastError = chrome.runtime.lastError
+    if (lastError) {
+      reject(new Error(lastError.message))
+    } else {
+      resolve()
     }
   })
-}
+})
 
 /**
  * 国内銘柄コードの書式(SPEC-TC-01)。先頭からの前方一致で使う
