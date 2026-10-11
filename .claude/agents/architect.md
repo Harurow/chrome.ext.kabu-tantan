@@ -61,9 +61,10 @@ flowchart LR
   `manifest.json` の `js` 配列の読み込み順に依存する。
 - **外部リソースを実行時に取得しない。** フォント・アイコン・画像は同梱する。
 - **`chrome.storage.sync` の `key` は永続識別子。** 変更すると既存ユーザーの設定が消える。
-- **TradingView は自動テストが無い。** 仕様変更時は手動確認手順を必ず書く。
+- **TradingView の自動テストは拡張が作った DOM しか見ない**（`tests/tradingview.spec.mjs`。CON-08）。
+  サイト側の実 DOM・見た目に関わる仕様変更では、手動確認手順を必ず書く。
 
-詳細は `CLAUDE.md` と `docs/ARCHITECTURE.md` を参照すること。
+詳細は `AGENTS.md` と `docs/ARCHITECTURE.md` を参照すること。
 
 ## 成果物の形式
 

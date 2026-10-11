@@ -89,5 +89,5 @@ docs/
 ## 関連
 
 - [WORKFLOW.md](WORKFLOW.md) — 開発フロー・エージェント・コミットゲート
-- [CLAUDE.md](../CLAUDE.md) — 開発ガイド（規約・注意事項）
+- [AGENTS.md](../AGENTS.md) — 開発ガイド（規約・注意事項）
 - [README.md](../README.md) — 利用者向け

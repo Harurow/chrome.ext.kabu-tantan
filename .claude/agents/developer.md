@@ -62,7 +62,7 @@ npm run check      # lint:all + validate + test
 
 ### 他社サイトの DOM を触る
 
-CSS を消すときは `CLAUDE.md`「CSS を消すときの鉄則」に従うこと。要点:
+CSS を消すときは `AGENTS.md`「CSS を消すときの鉄則」に従うこと。要点:
 
 1. `src/manifest.json` の `content_scripts` で、その CSS がどのサイトに注入されるか確認する
 2. `ktt-tv-` / `x-kabu-` は拡張の独自クラス。それ以外は**対象サイト側の可能性が高いので消さない**

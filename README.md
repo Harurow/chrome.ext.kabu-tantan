@@ -137,7 +137,7 @@ npm run approve     # レビュー承認を記録する（コミットに必須�
 
 | | |
 | --- | --- |
-| 開発ガイド（規約・注意事項） | [CLAUDE.md](CLAUDE.md) |
+| 開発ガイド（規約・注意事項） | [AGENTS.md](AGENTS.md) |
 | ドキュメント索引 | [docs/README.md](docs/README.md) |
 | 開発フロー・エージェント | [docs/WORKFLOW.md](docs/WORKFLOW.md) |
 | 要件定義 | [docs/requirements/](docs/requirements/) |

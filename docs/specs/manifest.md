@@ -91,7 +91,7 @@
 | `tradingview-cs.css` | TradingView のみ |
 
 > **この対応表は死にコード判定の起点になる。** TradingView 用の規則が `style.css` に
-> 入っていれば、そもそも読み込まれないので確実に不要。詳細は `CLAUDE.md`。
+> 入っていれば、そもそも読み込まれないので確実に不要。詳細は `AGENTS.md`。
 
 - 要件: CON-03
 - 検証: `validate`（ファイル実在）／`manual`（規則の要否判断）

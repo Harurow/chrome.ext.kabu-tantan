@@ -1,4 +1,7 @@
-# CLAUDE.md — 株リンク (kabu-tantan) 開発ガイド
+# AGENTS.md — 株リンク (kabu-tantan) 開発ガイド
+
+> AI エージェント（Claude Code など）が最初に読むファイル。**AI が覚えておくべきことはここに書く**
+> （末尾の「[AI エージェント向けの記録](#ai-エージェント向けの記録)」）。`CLAUDE.md` は置かない。
 
 ## プロジェクト概要
 
@@ -109,6 +112,8 @@ docs/
 | `architect` | 要件から設計・仕様を起こす | `docs/specs/`, `docs/ARCHITECTURE.md` |
 | `developer` | 仕様に従って実装する | `src/`, `tests/`, `scripts/`, ルート設定 |
 | `reviewer` | 実装と文書を突き合わせて検証する | **なし（読み取り専用）** |
+
+`AGENTS.md` はどの担当の書き換え範囲にも入れない。書くのはメインセッションだけ（下の「[AI エージェント向けの記録](#ai-エージェント向けの記録)」）。
 
 フロー・モデル選定・コミットゲートは [docs/WORKFLOW.md](docs/WORKFLOW.md)。
 
@@ -245,6 +250,7 @@ Playwright で拡張機能を実際に Chromium へロードして検証する�
 | `tests/service-worker.spec.mjs` | `getTickerCode` / `compareVersion` / `makeUrl` / `externalUrls` の整合性 |
 | `tests/options.spec.mjs` | オプションページの表示・保存・並び替え・外部リクエスト有無 |
 | `tests/content-script.spec.mjs` | 楽天・SBI へのメニュー注入（フィクスチャ HTML を実オリジンで差し替え） |
+| `tests/tradingview.spec.mjs` | TradingView で拡張が作った DOM（入れ子メニューのクリック範囲・縦位置補正・証券会社の項目が URL を DOM に出さないこと・未知キーの読み飛ばし）と、セレクタからフィクスチャを組み立てる規則。サイト側の実 DOM は見ない（CON-08） |
 | `tests/selector-defs.spec.mjs` | `menuSelectors` の定義・`check:selectors` の中断処理・手がかりの消毒と書式 |
 
 テストの一覧は [docs/TEST-CATALOG.md](docs/TEST-CATALOG.md)（`npm run docs:tests` で自動生成）。
@@ -268,3 +274,55 @@ Playwright で拡張機能を実際に Chromium へロードして検証する�
   フォント・アイコン・画像はすべて `src/` に同梱する
   （`tests/options.spec.mjs` に外部リクエストゼロを保証する回帰テストがある）
 - **`src/third-party/` は編集しない:** 更新手順は [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) 参照
+
+## AI エージェント向けの記録
+
+**AI が覚えておくべきことは、このファイルに書く。** 個人用のメモリ（Claude Code の auto memory など）には置かない。
+`CLAUDE.md` は置かない（2026-10-11 利用者判断）。Claude Code は v2.1.277 以降、`CLAUDE.md` が無ければ本ファイルを読む。
+
+**書くのはメインセッション**（利用者と直接やり取りしている AI）。サブエージェント（`.claude/agents/`）は書かず、
+記録すべきことに気づいたら報告に書いてメインセッションに渡す。本ファイルの変更もコミットゲート（reviewer → `npm run approve`）を通す。
+
+| 書く | 書かない |
+| --- | --- |
+| 繰り返し効く規則・手順、実行環境の癖、利用者との進め方の取り決め | 進行中の状態（どの版を申請したか等。git log と docs に残る）、個人情報、コードや git 履歴から読み取れること |
+
+### 利用者への依頼は、必要になった時点でだけ出す
+
+ログイン、拡張の再読み込み、ターミナルでのコマンド実行、実機での目視確認など、
+利用者に手を動かしてもらう依頼は**実際に必要になったときにだけ**伝える。「後でこれをお願いします」と先に予告しない。
+
+- 待ち状態の報告は「何を待っているか」だけにとどめ、依頼は含めない
+- 複数の依頼をまとめて渡すのは、**すべてが今実行できるとき**だけにする
+- 依頼を出したら、それが完了するまで次の依頼を積まない
+
+> 2026-08-23、レビュー待ちの間に「reviewer が通ったら次はこれをお願いします」と先に出したところ、
+> 「事前に提示されると今必要なのかな？と思ってしまいます」と指摘された。予告は利用者に「今動くべきか」の判断を強いる。
+
+### リリースの分担
+
+| 担当 | 作業 |
+| --- | --- |
+| AI | コミット → push → `npm run package`。**push とパッケージ作成は利用者に確認してから** |
+| 利用者 | zip のアップロードと Chrome ウェブストアへの申請 |
+
+`npm run package` は作業ツリーの `src/` をそのまま固める。作業中で `src/` が汚れているときは、
+対象コミットを `git worktree add --detach <dir> <commit>` で取り出してそこで `node scripts/package.mjs` を実行し、
+展開した zip と `git archive <commit> src` の中身が一致することを `diff -r` で確かめてから `dist/` に置く。
+
+### 図は Mermaid で書く
+
+罫線のアスキーアートは日本語が混ざると崩れるので使わない（ディレクトリツリーは例外）。
+
+### 実行環境ではシグナルが届かないことがある
+
+AI エージェントの Bash 実行環境（Claude Code で確認）は、`kill -INT` を子プロセスに届けない
+（素の `bash -c 'trap … INT'` すら反応しない。SIGTERM は届く）。`( … ) &` の背景ジョブや
+`sleep | node` のパイプ経由で起動すると、シグナルの継承（SIG_IGN）や stdin の TTY の有無も変わる。
+コミットゲートやセレクタ検証ツールの後始末の検証で、これが原因の誤判定を3回繰り返した。
+
+- シグナル関連の検証は **`child_process.spawn` + `child.kill(sig)`** で行う（シェルを介さない）
+- **実 TTY（raw モードの readline）は再現できない。** `SELECTOR_CHECK_FORCE_TERMINAL=1` のような
+  テスト用の強制フラグで擬似的に再現し、最終確認は利用者に実端末で依頼する
+- 「自分の環境で再現しない」を根拠に他の担当の報告を否定しない。先に最小再現
+  （`node -e 'process.on("SIGINT",…)'` 程度）で環境そのものを疑う。逆に自己申告も鵜呑みにしない
