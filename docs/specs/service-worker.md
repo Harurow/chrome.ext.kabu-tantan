@@ -42,23 +42,56 @@ Service Worker のグローバルスコープに入る。
 - 要件: FR-05
 - 検証: `manual`
 
-## SPEC-SW-04 初回インストール時のオプションページ表示
+## SPEC-SW-04 オプションページを自動で開く条件（FR-10）
 
-以下のいずれかで `chrome.runtime.openOptionsPage()` を呼ぶ。
+> **1.20.1 で修正した。** 1.10.0〜1.20.0 の実装は FR-10 に反していた。`reason` を見ずに
+> `details.reason === 'install' || compareVersion(details.previousVersion, '1.0.9') < 0` としており、
+> **Chrome 本体の更新（`reason: 'chrome_update'`）のたびにオプションページが開いていた。**
+> `previousVersion` は `reason === 'update'` のときにしか存在せず（Chrome の仕様）、
+> `compareVersion(undefined, '1.0.9')` は SPEC-SW-09 により負を返すため。
+> 1.9.21 までの文字列比較（`undefined < '1.0.9'` は `false`）では起きておらず、
+> 数値比較へ置き換えた e47a177（1.10.0）の退行である。
 
-- `details.reason === 'install'`
-- 更新前バージョンが `1.0.9` 未満
+### 判定関数 `shouldOpenOptionsPage(details)`
 
-バージョン比較は `compareVersion(a, b)` で**数値比較**する。
+`src/service_worker.js` のトップレベルに `const` で置く純関数。`chrome.*` を呼ばない。
+`onInstalled` のハンドラは次の形にする（判定をハンドラ内に書かない）。
 
 ```javascript
-compareVersion(details.previousVersion, '1.0.9') < 0
+chrome.runtime.onInstalled.addListener((details) => {
+  remakeContextMenus()
+
+  if (shouldOpenOptionsPage(details)) {
+    chrome.runtime.openOptionsPage()
+  }
+})
 ```
 
-> 以前は文字列比較 (`previousVersion < '1.0.9'`) で、`1.10.x` 以降に破綻する状態だった。
+| `details.reason` | `details.previousVersion` | 戻り値 | 根拠 |
+| --- | --- | --- | --- |
+| `'install'` | （無い） | `true` | 初回インストール |
+| `'update'` | `'1.0.8'` など `1.0.9` 未満の文字列 | `true` | 設定形式が変わった版より前からの更新 |
+| `'update'` | `'1.0.9'` / `'1.0.10'` / `'1.20.0'` など `1.0.9` 以上の文字列 | `false` | 境界は `1.0.9` を含まない（`< 0`） |
+| `'update'` | 文字列でない（`undefined` 等） | `false` | Chrome の仕様では起きない。起きたら開かない側に倒す |
+| `'chrome_update'` | （無い） | `false` | Chrome 本体の更新。FR-10 の対象外 |
+| `'shared_module_update'` | （無い） | `false` | 共有モジュールの更新。FR-10 の対象外 |
+| 上記以外の値 | — | `false` | 未知の理由では開かない |
+
+- バージョン比較は **`reason === 'update'` かつ `typeof previousVersion === 'string'` のときだけ**行う
+- 比較は `compareVersion(details.previousVersion, '1.0.9') < 0`（数値比較。SPEC-SW-09）
+- 閾値 `'1.0.9'` は関数内のリテラルのままでよい（他所から参照しない）
+- `compareVersion()` は変更しない（SPEC-SW-09 の `undefined` の扱いはそのまま）。
+  **「前の版が無い」を `compareVersion` に渡さない**のは呼び出し側（本関数）の責務とする
+
+### 検証
+
+| 種別 | 内容 |
+| --- | --- |
+| `auto` | `tests/service-worker.spec.mjs` の describe **`service_worker: shouldOpenOptionsPage`**（新設）。`serviceWorker.evaluate` で上表の全行を引数に渡し、戻り値を確かめる。テスト名は次の4件とする: `初回インストールでは開く` / `1.0.9 未満からの更新では開く` / `1.0.9 以上からの更新では開かない`（`1.0.9` / `1.0.10` / `1.20.0`） / `Chrome 本体と共有モジュールの更新では開かない`（`chrome_update` / `shared_module_update` / `update` かつ `previousVersion` 無し / 未知の `reason`） |
+| `review` | `onInstalled` のハンドラが `shouldOpenOptionsPage(details)` だけで分岐していること（`onInstalled` を合成発火する手段が無いため、配線はレビューで見る） |
+| `manual` | `chrome://extensions` で拡張を再読み込みしてもオプションページが開かないこと（`reason: 'update'`、`previousVersion` は現行版）。`chrome_update` は手元で再現できないため自動テストに委ねる |
 
 - 要件: FR-10, NFR-04
-- 検証: `auto`（`compareVersion › マイナー/パッチを数値として比較する`）
 
 ## SPEC-SW-05 コンテキストメニュークリック時の動作
 
@@ -89,8 +122,16 @@ compareVersion(details.previousVersion, '1.0.9') < 0
 > セッション ID を新規に取得することはしない。ユーザーが既に開いているタブから
 > 借用するだけ。これが `tabs` 権限を必要とする理由（SPEC-MF-03）。
 
-- 要件: FR-06, NFR-03
-- 検証: `manual`（楽天証券にログインした状態で TradingView を開き、メニューに出ること）
+**組み立てた URL は Service Worker の外に出さない**（SPEC-MSG-06）。使い道は
+`chrome.tabs.create({ url })` の引数だけで、メッセージの応答・ログ・storage に載せない。
+
+> **1.20.1 から。** 1.20.0 までは `rakuten-sec:info` /
+> `rakuten-sec:open` の応答で URL（`BV_SessionID` を含む）を Content Script に返し、
+> TradingView の右クリックメニューでは `<a href>` として**ページの DOM に書き出していた**（SPEC-CS-28）。
+
+- 要件: FR-06, NFR-03, CON-04
+- 検証: `auto`（`tests/service-worker.spec.mjs` の describe **`service_worker: 証券会社の応答`**。SPEC-MSG-06）／
+  `manual`（楽天証券にログインした状態で TradingView を開き、メニューに出ること）
 
 ## SPEC-SW-07 内藤証券 URL の生成
 
@@ -101,8 +142,12 @@ compareVersion(details.previousVersion, '1.0.9') < 0
    `qcode` を対象銘柄コードに差し替えた URL を返す
 3. `type === 'jp'` のみ対応。米国株は常に `null`
 
-- 要件: FR-06
-- 検証: `manual`（内藤証券で国内株個別銘柄を開いた状態で TradingView を開く）
+返す URL は**ログイン済みタブの URL の丸写し**（`qcode` 以外のクエリ・セッション相当の値を含む）。
+楽天証券と同じく **Service Worker の外に出さない**（SPEC-MSG-06。1.20.1 から）。
+
+- 要件: FR-06, NFR-03, CON-04
+- 検証: `auto`（describe **`service_worker: 証券会社の応答`**。SPEC-MSG-06）／
+  `manual`（内藤証券で国内株個別銘柄を開いた状態で TradingView を開く）
 
 ## SPEC-SW-08 アクションボタン
 
@@ -118,6 +163,12 @@ compareVersion(details.previousVersion, '1.0.9') < 0
 - 欠けた要素は `0` として扱う
 - 数値化できない要素は `0` として扱う
 - `undefined` / `null` は `'0'` として扱う
+
+> **`undefined` → `'0'` は変えない（1.20.1 で判断）。** 「前の版が無い」ことを比較の結果で表すと、
+> 呼び出し側の意図（開く／開かない）を比較関数が決めることになる。1.10.0 の退行はこの形から出た。
+> 有無の判定は呼び出し側で先に行う（SPEC-SW-04 の `shouldOpenOptionsPage`）。
+> 既存テスト `compareVersion › マイナー/パッチを数値として比較する` の `undef` の期待値（負）は
+> **本関数の契約として残す**。テスト内のコメントに「オプションページを開く判定ではない。SPEC-SW-04」と書いてある（1.20.1）。
 
 - 要件: NFR-04
 - 検証: `auto`（`compareVersion › マイナー/パッチを数値として比較する`）

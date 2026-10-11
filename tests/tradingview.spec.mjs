@@ -390,6 +390,160 @@ test.describe('TradingView: 入れ子メニューのクリック範囲', () => {
     })
 })
 
+/** タブの URL に仕込む秘密値（ページの DOM に現れてはいけない。SPEC-CS-28） */
+const BROKER_SECRET = 'KTTSECRET0123'
+
+/**
+ * Service Worker の `chrome.tabs.query` / `chrome.tabs.create` を差し替える（SPEC-CS-28）。
+ *
+ * **差し替えは無しで書けない。** 実タブを開くとテストが楽天証券へ出ていく
+ * （CON-10 / 外部リクエストゼロの方針）。開いた URL は `self.__openedUrls` に積む
+ * （「株Link」ボタンのテストと同じ手法）。
+ * `loggedIn: false` なら `chrome.tabs.query` は常に `[]`（どちらにもログインしていない）
+ * @returns {Promise<{ rakuten: string | null, naito: string | null }>} 差し替え後に SW で組み立てた期待 URL
+ */
+const stubBrokerTabsAsync = (serviceWorker, { loggedIn = true } = {}) =>
+  serviceWorker.evaluate(async ([secret, code, loggedIn]) => {
+    const tabUrls = loggedIn
+      ? {
+          'https://member.rakuten-sec.co.jp/*':
+            `https://member.rakuten-sec.co.jp/app/home.do;BV_SessionID=${secret}?eventType=init`,
+          'https://*.qhit.net/naito/iswebptt2/*':
+            `https://example.qhit.net/naito/iswebptt2/stock?qcode=1301&sid=${secret}`
+        }
+      : {}
+    chrome.tabs.query = async ({ url }) => {
+      const tabUrl = tabUrls[url]
+      return tabUrl == null ? [] : [{ url: tabUrl }]
+    }
+    self.__openedUrls = []
+    chrome.tabs.create = (props) => {
+      self.__openedUrls.push(props.url)
+      return Promise.resolve({})
+    }
+    return {
+      rakuten: await getRakutenSecUrlAsync('jp', code),
+      naito: await getNaitoSecUrlAsync('jp', code)
+    }
+  }, [BROKER_SECRET, CHART_CODE, loggedIn])
+
+/** 要素の中心を左クリックする */
+const clickCenterAsync = async (page, locator) => {
+  const box = await locator.boundingBox()
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2)
+}
+
+/**
+ * 証券会社の項目（SPEC-CS-28 / SPEC-MSG-06 / ADR-0016）。
+ *
+ * 1.20.0 までは右クリック入れ子の「楽天証券で開く」が `<a href="…;BV_SessionID=<id>…">` で、
+ * **ログイン中のセッション ID が TradingView のページ DOM に載っていた**（NFR-03）。
+ * 項目は `<a>` を持たず、行のクリックで `*:open` を送って Service Worker が開く。
+ * 起点はチャート（`CHART_CODE` = 7203。国内株なので両社が出る）
+ */
+test.describe('TradingView: 証券会社の項目は URL を DOM に出さない', () => {
+  test.beforeEach(async ({ context, extensionId }) => {
+    await setEnableLinkKeysAsync(context, extensionId, { [ONLY_SITE_KEY]: 0 })
+  })
+
+  /** 入れ子の中の、ラベルで引いた項目の行 */
+  const submenuRow = (page, label) =>
+    page.locator('div.ktt-tv-subMenu tr[data-role="menuitem"]').filter({ hasText: label })
+
+  /** チャートを右クリックして入れ子を開く */
+  const openBrokerSubmenuAsync = async (page, serveFixture) => {
+    await openChartPageAsync(page, serveFixture)
+    await rightClickAsync(page, `[${CHART_MARK}]`)
+    await openContextMenuAsync(page)
+    await openSubmenuAsync(page)
+  }
+
+  test('証券会社の項目は href を持たず、セッション ID をページの DOM に出さない',
+    async ({ page, serviceWorker, serveFixture }) => {
+      await stubBrokerTabsAsync(serviceWorker)
+      await openBrokerSubmenuAsync(page, serveFixture)
+
+      for (const label of ['楽天証券で開く', '内藤証券で開く']) {
+        const row = submenuRow(page, label)
+        await expect(row).toHaveCount(1)
+        await expect(row.locator('a')).toHaveCount(0)
+        await expect(row.locator('[href]')).toHaveCount(0)
+      }
+
+      const html = await page.content()
+      for (const secret of [BROKER_SECRET, 'member.rakuten-sec.co.jp', 'qhit.net']) {
+        expect(html).not.toContain(secret)
+      }
+    })
+
+  for (const [spot, target] of [['文字の上', 'span[data-label]'], ['アイコン列', 'td[data-icon-cell]']]) {
+    test(`楽天証券の項目の${spot}を左クリックすると、Service Worker が該当銘柄のページを開く`,
+      async ({ page, context, serviceWorker, serveFixture }) => {
+        const expected = await stubBrokerTabsAsync(serviceWorker)
+        expect(expected.rakuten).toContain(CHART_CODE)
+        await openBrokerSubmenuAsync(page, serveFixture)
+
+        const opened = []
+        context.on('page', (newPage) => opened.push(newPage))
+        await clickCenterAsync(page, submenuRow(page, '楽天証券で開く').locator(target))
+
+        await expect.poll(() => serviceWorker.evaluate(() => self.__openedUrls))
+          .toEqual([expected.rakuten])
+        // <a> 経由ではない（ページ側から新しいタブが開かれない）
+        expect(opened).toHaveLength(0)
+      })
+  }
+
+  test('内藤証券の項目を左クリックすると、Service Worker が該当銘柄のページを開く',
+    async ({ page, context, serviceWorker, serveFixture }) => {
+      const expected = await stubBrokerTabsAsync(serviceWorker)
+      expect(expected.naito).toContain(`qcode=${CHART_CODE}`)
+      await openBrokerSubmenuAsync(page, serveFixture)
+
+      const opened = []
+      context.on('page', (newPage) => opened.push(newPage))
+      await clickCenterAsync(page, submenuRow(page, '内藤証券で開く').locator('span[data-label]'))
+
+      await expect.poll(() => serviceWorker.evaluate(() => self.__openedUrls))
+        .toEqual([expected.naito])
+      expect(opened).toHaveLength(0)
+    })
+
+  // `<a>` が無いので代行クリックがバブルして戻る経路も無い（delegating は不要。SPEC-CS-28）
+  test('証券会社の項目を左クリックすると、Esc の送出は1回でメニューが閉じる',
+    async ({ page, serviceWorker, serveFixture }) => {
+      const expected = await stubBrokerTabsAsync(serviceWorker)
+      await openBrokerSubmenuAsync(page, serveFixture)
+
+      await page.evaluate(() => {
+        window.__escapes = 0
+        document.addEventListener('keyup', (e) => {
+          if (e.keyCode === 27) {
+            window.__escapes++
+          }
+        })
+      })
+
+      await clickCenterAsync(page, submenuRow(page, '楽天証券で開く').locator('td[data-icon-cell]'))
+
+      // 閉じた後でも送信は取り消されない（送ってから閉じる）
+      await expect.poll(() => serviceWorker.evaluate(() => self.__openedUrls))
+        .toEqual([expected.rakuten])
+      expect(await page.evaluate(() => window.__escapes)).toBe(1)
+      await expect(page.locator(`[${MENU_BOX_MARK}]`)).toHaveCount(0)
+    })
+
+  test('ログイン済みタブが無ければ証券会社の項目を出さない',
+    async ({ page, serviceWorker, serveFixture }) => {
+      await stubBrokerTabsAsync(serviceWorker, { loggedIn: false })
+      await openBrokerSubmenuAsync(page, serveFixture)
+
+      await expect(page.locator('div.ktt-tv-subMenu tr[data-role="menuitem"]')).not.toHaveCount(0)
+      await expect(submenuRow(page, '楽天証券で開く')).toHaveCount(0)
+      await expect(submenuRow(page, '内藤証券で開く')).toHaveCount(0)
+    })
+})
+
 /**
  * 段階2: 縦位置の補正（FR-24 / SPEC-CS-24）。
  *

@@ -390,7 +390,135 @@ test.describe('service_worker: compareVersion', () => {
     expect(result.olderMinor).toBeLessThan(0)
     expect(result.newerPatch).toBeGreaterThan(0)
     expect(result.equal).toBe(0)
+    // undefined を '0' として扱う本関数の契約。オプションページを開く判定ではない。SPEC-SW-04
     expect(result.undef).toBeLessThan(0)
+  })
+})
+
+// SPEC-SW-04: onInstalled でオプションページを開くかの判定。
+// 回帰テスト: 1.10.0〜1.20.0 は reason を見ずに比較しており、
+// Chrome 本体の更新（previousVersion が無い）のたびに開いていた
+test.describe('service_worker: shouldOpenOptionsPage', () => {
+  const judgeAsync = (serviceWorker, cases) =>
+    serviceWorker.evaluate((list) => list.map((details) => shouldOpenOptionsPage(details)), cases)
+
+  test('初回インストールでは開く', async ({ serviceWorker }) => {
+    expect(await judgeAsync(serviceWorker, [{ reason: 'install' }])).toEqual([true])
+  })
+
+  test('1.0.9 未満からの更新では開く', async ({ serviceWorker }) => {
+    expect(await judgeAsync(serviceWorker, [
+      { reason: 'update', previousVersion: '1.0.8' },
+      { reason: 'update', previousVersion: '1.0.0' }
+    ])).toEqual([true, true])
+  })
+
+  test('1.0.9 以上からの更新では開かない', async ({ serviceWorker }) => {
+    expect(await judgeAsync(serviceWorker, [
+      { reason: 'update', previousVersion: '1.0.9' },
+      { reason: 'update', previousVersion: '1.0.10' },
+      { reason: 'update', previousVersion: '1.20.0' }
+    ])).toEqual([false, false, false])
+  })
+
+  test('Chrome 本体と共有モジュールの更新では開かない', async ({ serviceWorker }) => {
+    expect(await judgeAsync(serviceWorker, [
+      { reason: 'chrome_update' },
+      { reason: 'shared_module_update' },
+      // Chrome の仕様では起きないが、起きたら開かない側に倒す
+      { reason: 'update' },
+      // 未知の理由では開かない
+      { reason: 'unknown_reason' }
+    ])).toEqual([false, false, false, false])
+  })
+})
+
+// SPEC-MSG-06: 証券会社の URL（セッション ID を含む）は Service Worker の外に出さない。
+// 回帰テスト: 1.20.0 までは :info / :open の応答で URL を Content Script に返していた
+test.describe('service_worker: 証券会社の応答', () => {
+  /** 応答に現れてはいけない秘密値（タブの URL に仕込む） */
+  const SECRET = 'KTTSECRET'
+
+  /**
+   * `chrome.tabs.query` / `chrome.tabs.create` を差し替え、ハンドラを直接呼んで応答を集める。
+   * `context` はテストごとに作り直されるので差し替えを戻す処理は要らない
+   */
+  const callBrokerHandlersAsync = (serviceWorker, tabUrls, handlerNames) =>
+    serviceWorker.evaluate(async ([urls, names]) => {
+      const created = []
+      chrome.tabs.query = async ({ url }) => {
+        const tabUrl = urls[url]
+        return tabUrl == null ? [] : [{ url: tabUrl }]
+      }
+      chrome.tabs.create = async (props) => {
+        created.push(props.url)
+        return {}
+      }
+
+      const handlers = {
+        'rakuten-sec:info': onMessageRakutenSecInfoAsync,
+        'rakuten-sec:open': onMessageRakutenSecOpenAsync,
+        'naito-sec:info': onMessageNaitoSecInfoAsync,
+        'naito-sec:open': onMessageNaitoSecOpenAsync
+      }
+      const responses = []
+      for (const name of names) {
+        const request = { type: name, data: { code: '7203', type: 'jp' } }
+        responses.push(await new Promise((resolve) => { handlers[name](request, resolve) }))
+      }
+      return { responses, created }
+    }, [tabUrls, handlerNames])
+
+  test('楽天証券の info と open の応答に URL を含めない', async ({ serviceWorker }) => {
+    const { responses, created } = await callBrokerHandlersAsync(serviceWorker, {
+      'https://member.rakuten-sec.co.jp/*':
+        `https://member.rakuten-sec.co.jp/app/home.do;BV_SessionID=${SECRET}?eventType=init`
+    }, ['rakuten-sec:info', 'rakuten-sec:open'])
+
+    expect(responses).toEqual([
+      { type: 'rakuten-sec:info', data: { available: true } },
+      { type: 'rakuten-sec:open', data: { available: true } }
+    ])
+    // フィールド名を変えて URL を残す誤りも落とすため、応答の文字列全体で見る
+    for (const response of responses) {
+      expect(JSON.stringify(response)).not.toContain(SECRET)
+    }
+    // URL は open の tabs.create にだけ使われる
+    expect(created).toHaveLength(1)
+    expect(created[0]).toContain(SECRET)
+    expect(created[0]).toContain('7203')
+  })
+
+  test('内藤証券の info と open の応答に URL を含めない', async ({ serviceWorker }) => {
+    const { responses, created } = await callBrokerHandlersAsync(serviceWorker, {
+      'https://*.qhit.net/naito/iswebptt2/*':
+        `https://example.qhit.net/naito/iswebptt2/stock?qcode=1301&sid=${SECRET}`
+    }, ['naito-sec:info', 'naito-sec:open'])
+
+    expect(responses).toEqual([
+      { type: 'naito-sec:info', data: { available: true } },
+      { type: 'naito-sec:open', data: { available: true } }
+    ])
+    for (const response of responses) {
+      expect(JSON.stringify(response)).not.toContain(SECRET)
+    }
+    expect(created).toHaveLength(1)
+    expect(created[0]).toContain('qcode=7203')
+    expect(created[0]).toContain(SECRET)
+  })
+
+  test('ログイン済みタブが無ければ available は false で、タブを開かない', async ({ serviceWorker }) => {
+    const { responses, created } = await callBrokerHandlersAsync(serviceWorker, {}, [
+      'rakuten-sec:info', 'rakuten-sec:open', 'naito-sec:info', 'naito-sec:open'
+    ])
+
+    expect(responses).toEqual([
+      { type: 'rakuten-sec:info', data: { available: false } },
+      { type: 'rakuten-sec:open', data: { available: false } },
+      { type: 'naito-sec:info', data: { available: false } },
+      { type: 'naito-sec:open', data: { available: false } }
+    ])
+    expect(created).toHaveLength(0)
   })
 })
 

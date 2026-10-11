@@ -7,11 +7,16 @@
 | 経路 | 実装 |
 | --- | --- |
 | 拡張機能アイコンをクリック | `chrome.action.onClicked` → `openOptionsPage()` |
-| 初回インストール / 1.0.9 未満からの更新 | `chrome.runtime.onInstalled` → `openOptionsPage()` |
+| 初回インストール / 1.0.9 未満からの更新 | `chrome.runtime.onInstalled` → `shouldOpenOptionsPage(details)` が真なら `openOptionsPage()`（SPEC-SW-04） |
 | `chrome://extensions` の「拡張機能のオプション」 | `manifest.options_page` |
 
+> 2行目の判定関数は 1.20.1 で入った。1.10.0〜1.20.0 は Chrome 本体の更新でも開いていた（SPEC-SW-04 の冒頭）。
+
+- **Chrome 本体の更新・共有モジュールの更新では開かない**（SPEC-SW-04 の判定表）
+
 - 要件: FR-05, FR-10
-- 検証: `manual`
+- 検証: `auto`（2行目。`tests/service-worker.spec.mjs` の describe `service_worker: shouldOpenOptionsPage`）／
+  `manual`（1行目・3行目。アイコンのクリックと `chrome://extensions` の「拡張機能のオプション」で開くこと）
 
 ## SPEC-OP-02 スクリプトの読み込み順
 

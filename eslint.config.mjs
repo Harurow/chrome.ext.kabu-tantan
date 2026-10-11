@@ -108,7 +108,14 @@ export default [
         document: 'readonly',
         getTickerCode: 'readonly',
         getUrl: 'readonly',
-        compareVersion: 'readonly'
+        compareVersion: 'readonly',
+        shouldOpenOptionsPage: 'readonly',
+        onMessageRakutenSecInfoAsync: 'readonly',
+        onMessageRakutenSecOpenAsync: 'readonly',
+        onMessageNaitoSecInfoAsync: 'readonly',
+        onMessageNaitoSecOpenAsync: 'readonly',
+        getRakutenSecUrlAsync: 'readonly',
+        getNaitoSecUrlAsync: 'readonly'
       }
     },
     rules: {

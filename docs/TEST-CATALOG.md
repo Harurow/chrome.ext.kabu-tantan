@@ -3,7 +3,7 @@
 > **このファイルは `npm run docs:tests` で自動生成される。手で編集しない。**
 > 説明文を変えたい場合は `scripts/test-catalog.mjs` を編集する。
 
-テスト総数: **127**
+テスト総数: **140**
 
 テストの方針・手法は [TESTING.md](TESTING.md) を参照。
 
@@ -119,7 +119,7 @@ chrome-extension:// のオプションページを開き、表示・操作・保
 
 ## Service Worker / 共有モジュール
 
-`tests/service-worker.spec.mjs` — 29 件
+`tests/service-worker.spec.mjs` — 36 件
 
 Service Worker のグローバルスコープを直接 evaluate して、純粋なロジックを検証する。
 
@@ -146,20 +146,27 @@ Service Worker のグローバルスコープを直接 evaluate して、純粋�
 | 17 | service_worker: getTickerCode | 後置の取引所コードを exchanges の us 登録6件から判定する |
 | 18 | service_worker: getTickerCode | FR-14 の実装で 1.13.0 の判定を変えない（非退行） |
 | 19 | service_worker: compareVersion | マイナー/パッチを数値として比較する |
-| 20 | urls.js: makeUrl | ${code} を置換する |
-| 21 | urls.js: makeUrl | ${code:0} は先頭1文字に置換する |
-| 22 | urls.js: makeUrl | ${exchange} は指定時のみ置換する |
-| 23 | urls.js: exchanges | 取引所コードは大文字英字のみで、市場種別は jp / us のいずれか |
-| 24 | urls.js: externalUrls の整合性 | key が一意で必須フィールドが揃っている |
-| 25 | urls.js: externalUrls の整合性 | url1 は必ず ${code} を含む |
-| 26 | service_worker: retrySetup | 成功したら再試行を止める |
-| 27 | service_worker: retrySetup | 打ち切り時刻を過ぎたら止める |
-| 28 | service_worker: retrySetup | setup が例外を投げたら止める |
-| 29 | 米国ティッカーの後続境界: リテラル3本で同じ値 | リテラル3本とも同じ境界で、u フラグが付いている |
+| 20 | service_worker: shouldOpenOptionsPage | 初回インストールでは開く |
+| 21 | service_worker: shouldOpenOptionsPage | 1.0.9 未満からの更新では開く |
+| 22 | service_worker: shouldOpenOptionsPage | 1.0.9 以上からの更新では開かない |
+| 23 | service_worker: shouldOpenOptionsPage | Chrome 本体と共有モジュールの更新では開かない |
+| 24 | service_worker: 証券会社の応答 | 楽天証券の info と open の応答に URL を含めない |
+| 25 | service_worker: 証券会社の応答 | 内藤証券の info と open の応答に URL を含めない |
+| 26 | service_worker: 証券会社の応答 | ログイン済みタブが無ければ available は false で、タブを開かない |
+| 27 | urls.js: makeUrl | ${code} を置換する |
+| 28 | urls.js: makeUrl | ${code:0} は先頭1文字に置換する |
+| 29 | urls.js: makeUrl | ${exchange} は指定時のみ置換する |
+| 30 | urls.js: exchanges | 取引所コードは大文字英字のみで、市場種別は jp / us のいずれか |
+| 31 | urls.js: externalUrls の整合性 | key が一意で必須フィールドが揃っている |
+| 32 | urls.js: externalUrls の整合性 | url1 は必ず ${code} を含む |
+| 33 | service_worker: retrySetup | 成功したら再試行を止める |
+| 34 | service_worker: retrySetup | 打ち切り時刻を過ぎたら止める |
+| 35 | service_worker: retrySetup | setup が例外を投げたら止める |
+| 36 | 米国ティッカーの後続境界: リテラル3本で同じ値 | リテラル3本とも同じ境界で、u フラグが付いている |
 
 ## TradingView（拡張が自分で作った DOM の振る舞い）
 
-`tests/tradingview.spec.mjs` — 21 件
+`tests/tradingview.spec.mjs` — 27 件
 
 menuSelectors / watchlistSymbolAttrs から組み立てたフィクスチャに、右クリックメニューと入れ子・「株Link」ボタンのメニューを再現して検証する。**このファイルが緑でも実サイトが壊れていないことにはならない**（改訂後の CON-08 / FR-26 判定基準7）。見ているのは自分たちのコードの退行だけで、サイト改修は npm run check:selectors（FR-12）と手動確認 A が見る。
 
@@ -182,12 +189,18 @@ menuSelectors / watchlistSymbolAttrs から組み立てたフィクスチャに�
 | 13 | TradingView: 入れ子メニューのクリック範囲 | 文字の外を左クリックしても、メニューを閉じる Esc の送出は1回だけ |
 | 14 | TradingView: 入れ子メニューのクリック範囲 | 文字の外を左クリックするとメニューが閉じる |
 | 15 | TradingView: 入れ子メニューのクリック範囲 | 「株Link」ボタンのメニューも、項目の文字の外を左クリックで同じ URL を開く |
-| 16 | TradingView: 右クリックメニューの縦位置補正 | 下にはみ出すときは margin-top を負にして、箱の下端をウィンドウ内に収める |
-| 17 | TradingView: 右クリックメニューの縦位置補正 | ずらした後でも親行のホバーで入れ子が開き、項目のクリックでページが開く |
-| 18 | TradingView: 右クリックメニューの縦位置補正 | ウィンドウより高いメニューでも、上端はウィンドウの外に出さない |
-| 19 | TradingView: 右クリックメニューの縦位置補正 | はみ出さない位置では margin-top を触らない |
-| 20 | TradingView: 右クリックメニューの縦位置補正 | ウォッチリストの行を起点にしても同じ補正が掛かる |
-| 21 | TradingView: 右クリックメニューの縦位置補正 | 遷移先が0件で3行を除去するときは margin-top を元に戻す |
+| 16 | TradingView: 証券会社の項目は URL を DOM に出さない | 証券会社の項目は href を持たず、セッション ID をページの DOM に出さない |
+| 17 | TradingView: 証券会社の項目は URL を DOM に出さない | 楽天証券の項目の文字の上を左クリックすると、Service Worker が該当銘柄のページを開く |
+| 18 | TradingView: 証券会社の項目は URL を DOM に出さない | 楽天証券の項目のアイコン列を左クリックすると、Service Worker が該当銘柄のページを開く |
+| 19 | TradingView: 証券会社の項目は URL を DOM に出さない | 内藤証券の項目を左クリックすると、Service Worker が該当銘柄のページを開く |
+| 20 | TradingView: 証券会社の項目は URL を DOM に出さない | 証券会社の項目を左クリックすると、Esc の送出は1回でメニューが閉じる |
+| 21 | TradingView: 証券会社の項目は URL を DOM に出さない | ログイン済みタブが無ければ証券会社の項目を出さない |
+| 22 | TradingView: 右クリックメニューの縦位置補正 | 下にはみ出すときは margin-top を負にして、箱の下端をウィンドウ内に収める |
+| 23 | TradingView: 右クリックメニューの縦位置補正 | ずらした後でも親行のホバーで入れ子が開き、項目のクリックでページが開く |
+| 24 | TradingView: 右クリックメニューの縦位置補正 | ウィンドウより高いメニューでも、上端はウィンドウの外に出さない |
+| 25 | TradingView: 右クリックメニューの縦位置補正 | はみ出さない位置では margin-top を触らない |
+| 26 | TradingView: 右クリックメニューの縦位置補正 | ウォッチリストの行を起点にしても同じ補正が掛かる |
+| 27 | TradingView: 右クリックメニューの縦位置補正 | 遷移先が0件で3行を除去するときは margin-top を元に戻す |
 
 ## 回帰テストとして重要なもの
 
@@ -212,6 +225,7 @@ menuSelectors / watchlistSymbolAttrs から組み立てたフィクスチャに�
 | service_worker: retrySetup › setup が例外を投げたら止める | 再試行が止まらず、他社サイト上でタイマーが走り続ける問題の検出（FR-13 判定基準2 / NFR-01） |
 | セレクタから DOM を組み立てる › 未対応の記法は例外にする（黙って無視しない） | フィクスチャがセレクタと食い違ったまま緑になる状態の検出（改訂後の CON-08 の条件1・2 / FR-26 判定基準2） |
 | TradingView: 入れ子メニューのクリック範囲 › 文字の外を左クリックしても、メニューを閉じる Esc の送出は1回だけ | 代行クリックの戻りを握る delegating が消え、他社サイトへ Esc を2回投げる退行の検出（FR-25 / NFR-01） |
+| TradingView: 証券会社の項目は URL を DOM に出さない › 証券会社の項目を左クリックすると、Esc の送出は1回でメニューが閉じる | 代行クリックの戻りを握る delegating が消え、他社サイトへ Esc を2回投げる退行の検出（FR-25 / NFR-01） |
 | TradingView: 右クリックメニューの縦位置補正 › 遷移先が0件で3行を除去するときは margin-top を元に戻す | 遷移先0件でメニューを元に戻すとき、ずらした位置が痕跡として残る退行の検出（FR-24 / SPEC-CS-24 の手順5） |
 
 ## 対象外

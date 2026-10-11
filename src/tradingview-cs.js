@@ -396,6 +396,38 @@ const makeMenuItem = (code, item) => {
 }
 
 /**
+ * 入れ子メニューの証券会社の項目を作成する(SPEC-CS-28)
+ * 証券会社のURLはセッションIDを含むためページのDOMに置かない(NFR-03)。
+ * <a>を持たず、行のクリックで*:openを送ってService Workerに開かせる
+ * (「株Link」ボタンと同じ経路。<a>が無いので代行クリックもdelegatingも要らない)
+ * 入れ子の中のtrにはdata-kabu-tantanを付けない(makeMenuItemと同じ理由)
+ * @param {string} code 銘柄コード(文字種は正規表現で制限済み)
+ * @param {{ title: string, message: { type: string, data: { code: string, type: string } } }} item
+ *   タイトル(固定文言)とクリック時に送るメッセージ
+ * @returns {JQuery<HTMLElement>}
+ */
+const makeBrokerMenuItem = (code, item) => {
+  const row = $(`
+  <tr class="${tvMimicClasses.accessible} ${tvMimicClasses.item}" data-role="menuitem" tabindex="-1">
+    <td class="${tvMimicClasses.iconCell}" data-icon-cell="true"></td>
+    <td>
+      <div class="${tvMimicClasses.content}">
+        <span class="${tvMimicClasses.label}" data-label="true" title="${code} を${item.title}">${item.title}</span>
+      </div>
+    </td>
+  </tr>`)
+
+  return row.click(() => {
+    // jQueryはハンドラの返り値のPromiseを見ないため、拒否は必ずここで握る
+    // 右クリック時点でログインを確かめて項目を出しているのでalertは出さない(FR-06)
+    openBrokerAsync(item.message, null).catch(() => {})
+    // 送った後に閉じる(右クリック側の閉じ方。SPEC-CS-17)
+    // 送信は最初のawaitより前に済んでいるので、行がDOMから外れても取り消されない
+    document.dispatchEvent(new KeyboardEvent('keyup', { keyCode: 27 }))
+  })
+}
+
+/**
  * 情報サイトの項目リストを作成する
  * オプションで設定された並び順を保つ
  * @param {string} code 銘柄コード
@@ -419,25 +451,26 @@ const makeLinkItemsAsync = async (code, type) => {
 
 /**
  * 証券会社の項目リストを作成する
- * ログインしていない場合はURLが返らないので項目は出ない(エラーは出さない)
+ * ログインしていない場合はavailableがfalseなので項目は出ない(エラーは出さない)
+ * URLは受け取らない。クリック時に送る*:openメッセージを持たせる(SPEC-CS-28 / SPEC-MSG-06)
  * @param {string} code 銘柄コード
  * @param {string} type 'jp' または 'us'
- * @returns {Promise<{ title: string, url: string }[]>}
+ * @returns {Promise<{ title: string, message: { type: string, data: { code: string, type: string } } }[]>}
  */
 const makeBrokerItemsAsync = async (code, type) => {
   const items = []
 
-  // 楽天証券にログインしている時は楽天証券の個別銘柄URLが取得できる
+  // 楽天証券にログインしている時は楽天証券の個別銘柄ページを開ける
   const rakutenResponse = await chrome.runtime.sendMessage({ type: 'rakuten-sec:info', data: { code, type } })
-  if (rakutenResponse.data.rakutenUrl) {
-    items.push({ title: '楽天証券で開く', url: rakutenResponse.data.rakutenUrl })
+  if (rakutenResponse.data.available === true) {
+    items.push({ title: '楽天証券で開く', message: { type: 'rakuten-sec:open', data: { code, type } } })
   }
 
   // 内藤証券は国内株のみ対応しているため、米国株では問い合わせない
   if (type === 'jp') {
     const naitoResponse = await chrome.runtime.sendMessage({ type: 'naito-sec:info', data: { code, type } })
-    if (naitoResponse.data.naitoUrl) {
-      items.push({ title: '内藤証券で開く', url: naitoResponse.data.naitoUrl })
+    if (naitoResponse.data.available === true) {
+      items.push({ title: '内藤証券で開く', message: { type: 'naito-sec:open', data: { code, type } } })
     }
   }
 
@@ -558,7 +591,7 @@ const fitContextMenuIntoWindow = (addedRow) => {
  * @param {JQuery<HTMLElement>} parentRow
  * @param {JQuery<HTMLElement>} holderRow
  * @param {string} code 銘柄コード
- * @param {{ title: string, url: string }[]} brokerItems
+ * @param {{ title: string, message: { type: string, data: { code: string, type: string } } }[]} brokerItems
  * @param {{ title: string, url: string }[]} linkItems
  */
 const bindSubmenu = (parentRow, holderRow, code, brokerItems, linkItems) => {
@@ -606,7 +639,7 @@ const bindSubmenu = (parentRow, holderRow, code, brokerItems, linkItems) => {
  * @param {JQuery<HTMLElement>} parentRow
  * @param {JQuery<HTMLElement>} holderRow
  * @param {string} code 銘柄コード
- * @param {{ title: string, url: string }[]} brokerItems
+ * @param {{ title: string, message: { type: string, data: { code: string, type: string } } }[]} brokerItems
  * @param {{ title: string, url: string }[]} linkItems
  * @returns {JQuery<HTMLElement>} 描画した入れ子メニュー
  */
@@ -628,7 +661,8 @@ const openSubmenu = (parentRow, holderRow, code, brokerItems, linkItems) => {
   const tbody = $('tbody', submenu)
 
   // 証券会社 → 区切り線 → 情報サイト の順に並べる
-  brokerItems.forEach((item) => makeMenuItem(code, item).appendTo(tbody))
+  // 証券会社はURLをDOMに置かない専用の項目にする(SPEC-CS-28)
+  brokerItems.forEach((item) => makeBrokerMenuItem(code, item).appendTo(tbody))
 
   if (brokerItems.length > 0 && linkItems.length > 0) {
     makeMenuSeparator().appendTo(tbody)
@@ -830,7 +864,7 @@ const openKabuLinkMenuAsync = async (x, y) => {
     makeButtonMenuItem('楽天証券を開く')
       .click(() => {
         // jQueryはハンドラの返り値のPromiseを見ないため、拒否は必ずここで握る
-        openBrokerAsync('rakuten-sec:open', 'rakutenUrl', '楽天証券', code, type).catch(() => {})
+        openBrokerAsync({ type: 'rakuten-sec:open', data: { code, type } }, '楽天証券').catch(() => {})
       })
       .appendTo(tbody)
   }
@@ -840,7 +874,7 @@ const openKabuLinkMenuAsync = async (x, y) => {
     makeButtonMenuItem('内藤証券を開く')
       .click(() => {
         // jQueryはハンドラの返り値のPromiseを見ないため、拒否は必ずここで握る
-        openBrokerAsync('naito-sec:open', 'naitoUrl', '内藤証券', code, type).catch(() => {})
+        openBrokerAsync({ type: 'naito-sec:open', data: { code, type } }, '内藤証券').catch(() => {})
       })
       .appendTo(tbody)
   }
@@ -885,44 +919,42 @@ const makeButtonMenuItem = (title) => $(`
 
 /**
  * 「株Link」ボタン用に証券会社へ問い合わせる
- * 応答(URLが得られるか)だけを返し、DOMは作らない(SPEC-CS-12)
- * 内藤証券は米国株ではURLが返らないが、現行の振る舞いを変えないため問い合わせ自体は行う
+ * 応答(開けるか)だけを返し、DOMは作らない(SPEC-CS-12)
+ * 内藤証券は米国株ではavailableがfalseになるが、現行の振る舞いを変えないため問い合わせ自体は行う
  * @param {string} code 銘柄コード
  * @param {string} type 'jp' または 'us'
  * @returns {Promise<{ hasRakuten: boolean, hasNaito: boolean }>}
  */
 const queryBrokerAsync = async (code, type) => {
-  // 楽天証券にログインしている時は楽天証券のURLが取得できる
+  // 楽天証券にログインしている時は楽天証券のページを開ける
   const rakutenResponse = await chrome.runtime.sendMessage({ type: 'rakuten-sec:info', data: { code, type } })
 
-  // 内藤証券にログインしている時は内藤証券のURLが取得できる
+  // 内藤証券にログインしている時は内藤証券のページを開ける
   const naitoResponse = await chrome.runtime.sendMessage({ type: 'naito-sec:info', data: { code, type } })
 
   return {
-    hasRakuten: Boolean(rakutenResponse.data.rakutenUrl),
-    hasNaito: Boolean(naitoResponse.data.naitoUrl)
+    hasRakuten: rakutenResponse.data.available === true,
+    hasNaito: naitoResponse.data.available === true
   }
 }
 
 /**
- * 証券会社のページを開く(「株Link」ボタンのメニュー用)
- * ログインしていない場合はURLが返らないのでalertで知らせる(現行の振る舞いのまま)
- * @param {string} messageType 送るメッセージのtype
- * @param {string} urlField 応答のURLフィールド名
- * @param {string} label 未ログイン時に出す証券会社名
- * @param {string} code 銘柄コード
- * @param {string} type 'jp' または 'us'
+ * 証券会社のページを開く(「株Link」ボタンと右クリック入れ子の証券会社項目で共有)
+ * URLはService Workerが組み立てて開く。Content Scriptは開けたかどうかだけを受け取る(SPEC-MSG-06)
+ * 開けなかった場合、alertLabelが文字列ならalertで知らせる(「株Link」ボタンの現行の振る舞いのまま)
+ * @param {{ type: string, data: { code: string, type: string } }} message 送る*:openメッセージ
+ * @param {string | null} alertLabel 未ログイン時に出す証券会社名。nullならalertを出さない
  */
-const openBrokerAsync = async (messageType, urlField, label, code, type) => {
+const openBrokerAsync = async (message, alertLabel) => {
   // メニューを開いた後に拡張機能が更新された場合は何もしない(SPEC-CS-19)
   if (!isExtensionAlive()) {
     return
   }
 
   try {
-    const response = await chrome.runtime.sendMessage({ type: messageType, data: { code, type } })
-    if (response.data[urlField] === null) {
-      alert(`${label}にログインしてください`)
+    const response = await chrome.runtime.sendMessage(message)
+    if (response.data.available !== true && typeof alertLabel === 'string') {
+      alert(`${alertLabel}にログインしてください`)
     }
   } catch {
     // 応答が得られない場合は何もしない(NFR-14)

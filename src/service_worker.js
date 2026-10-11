@@ -206,12 +206,31 @@ const compareVersion = (a, b) => {
   return 0
 }
 
+/**
+ * インストール・更新時にオプションページを開くかを判定する(SPEC-SW-04)
+ * 開くのは初回インストールと、1.0.9未満からの拡張機能の更新だけ。
+ * Chrome本体の更新(chrome_update)・共有モジュールの更新では開かない。
+ * previousVersionはreason === 'update'のときにしか無いので、比較はその場合に限る
+ * (compareVersionはundefinedを'0'として扱うため、そのまま渡すと「開く」になる)
+ * @param {{ reason?: string, previousVersion?: string }} details onInstalledの引数
+ * @returns {boolean} オプションページを開く場合はtrue
+ */
+const shouldOpenOptionsPage = (details) => {
+  if (details.reason === 'install') {
+    return true
+  }
+  if (details.reason === 'update' && typeof details.previousVersion === 'string') {
+    return compareVersion(details.previousVersion, '1.0.9') < 0
+  }
+  return false
+}
+
 // インストール時のイベントハンドラを登録
-// 初回インストールまたは、1.0.9未満からの更新の場合はオプションページを開く
+// 開くかどうかの判定は shouldOpenOptionsPage に任せる(SPEC-SW-04)
 chrome.runtime.onInstalled.addListener((details) => {
   remakeContextMenus()
 
-  if (details.reason === 'install' || compareVersion(details.previousVersion, '1.0.9') < 0) {
+  if (shouldOpenOptionsPage(details)) {
     chrome.runtime.openOptionsPage()
   }
 })
@@ -282,41 +301,42 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   return false
 })
 
+// 証券会社のURL(楽天証券のBV_SessionID入り / 内藤証券のログイン済みタブの丸写し)は
+// Service Workerの外に出さない。応答は有無(available)だけにし、URLはtabs.createにだけ使う
+// (SPEC-MSG-06 / ADR-0016)
+
 /**
  * 楽天証券の情報取得時のメッセージ処理
  * @param {*} request リクエスト情報
  * @param {*} sendResponse レスポンスコールバック
  */
 const onMessageRakutenSecInfoAsync = async (request, sendResponse) => {
-  const response = { type: request.type, data: null }
   const { code, type } = request.data
-  response.data = { rakutenUrl: null }
 
-  // 楽天証券のURLを取得する
-  response.data.rakutenUrl = await getRakutenSecUrlAsync(type, code)
+  // 楽天証券のURLが組み立てられるか(ログイン済みタブがあるか)だけを返す
+  const url = await getRakutenSecUrlAsync(type, code)
 
-  sendResponse?.(response)
+  sendResponse?.({ type: request.type, data: { available: url !== null } })
 }
 
 /**
  * 楽天証券を開く時のメッセージ処理
+ * URLは:infoの時点のものを持ち越さず、ここで組み立て直す
  * @param {*} request リクエスト情報
  * @param {*} sendResponse レスポンスコールバック
  */
 const onMessageRakutenSecOpenAsync = async (request, sendResponse) => {
-  const response = { type: request.type, data: null }
   const { code, type } = request.data
-  response.data = { rakutenUrl: null }
 
   // 楽天証券のURLを取得する
-  response.data.rakutenUrl = await getRakutenSecUrlAsync(type, code)
+  const url = await getRakutenSecUrlAsync(type, code)
 
   // 楽天証券ページを開く
-  if (response.data.rakutenUrl) {
-    chrome.tabs.create({ url: response.data.rakutenUrl })
+  if (url !== null) {
+    chrome.tabs.create({ url })
   }
 
-  sendResponse?.(response)
+  sendResponse?.({ type: request.type, data: { available: url !== null } })
 }
 
 /**
@@ -325,35 +345,32 @@ const onMessageRakutenSecOpenAsync = async (request, sendResponse) => {
  * @param {*} sendResponse レスポンスコールバック
  */
 const onMessageNaitoSecInfoAsync = async (request, sendResponse) => {
-  const response = { type: request.type, data: null }
   const { code, type } = request.data
-  response.data = { naitoUrl: null }
 
-  // 内藤証券のURLを取得する
-  response.data.naitoUrl = await getNaitoSecUrlAsync(type, code)
+  // 内藤証券のURLが組み立てられるか(ログイン済みタブがあるか)だけを返す
+  const url = await getNaitoSecUrlAsync(type, code)
 
-  sendResponse?.(response)
+  sendResponse?.({ type: request.type, data: { available: url !== null } })
 }
 
 /**
  * 内藤証券を開く時のメッセージ処理
+ * URLは:infoの時点のものを持ち越さず、ここで組み立て直す
  * @param {*} request リクエスト情報
  * @param {*} sendResponse レスポンスコールバック
  */
 const onMessageNaitoSecOpenAsync = async (request, sendResponse) => {
-  const response = { type: request.type, data: null }
   const { code, type } = request.data
-  response.data = { naitoUrl: null }
 
   // 内藤証券のURLを取得する
-  response.data.naitoUrl = await getNaitoSecUrlAsync(type, code)
+  const url = await getNaitoSecUrlAsync(type, code)
 
   // 内藤証券ページを開く
-  if (response.data.naitoUrl) {
-    chrome.tabs.create({ url: response.data.naitoUrl })
+  if (url !== null) {
+    chrome.tabs.create({ url })
   }
 
-  sendResponse?.(response)
+  sendResponse?.({ type: request.type, data: { available: url !== null } })
 }
 
 /**

@@ -120,6 +120,9 @@ $(() => {
 
 すべてのメニュー項目に `target="_blank"` と `rel="noopener noreferrer"` を付ける。
 
+> **例外（1.20.1〜）:** TradingView の右クリック入れ子の**証券会社項目**は `<a>` を持たない（SPEC-CS-28）。
+> Service Worker が `chrome.tabs.create` で開くため、opener・Referer は構造上渡らない。
+
 - 要件: NFR-03
 - 検証: `auto`（`メニュー項目が銘柄コード入りの外部リンクになっている`）
 
@@ -471,8 +474,8 @@ ADR-0002 の 3 ／ ADR-0010 の 6）。
 
 | 順 | 項目 | 出る条件 |
 | --- | --- | --- |
-| 1 | `楽天証券で開く` | `rakuten-sec:info` が URL を返したとき（ログイン中） |
-| 2 | `内藤証券で開く` | `naito-sec:info` が URL を返したとき（国内株かつログイン中） |
+| 1 | `楽天証券で開く` | `rakuten-sec:info` が `available: true` を返したとき（ログイン中。1.20.0 までは URL を返したとき） |
+| 2 | `内藤証券で開く` | `naito-sec:info` が `available: true` を返したとき（国内株かつログイン中。同上） |
 | 3 | 区切り線 | 1 か 2 のどちらかが出ていて、かつ 4 が1件以上あるとき |
 | 4 | 情報サイト（`〈サイト名〉で開く`） | オプションで有効。並び順は**オプションの並び順**（SPEC-ST-01） |
 
@@ -582,8 +585,8 @@ ADR-0002 の 3 ／ ADR-0010 の 6）。
 | ハンドラ | 呼ぶ関数 | 握る場所 |
 | --- | --- | --- |
 | 「株Link」ボタン | `openKabuLinkMenuAsync(x, y)` | ハンドラ内 |
-| メニュー項目「楽天証券を開く」 | `openBrokerAsync('rakuten-sec:open', …)` | ハンドラ内 |
-| メニュー項目「内藤証券を開く」 | `openBrokerAsync('naito-sec:open', …)` | ハンドラ内 |
+| メニュー項目「楽天証券を開く」 | `openBrokerAsync({ type: 'rakuten-sec:open', … }, '楽天証券')`（1.20.1〜。引数は SPEC-CS-28） | ハンドラ内 |
+| メニュー項目「内藤証券を開く」 | `openBrokerAsync({ type: 'naito-sec:open', … }, '内藤証券')`（同上） | ハンドラ内 |
 | メニュー項目（情報サイト） | `openUrlAsync(item.url)` | ハンドラ内 |
 
 呼ばれる側（`openBrokerAsync()` / `openUrlAsync()`）にも `try` / `catch` の網があるが、
@@ -632,15 +635,15 @@ FR-07「やらないこと」に従い、**ラベル・開き方・未ログイ�
 
 ただし手順 6 で DOM を作るには、**「問い合わせ（手順 3）」と「項目の DOM 生成（手順 6）」を分ける**必要がある。
 1.11.0 までは `:info` の応答を見たその場で項目を `appendTo(tbody)` しており、`tbody` の存在が前提だった。
-手順 3（`queryBrokerAsync()`）は**応答（`rakutenUrl` / `naitoUrl` が非 null か）だけを返し、DOM を作らない**。
+手順 3（`queryBrokerAsync()`）は**応答（`available` が `true` か。1.20.0 までは `rakutenUrl` / `naitoUrl` が非 null か）だけを返し、DOM を作らない**。
 クリック時に `:open` を送って `alert()` を出す作りはそのまま残す
 （`openBrokerAsync()`。切断状態では送らない。SPEC-CS-19）。
 
 | 観点 | ボタン（1.11.0 から変えない） | 右クリック（`makeBrokerItemsAsync`） |
 | --- | --- | --- |
 | ラベル | `楽天証券を開く` / `内藤証券を開く` | `楽天証券で開く` / `内藤証券で開く` |
-| 開き方 | クリック時に `rakuten-sec:open` / `naito-sec:open` を送る | 取得済み URL を `open-url` で開く |
-| 未ログイン時 | `:open` の応答が `null` なら `alert()` を出す | 項目自体が出ない |
+| 開き方 | クリック時に `rakuten-sec:open` / `naito-sec:open` を送る | **1.20.1〜: 同じ**（`openBrokerAsync(item.message, null)`。SPEC-CS-28）。1.20.0 までは `:info` の URL を `<a href>` で直接開いていた（**この記述は 1.20.0 まで「`open-url` で開く」と誤っていた**） |
+| 未ログイン時 | `:open` の応答が `available: false` なら `alert()` を出す | 項目自体が出ない。クリック時に `available: false` なら何もしない（`alert()` なし） |
 | 米国株での内藤証券 | **問い合わせる**（`type` を渡すので URL は返らない） | 問い合わせない |
 
 > ラベルと開き方を揃えるのは**別タスク**。要件（FR-07「やらないこと」）で明示的にスコープ外にしてある。
@@ -942,7 +945,8 @@ SPEC-CS-11 の親行にホバーしたとき、受け皿行の `<td>` の中に�
 ```
 
 - 項目の `<tr>` は SPEC-CS-11 の親行と同形。**`data-kabu-tantan` は付けない**（SPEC-CS-11 参照）
-- 項目は `<a href>` による直接遷移。`open-url` メッセージは使わない（現行の右クリックメニューと同じ）
+- **情報サイトの**項目は `<a href>` による直接遷移。`open-url` メッセージは使わない（現行の右クリックメニューと同じ）
+- **証券会社の**項目は `<a>` を持たず、行の `click` で `*:open` を送る（SPEC-CS-28。1.20.1〜）
 - 入れ子の項目には受け皿行（`tr.{subMenu}`）を付けない。受け皿が要るのは矢印付きの親行だけ
 - `<a>` のラベルは「`〈サイト名〉で開く`」。銘柄コードは親行にあるため項目からは省く。
   `title` 属性には「`〈code〉 を〈サイト名〉で開く`」を入れ、ツールチップで銘柄を確認できるようにする
@@ -1131,8 +1135,12 @@ Esc キーと外クリックで親メニューを閉じ、それに伴って入�
 
 | 順 | 問い合わせ | 出す条件 | `title` |
 | --- | --- | --- | --- |
-| 1 | `rakuten-sec:info`（`{ code, type }`） | `data.rakutenUrl` が非 null | `楽天証券で開く` |
-| 2 | `naito-sec:info`（`{ code, type }`） | `type === 'jp'` かつ `data.naitoUrl` が非 null | `内藤証券で開く` |
+| 1 | `rakuten-sec:info`（`{ code, type }`） | `data.available === true` | `楽天証券で開く` |
+| 2 | `naito-sec:info`（`{ code, type }`） | `type === 'jp'` かつ `data.available === true` | `内藤証券で開く` |
+
+> **戻り値は `{ title, url }` ではなく `{ title, message }`**（1.20.1〜）。
+> URL を持たず、クリック時に送る `*:open` メッセージを持つ。詳細は SPEC-CS-28。
+> 1.20.0 までは `url` に `:info` の応答 URL（セッション ID を含む）を入れていた。
 
 - **米国株では内藤証券に問い合わせない**（内藤証券は国内株のみ。SPEC-SW-07）。
   1.10.0 までの `addNewyorkTicker()` も問い合わせていなかった
@@ -2436,6 +2444,8 @@ if ($(target).closest('div.chart-gui-wrapper').length > 0) {
 
 - **開く経路は `<a>` の1本のまま。** URL・`target="_blank"`・`rel="noopener noreferrer"` を
   2箇所で持たない（SPEC-CS-05）
+- **例外: 証券会社の項目（1.20.1〜）。** 開く経路は `*:open` メッセージの1本で、`<a>` は無い（SPEC-CS-28）。
+  **項目ごとに経路が1本**であることは変わらない。URL をページの DOM に置けないため（NFR-03 / SPEC-MSG-06）
 - **`chrome.runtime.sendMessage({ type: 'open-url' })` は使わない。**
   押した場所で経路が割れると、切断状態（SPEC-CS-19）での挙動まで割れる
 - **閉じるのは開いた後。** 先に閉じると `<a>` が DOM から外れ、代行クリックが空振りする
@@ -2571,7 +2581,7 @@ A-11 の実施時に、入れ子の項目で **`<a>` の右端と、それを含
 | 対象 | 扱い |
 | --- | --- |
 | 入れ子の情報サイト項目（`makeMenuItem()`） | **対象**（判定基準 1 / 2-a / 2-b） |
-| 入れ子の楽天証券・内藤証券の項目 | **対象。** 同じ `makeMenuItem()` を通る（判定基準3） |
+| 入れ子の楽天証券・内藤証券の項目 | **対象**（判定基準3）。**1.20.1〜は `makeBrokerMenuItem()`**（SPEC-CS-28）。`<a>` を持たず行全体の `click` で開くので、**代行も `delegating` も無い**（2-c と同じ方式） |
 | チャート起点・ウォッチリスト行起点 | **どちらも対象。** 項目の生成は共通 |
 | 楽天証券・SBI証券のリンクメニュー（`linkMenu.js`） | **対象**（判定基準 2-d。2026-08-30 に追加）。手段は CSS |
 | 親行「`<code>` を開く ▶」 | **対象外。** リンクではなく、ホバーで入れ子を開くだけ（SPEC-CS-11。FR-25 の「やらないこと」） |
@@ -3290,3 +3300,147 @@ SPEC-CS-24 の書き戻しには2つの主張がある。**検査できるのは
 - 要件: FR-26, FR-24, FR-25, FR-12, NFR-08, CON-08, CON-09
 - 検証: `auto`（`tests/tradingview.spec.mjs`。本節が定義する 1-1〜1-5 / 2-1〜2-6）／
   `manual`（**残る行**は上表のとおり。`docs/MANUAL-CHECKLIST.md` A-11 の観測 / A-18 の 5・7行目）
+
+## SPEC-CS-28 TradingView: 右クリックの証券会社項目は URL を持たない（NFR-03）
+
+> 1.20.1 で実装した。要件は NFR-03 / CON-04 / FR-06。設計判断は [ADR-0016](../adr/0016-broker-url-stays-in-service-worker.md)。メッセージ側は SPEC-MSG-06。
+
+**1.20.0 までの欠陥:** `makeBrokerItemsAsync()` が `rakuten-sec:info` / `naito-sec:info` の応答 URL を
+`items` に入れ、`makeMenuItem()` が `<a href="<URL>" title=…>` として入れ子に挿入していた。
+楽天証券は `;BV_SessionID=<id>` を含み（SPEC-SW-06）、内藤証券はログイン済みタブの URL の丸写し（SPEC-SW-07）。
+**どちらも TradingView のページスクリプトから読める DOM に載っていた。**
+
+### 規則
+
+| # | 規則 |
+| --- | --- |
+| 1 | 証券会社の項目は **`<a>` を持たない。`href` 属性を持つ要素を1つも含まない** |
+| 2 | 証券会社の項目は**行全体の `click` で `*:open` を送り、Service Worker がタブを開く**（「株Link」ボタンと同じ経路。SPEC-CS-12） |
+| 3 | Content Script は証券会社の URL を**受け取らない・保持しない**（SPEC-MSG-06。応答は `available` だけ） |
+| 4 | 情報サイトの項目（`makeMenuItem()`）は**変えない**。`<a href>` と代行クリック（SPEC-CS-25）のまま |
+
+### 項目データ `makeBrokerItemsAsync(code, type)`
+
+戻り値を `{ title: string, url: string }[]` から次に変えた（1.20.1）。
+
+```javascript
+// 例: 楽天証券にログイン中・国内株
+[{ title: '楽天証券で開く', message: { type: 'rakuten-sec:open', data: { code: '7203', type: 'jp' } } }]
+```
+
+| 順 | 問い合わせ | 出す条件 | `title` | `message.type` |
+| --- | --- | --- | --- | --- |
+| 1 | `rakuten-sec:info` | `response.data.available === true` | `楽天証券で開く` | `rakuten-sec:open` |
+| 2 | `naito-sec:info`（`type === 'jp'` のときだけ送る） | 同上 | `内藤証券で開く` | `naito-sec:open` |
+
+- 問い合わせのタイミング・順序・米国株で内藤証券を問い合わせないことは変えない（SPEC-CS-18）
+- `bindSubmenu()` / `openSubmenu()` の引数は変えない（JSDoc の `brokerItems` の型だけ直す）
+- `openSubmenu()` は `brokerItems` を **`makeBrokerMenuItem(code, item)`** で、`linkItems` を従来どおり `makeMenuItem(code, item)` で描画する
+
+### DOM `makeBrokerMenuItem(code, item)`（新設）
+
+```html
+<tr class="{accessible} {item}" data-role="menuitem" tabindex="-1">
+  <td class="{iconCell}" data-icon-cell="true"></td>
+  <td>
+    <div class="{content}">
+      <span class="{label}" data-label="true" title="7203 を楽天証券で開く">楽天証券で開く</span>
+    </div>
+  </td>
+</tr>
+```
+
+- 行の構造は `makeMenuItem()` と同形で、`<a>` の位置にラベル文字列を直接置く
+- `title` は `` `${code} を${item.title}` ``（1.20.0 の `<a title>` と同じ文言）。ツールチップを文字の上で維持する
+- インラインの `color` は付けない（`<a>` の既定色を打ち消すためのもので、`<span>` には要らない。`makeButtonMenuItem()` と同じ）
+- `data-kabu-tantan` は付けない（SPEC-CS-17。入れ子の中の行の規則のまま）
+- `code` は正規表現で字種を制限済み、`item.title` は固定文言なので、テンプレートへの埋め込みは既存の作りのままでよい
+
+### クリック
+
+行の `click` ハンドラで次を**この順に同期的に**行う。
+
+```javascript
+row.click(() => {
+  // jQueryはハンドラの返り値のPromiseを見ないため、拒否は必ずここで握る
+  openBrokerAsync(item.message, null).catch(() => {})
+  // 送った後に閉じる(右クリック側の閉じ方。SPEC-CS-17)
+  document.dispatchEvent(new KeyboardEvent('keyup', { keyCode: 27 }))
+})
+```
+
+- **`delegating` は要らない。** `<a>` が無いので、代行クリックがバブルして戻る経路が無い（SPEC-CS-25 の Esc 1回は構造で満たす）
+- `openBrokerAsync()` は最初の `await` より前に `isExtensionAlive()` の判定と `chrome.runtime.sendMessage()` の呼び出しを済ませる。
+  Esc で行が DOM から外れても送信は取り消されない
+- 押した位置・修飾キーを見ない。行のどこを左クリックしても同じ（FR-25 判定基準3）
+
+### `openBrokerAsync()` の変更（ボタンと共有）
+
+| | 1.20.0 | 1.20.1 |
+| --- | --- | --- |
+| 引数 | `(messageType, urlField, label, code, type)` | **`(message, alertLabel)`**。`message` は `{ type, data: { code, type } }`、`alertLabel` は `string \| null` |
+| 未取得の判定 | `response.data[urlField] === null` | `response.data.available !== true` |
+| `alert()` | 常に出す | **`alertLabel` が文字列のときだけ** `` `${alertLabel}にログインしてください` `` を出す |
+| 門・網 | `isExtensionAlive()` ＋ `try` / `catch` | 変えない |
+
+| 呼び出し元 | 渡す値 |
+| --- | --- |
+| 「株Link」の「楽天証券を開く」 | `({ type: 'rakuten-sec:open', data: { code, type } }, '楽天証券')` |
+| 「株Link」の「内藤証券を開く」 | `({ type: 'naito-sec:open', data: { code, type } }, '内藤証券')` |
+| 右クリック入れ子の証券会社項目 | `(item.message, null)` |
+
+- **右クリック側は `alert()` を出さない。** 右クリック時点で `available` を確かめて項目を出しているため（FR-06「エラーを出さない」）。
+  クリックまでにログイン済みタブを閉じた場合だけ、**何も開かずにメニューが閉じる**（下表）
+- `queryBrokerAsync()` は `hasRakuten: rakutenResponse.data.available === true` / `hasNaito: naitoResponse.data.available === true` に直す（ボタン側の振る舞いは変えない）
+- `chrome.runtime.sendMessage` の箇所数（6）と `isExtensionAlive()` の門の数（7）は変わらない（SPEC-CS-19）。右クリック側の新しい呼び出しは `openBrokerAsync()` の門を通る
+
+### 操作ごとの振る舞い（証券会社項目のみ）
+
+| 操作 | 1.20.0（`<a href>`） | 1.20.1 |
+| --- | --- | --- |
+| 左クリック（文字の上 / 外） | 新しいタブで開く → 閉じる | **同じ**（開くのは Service Worker の `chrome.tabs.create`）→ 閉じる |
+| Ctrl / Shift / Meta ＋左クリック | 背景タブ・新しいウィンドウ等（ブラウザの既定） | **修飾キーを見ない。** 左クリックと同じ |
+| 中クリック | 背景タブで開く | **何もしない** |
+| 右クリック →「リンクのアドレスをコピー」 | 出る（**セッション ID ごとコピーされる**） | 出ない |
+| ツールチップ | 文字の上で出る | 文字の上で出る（`<span title>`） |
+| Esc の送出 | 1回 | 1回 |
+| 切断状態（SPEC-CS-19） | `<a>` が保持済みの URL を開く | 送らない。メニューが閉じるだけ |
+| 右クリック後にログイン済みタブを閉じた | 古い URL で開く | `available: false`。開かない・`alert()` も出さない |
+| 開いたタブ | `<a target="_blank" rel="noopener noreferrer">` | `chrome.tabs.create({ url })`。`openerTabId` を付けないので opener・Referer は渡らない。**タブの挿入位置は `<a>` と異なりうる**（ボタン側と同じ） |
+| キーボード | 項目の移動・決定は対象外（FR-25「やらないこと」） | 同じ。フォーカスを受ける要素も無い |
+
+> **中クリック・Ctrl+クリック・アドレスのコピーを失うことは FR-25 判定基準5（文字の上での非退行）に触れる。**
+> URL をページに置かない限り成立しない操作で、NFR-03 を優先した。要件側の例外は明文化済み（FR-25 判定基準5 の例外 / NFR-03。ADR-0016 の 3）。
+
+### 検証（SPEC-CS-28）
+
+`tests/tradingview.spec.mjs` の describe **`TradingView: 証券会社の項目は URL を DOM に出さない`**（1.20.1。6件。「文字の上 / アイコン列」は2件に分かれる）。
+
+**共通の準備（ヘルパー `stubBrokerTabsAsync(serviceWorker)`）:** Service Worker の `chrome.tabs.query` を差し替え、
+`url` 引数が `https://member.rakuten-sec.co.jp/*` なら
+`https://member.rakuten-sec.co.jp/app/home.do;BV_SessionID=KTTSECRET0123?eventType=init`、
+`https://*.qhit.net/naito/iswebptt2/*` なら `https://example.qhit.net/naito/iswebptt2/stock?qcode=1301&sid=KTTSECRET0123`
+を持つタブを1つ返す（それ以外は `[]`）。`chrome.tabs.create` を差し替え、URL を `self.__openedUrls` に積む
+（既存の「株Link」ボタンのテストと同じ手法）。期待 URL は差し替え後に SW 上で
+`getRakutenSecUrlAsync('jp', CHART_CODE)` / `getNaitoSecUrlAsync('jp', CHART_CODE)` を呼んで得る。
+起点はチャート（`CHART_CODE` = `7203`、国内株なので両社が出る）。
+
+| テスト名 | 期待 |
+| --- | --- |
+| `証券会社の項目は href を持たず、セッション ID をページの DOM に出さない` | 入れ子に `楽天証券で開く` / `内藤証券で開く` の行が1件ずつある。その行の中の `a` と `[href]` が0件。入れ子を開いた状態の `page.content()` が `KTTSECRET0123` / `member.rakuten-sec.co.jp` / `qhit.net` のいずれも含まない |
+| `楽天証券の項目の{文字の上,アイコン列}を左クリックすると、Service Worker が該当銘柄のページを開く`（2件） | `self.__openedUrls` が `[期待 URL]` と一致する（`expect.poll`）。新しいページが `context` に開かれない（`<a>` 経由ではない） |
+| `内藤証券の項目を左クリックすると、Service Worker が該当銘柄のページを開く` | 同上（内藤証券の期待 URL） |
+| `証券会社の項目を左クリックすると、Esc の送出は1回でメニューが閉じる` | 既存の Esc 計数と同じ手法で `1`。`[${MENU_BOX_MARK}]` が0件 |
+| `ログイン済みタブが無ければ証券会社の項目を出さない` | `chrome.tabs.query` が常に `[]`。入れ子に情報サイトの項目はあり、`楽天証券で開く` / `内藤証券で開く` は0件 |
+
+- 「文字の上」は `<span data-label>` の矩形の中心、「アイコン列」は `td[data-icon-cell]` の中心を押す
+- **差し替えは無しで書けない。** 実タブを開くとテストが楽天証券へ出ていく（CON-10 / 外部リクエストゼロの方針）
+- 既存テストへの影響: 既存の describe は `chrome.tabs.query` を差し替えないため証券会社の項目が出ず、変わらない。
+  `makeMenuEmptyAsync` の `rakuten-sec:info` の遅延も応答の形に依存しないので変えなくてよい
+
+| 種別 | 手順 |
+| --- | --- |
+| `manual` | 楽天証券にログインしたタブを開いたまま TradingView（`7203`）でチャートを右クリック →「`7203` を開く ▶」→「楽天証券で開く」。トヨタ自動車の個別銘柄ページがログイン状態で開くこと。続けて TradingView のタブの DevTools コンソールで `document.documentElement.outerHTML.includes('BV_SessionID')` が `false` であること（入れ子を開いた状態で実行） |
+
+- 要件: NFR-03, CON-04, FR-06, FR-18, FR-25
+- 検証: `auto`（上表 ＋ SPEC-MSG-06 の `service_worker: 証券会社の応答`）／`manual`（上表）

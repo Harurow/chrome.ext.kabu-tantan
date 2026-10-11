@@ -124,11 +124,14 @@ docs/
 
 | type | 用途 |
 | --- | --- |
-| `rakuten-sec:info` | 楽天証券のセッションIDから個別銘柄 URL を取得 |
-| `rakuten-sec:open` | 上記 URL を新しいタブで開く |
-| `naito-sec:info` | 内藤証券の個別銘柄 URL を取得 |
-| `naito-sec:open` | 上記 URL を新しいタブで開く |
+| `rakuten-sec:info` | 楽天証券の個別銘柄 URL を組み立てられるか（ログイン済みタブがあるか）を返す |
+| `rakuten-sec:open` | Service Worker が URL を組み立てて新しいタブで開く |
+| `naito-sec:info` | 内藤証券の個別銘柄 URL を組み立てられるかを返す |
+| `naito-sec:open` | Service Worker が URL を組み立てて新しいタブで開く |
 | `open-url` | 指定 URL を新しいタブで開く |
+
+> 証券会社の URL（楽天証券の `BV_SessionID` を含む）は **Service Worker の外へ出さない**。
+> 応答は `{ available: boolean }` だけで、Content Script にも注入先ページの DOM にも URL を渡さない（SPEC-MSG-06 / ADR-0016）。
 
 ## ⚠️ 他社サイトに注入するという前提
 

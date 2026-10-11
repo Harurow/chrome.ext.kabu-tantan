@@ -166,6 +166,12 @@ TradingView のリリースでハッシュ部分が変わる。**変わっても
 Chrome ウェブストア審査ではこの用途を明示する必要がある。ログインしていなければ
 メニュー自体が出ない（`null` が返る）。
 
+**組み立てた URL は Service Worker の外に出さない**（SPEC-MSG-06 / ADR-0016。1.20.1 から）。
+Content Script への応答は「開けるか」（`available: boolean`）だけで、タブを開くのも Service Worker
+（`chrome.tabs.create`）。Content Script は注入先ページと同じレンダラーで動くため、
+渡したデータはページへ漏れうるものとして扱う。1.20.0 までは TradingView の右クリック入れ子が
+`BV_SessionID` 入りの URL を `<a href>` として DOM に書き出していた。
+
 ## 同梱ライブラリ (`src/third-party/`)
 
 | ファイル | ライブラリ | バージョン | 用途 |
