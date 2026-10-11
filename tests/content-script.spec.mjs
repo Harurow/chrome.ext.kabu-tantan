@@ -1,5 +1,6 @@
 import { test, expect } from './fixtures/extension.mjs'
 import { evaluateScripts } from '../scripts/selector-check/load-selectors.mjs'
+import { STALE_KEYS } from './fixtures/storage.mjs'
 
 /**
  * 対象サイトの DOM 構造を最小限だけ再現したフィクスチャ。
@@ -410,6 +411,30 @@ test.describe('設定の反映', () => {
     await expect(items.nth(0)).toHaveAttribute('href', 'https://kabutan.jp/stock/?code=7203')
     await expect(items.nth(1)).toHaveAttribute('href', 'https://minkabu.jp/stock/7203')
   })
+
+  // SPEC-ST-03 / NFR-05: サイト廃止で消えた key が storage に残っていても、読み飛ばして残りで作る。
+  // ガード（createMenu の `if (!entry)`）が無いと TypeError になり、
+  // retrySetup が握って打ち切るのでメニューが1つも出ない（1.16.1 まではこの状態だった）
+  test('storage に残った未知のキーは読み飛ばし、残りの遷移先でメニューを作る', async ({ page, context, extensionId, serveFixture }) => {
+    const options = await context.newPage()
+    await options.goto(`chrome-extension://${extensionId}/options.html`)
+    await options.evaluate((keys) => chrome.storage.sync.set({ enableLinkKeys: keys }), STALE_KEYS)
+    await options.close()
+
+    await serveFixture(page, RAKUTEN_FAVORITES_URL, RAKUTEN_FAVORITES_HTML)
+
+    // フィクスチャの全行に注入される
+    await expect(page.locator('span.x-kabu-root')).toHaveCount(3)
+
+    // 未知キーの項目が無く、残りは設定順（externalUrls の定義順ではない）
+    const items = page.locator('span.x-kabu-root').first().locator('li.x-kabu-menu-item a')
+    await expect(items).toHaveCount(2)
+    await expect(items.nth(0)).toHaveAttribute('href', 'https://kabutan.jp/stock/?code=7203')
+    await expect(items.nth(1)).toHaveAttribute('href', 'https://minkabu.jp/stock/7203')
+
+    // 3行 × 2項目。どの行にも未知キーの項目が無い
+    await expect(page.locator('li.x-kabu-menu-item a')).toHaveCount(6)
+  })
 })
 
 /**
@@ -419,7 +444,8 @@ test.describe('設定の反映', () => {
  * 実装は `src/style.css` の `li.x-kabu-menu-item > a { display: block }` の1規則だけで、
  * 項目を組み立てる `linkMenu.js` と `style.css` は楽天・SBI の4本すべてに同じ組で注入される
  * （`manifest.json` の `content_scripts`）。よって楽天のフィクスチャで固定すれば
- * SBI 側も同じ規則で動く。TradingView 側（2-a / 2-b / 2-c）は自動化しない（CON-08）。
+ * SBI 側も同じ規則で動く。TradingView 側（2-a / 2-b / 2-c）は JS の代行という別経路で、
+ * 1.20.0 から `tests/tradingview.spec.mjs` がフィクスチャで見ている（ADR-0013 の 4）。
  */
 test.describe('メニュー項目のクリック範囲', () => {
   /** 先頭の銘柄コードのメニューをホバーで開く */
@@ -800,7 +826,8 @@ test.describe('urls.js: matchInjectionTicker', () => {
 /**
  * TradingView の `EXCHANGE:CODE` 解釈 (SPEC-TC-07 / SPEC-CS-23)。
  *
- * TradingView 自体は DOM がハッシュ付きクラス名で変わるため自動テスト対象外だが、
+ * TradingView のサイト側の DOM はハッシュ付きクラス名で変わるため自動テストでは見ない
+ * （拡張が作った DOM は 1.20.0 から `tests/tradingview.spec.mjs` がフィクスチャで見る。CON-08）が、
  * `parseExchangeSymbol()` は**純粋な文字列処理**で、ブラウザも DOM も要らない。
  * canvas の `aria-label` とウォッチリストの行の属性値の両方がここを通り、
  * 誤った銘柄のリンクを出す唯一の経路になる（FR-19 判定基準 3・6 / ADR-0010）。

@@ -3,13 +3,13 @@
 > **このファイルは `npm run docs:tests` で自動生成される。手で編集しない。**
 > 説明文を変えたい場合は `scripts/test-catalog.mjs` を編集する。
 
-テスト総数: **145**
+テスト総数: **150**
 
 テストの方針・手法は [TESTING.md](TESTING.md) を参照。
 
 ## Content Script（楽天証券 / SBI証券 / スクリーナー2種）
 
-`tests/content-script.spec.mjs` — 34 件
+`tests/content-script.spec.mjs` — 35 件
 
 context.route() で対象オリジンにフィクスチャ HTML を返し、実際の注入を検証する。固定待機が明けた後に要素が現れるフィクスチャで、注入の再試行（SPEC-CS-22）も見る。
 
@@ -29,32 +29,33 @@ context.route() で対象オリジンにフィクスチャ HTML を返し、実�
 | 10 | スクリーナー Content Script | 楽天スーパースクリーナー: 後から現れた結果一覧に注入する |
 | 11 | スクリーナー Content Script | SBI銘柄スクリーニング: 後から現れた結果一覧に注入する |
 | 12 | 設定の反映 | オプションで無効にしたサイトはメニューに出ない |
-| 13 | メニュー項目のクリック範囲 | 項目の文字の外を押しても、文字の上と同じ URL が開く |
-| 14 | メニュー項目のクリック範囲 | 項目と項目のあいだを押しても何も開かない |
-| 15 | メニュー項目のクリック範囲 | 項目をクリックしてもメニューは閉じない |
-| 16 | 米国株の行への注入 | 保有商品一覧（すべて）の米国株の行にメニューが出て、国内株の行は変わらない |
-| 17 | 米国株の行への注入 | 米国株の項目は url3 を持つサイトだけで、右クリックと同じ URL になる |
-| 18 | 米国株の行への注入 | url3 を持たないサイトだけが有効なら米国株の行にメニューを出さない |
-| 19 | 米国株の行への注入 | 保有商品一覧（すべて）は国内株式・米国株式の行だけに注入する |
-| 20 | 米国株の行への注入 | SBI ポートフォリオの外国株式の行にも注入する |
-| 21 | 米国株の行への注入 | us を付けていないランキングでは米国ティッカーの形のセルに注入しない |
-| 22 | 米国株の行への注入 | お気に入りは us を付けていないので米国ティッカーの形の行に注入しない |
-| 23 | 米国株の行への注入 | 米国株のお気に入り2ページでは米国ティッカーの行にメニューが出る |
-| 24 | 米国株の行への注入 | 遷移先を全部無効にすると国内株の行にもメニューを出さない |
-| 25 | 米国株の行への注入 | 同じコードが2回現れるセルでもメニューは1つ |
-| 26 | urls.js: matchInjectionTicker | 国内株を先に見て、空振りしたときだけ米国株を試す |
-| 27 | urls.js: matchInjectionTicker | 形しか見ないので、届かせてはいけないセルは抽出では防げない |
-| 28 | urls.js: matchInjectionTicker | allowUs が偽なら米国株は一切成立しない |
-| 29 | urls.js: matchInjectionTicker | 前後の空白を落として判定する |
-| 30 | tradingview-cs.js: isSymbolShaped | EXCHANGE:CODE の形だけを行の値と見なす |
-| 31 | tradingview-cs.js: isSymbolShaped | 解釈できる値は必ず形を満たす（形の判定は解釈より狭くならない） |
-| 32 | tradingview-cs.js: parseExchangeSymbol | canvas の aria-label と行の属性値で同じ結果になる |
-| 33 | tradingview-cs.js: parseExchangeSymbol | 米国ティッカーは後続境界を見て、切り出せないときは何も返さない |
-| 34 | tradingview-cs.js: parseExchangeSymbol | 取引所を解釈できない・形が合わないものは何も返さない |
+| 13 | 設定の反映 | storage に残った未知のキーは読み飛ばし、残りの遷移先でメニューを作る |
+| 14 | メニュー項目のクリック範囲 | 項目の文字の外を押しても、文字の上と同じ URL が開く |
+| 15 | メニュー項目のクリック範囲 | 項目と項目のあいだを押しても何も開かない |
+| 16 | メニュー項目のクリック範囲 | 項目をクリックしてもメニューは閉じない |
+| 17 | 米国株の行への注入 | 保有商品一覧（すべて）の米国株の行にメニューが出て、国内株の行は変わらない |
+| 18 | 米国株の行への注入 | 米国株の項目は url3 を持つサイトだけで、右クリックと同じ URL になる |
+| 19 | 米国株の行への注入 | url3 を持たないサイトだけが有効なら米国株の行にメニューを出さない |
+| 20 | 米国株の行への注入 | 保有商品一覧（すべて）は国内株式・米国株式の行だけに注入する |
+| 21 | 米国株の行への注入 | SBI ポートフォリオの外国株式の行にも注入する |
+| 22 | 米国株の行への注入 | us を付けていないランキングでは米国ティッカーの形のセルに注入しない |
+| 23 | 米国株の行への注入 | お気に入りは us を付けていないので米国ティッカーの形の行に注入しない |
+| 24 | 米国株の行への注入 | 米国株のお気に入り2ページでは米国ティッカーの行にメニューが出る |
+| 25 | 米国株の行への注入 | 遷移先を全部無効にすると国内株の行にもメニューを出さない |
+| 26 | 米国株の行への注入 | 同じコードが2回現れるセルでもメニューは1つ |
+| 27 | urls.js: matchInjectionTicker | 国内株を先に見て、空振りしたときだけ米国株を試す |
+| 28 | urls.js: matchInjectionTicker | 形しか見ないので、届かせてはいけないセルは抽出では防げない |
+| 29 | urls.js: matchInjectionTicker | allowUs が偽なら米国株は一切成立しない |
+| 30 | urls.js: matchInjectionTicker | 前後の空白を落として判定する |
+| 31 | tradingview-cs.js: isSymbolShaped | EXCHANGE:CODE の形だけを行の値と見なす |
+| 32 | tradingview-cs.js: isSymbolShaped | 解釈できる値は必ず形を満たす（形の判定は解釈より狭くならない） |
+| 33 | tradingview-cs.js: parseExchangeSymbol | canvas の aria-label と行の属性値で同じ結果になる |
+| 34 | tradingview-cs.js: parseExchangeSymbol | 米国ティッカーは後続境界を見て、切り出せないときは何も返さない |
+| 35 | tradingview-cs.js: parseExchangeSymbol | 取引所を解釈できない・形が合わないものは何も返さない |
 
 ## オプションページ
 
-`tests/options.spec.mjs` — 8 件
+`tests/options.spec.mjs` — 10 件
 
 chrome-extension:// のオプションページを開き、表示・操作・保存を検証する。
 
@@ -70,6 +71,8 @@ chrome-extension:// のオプションページを開き、表示・操作・保
 | 6 | オプションページ | 各行のリンクが url0 を新規タブで開く設定になっている |
 | 7 | オプションページ | 外部ホストへ一切リクエストしない |
 | 8 | オプションページ | Material Icons がローカル同梱フォントとして読み込まれリガチャが効く |
+| 9 | オプションページ | storage に残った未知のキーは行を作らず、有効な行を保存順に並べる |
+| 10 | オプションページ | storage に残った未知のキーは、保存し直すと消える |
 
 ## セレクタ定義（半自動検証の土台）
 
@@ -119,7 +122,7 @@ chrome-extension:// のオプションページを開き、表示・操作・保
 
 ## Service Worker / 共有モジュール
 
-`tests/service-worker.spec.mjs` — 41 件
+`tests/service-worker.spec.mjs` — 42 件
 
 Service Worker のグローバルスコープを直接 evaluate して、純粋なロジックを検証する。
 
@@ -158,20 +161,21 @@ Service Worker のグローバルスコープを直接 evaluate して、純粋�
 | 29 | service_worker: コンテキストメニューの再構築 | 前の再構築が失敗しても次の再構築は走る |
 | 30 | service_worker: コンテキストメニューの再構築 | create の失敗を console.error に出し、残りの項目も作る |
 | 31 | service_worker: コンテキストメニューの再構築 | 各回は自分の番になった時点の設定で作る |
-| 32 | urls.js: makeUrl | ${code} を置換する |
-| 33 | urls.js: makeUrl | ${code:0} は先頭1文字に置換する |
-| 34 | urls.js: makeUrl | ${exchange} は指定時のみ置換する |
-| 35 | urls.js: exchanges | 取引所コードは大文字英字のみで、市場種別は jp / us のいずれか |
-| 36 | urls.js: externalUrls の整合性 | key が一意で必須フィールドが揃っている |
-| 37 | urls.js: externalUrls の整合性 | url1 は必ず ${code} を含む |
-| 38 | service_worker: retrySetup | 成功したら再試行を止める |
-| 39 | service_worker: retrySetup | 打ち切り時刻を過ぎたら止める |
-| 40 | service_worker: retrySetup | setup が例外を投げたら止める |
-| 41 | 米国ティッカーの後続境界: リテラル3本で同じ値 | リテラル3本とも同じ境界で、u フラグが付いている |
+| 32 | service_worker: コンテキストメニューの再構築 | storage に残った未知のキーは読み飛ばし、エラーを出さない |
+| 33 | urls.js: makeUrl | ${code} を置換する |
+| 34 | urls.js: makeUrl | ${code:0} は先頭1文字に置換する |
+| 35 | urls.js: makeUrl | ${exchange} は指定時のみ置換する |
+| 36 | urls.js: exchanges | 取引所コードは大文字英字のみで、市場種別は jp / us のいずれか |
+| 37 | urls.js: externalUrls の整合性 | key が一意で必須フィールドが揃っている |
+| 38 | urls.js: externalUrls の整合性 | url1 は必ず ${code} を含む |
+| 39 | service_worker: retrySetup | 成功したら再試行を止める |
+| 40 | service_worker: retrySetup | 打ち切り時刻を過ぎたら止める |
+| 41 | service_worker: retrySetup | setup が例外を投げたら止める |
+| 42 | 米国ティッカーの後続境界: リテラル3本で同じ値 | リテラル3本とも同じ境界で、u フラグが付いている |
 
 ## TradingView（拡張が自分で作った DOM の振る舞い）
 
-`tests/tradingview.spec.mjs` — 27 件
+`tests/tradingview.spec.mjs` — 28 件
 
 menuSelectors / watchlistSymbolAttrs から組み立てたフィクスチャに、右クリックメニューと入れ子・「株Link」ボタンのメニューを再現して検証する。**このファイルが緑でも実サイトが壊れていないことにはならない**（改訂後の CON-08 / FR-26 判定基準7）。見ているのは自分たちのコードの退行だけで、サイト改修は npm run check:selectors（FR-12）と手動確認 A が見る。
 
@@ -206,6 +210,7 @@ menuSelectors / watchlistSymbolAttrs から組み立てたフィクスチャに�
 | 25 | TradingView: 右クリックメニューの縦位置補正 | はみ出さない位置では margin-top を触らない |
 | 26 | TradingView: 右クリックメニューの縦位置補正 | ウォッチリストの行を起点にしても同じ補正が掛かる |
 | 27 | TradingView: 右クリックメニューの縦位置補正 | 遷移先が0件で3行を除去するときは margin-top を元に戻す |
+| 28 | TradingView: storage に残った未知のキー | 未知のキーは入れ子の項目に出さず、残りの遷移先を設定順に並べる |
 
 ## 回帰テストとして重要なもの
 
@@ -218,13 +223,17 @@ menuSelectors / watchlistSymbolAttrs から組み立てたフィクスチャに�
 | SBI証券 Content Script › 遅れて現れた銘柄コードにもメニューを注入する | 固定待機が明けた後に現れた要素へ注入できなくなる退行の検出（FR-13 / SPEC-CS-22） |
 | スクリーナー Content Script › 楽天スーパースクリーナー: 後から現れた結果一覧に注入する | スクリーナーの常設監視が結果一覧の器に戻り、検索前に開いたタブで注入されなくなる退行の検出（FR-13） |
 | スクリーナー Content Script › SBI銘柄スクリーニング: 後から現れた結果一覧に注入する | スクリーナーの常設監視が結果一覧の器に戻り、検索前に開いたタブで注入されなくなる退行の検出（FR-13） |
+| 設定の反映 › storage に残った未知のキーは読み飛ばし、残りの遷移先でメニューを作る | サイト廃止で消えた key が storage に残った利用者で、その key を読み飛ばすガードが消える（メニュー・行が欠ける、またはエラー欄にエラーが出る）か、保存し直しても key が残り続ける退行の検出（NFR-05 / SPEC-ST-03） |
 | オプションページ › 行がグリッドとして横並びにレイアウトされる | Materialize 2.x で .col が廃止され .row が CSS Grid 化した影響の検出 |
 | オプションページ › ハンドルをドラッグして並び替えた順序が保存される | jQuery UI 1.14.2 が jQuery 4.0.0 上で動くことの実証 |
 | オプションページ › 外部ホストへ一切リクエストしない | CDN・外部フォント・外部画像への依存が再混入していないかの検出 |
 | オプションページ › Material Icons がローカル同梱フォントとして読み込まれリガチャが効く | Material Icons のサブセット失敗（アイコン名が文字列のまま出る）の検出 |
+| オプションページ › storage に残った未知のキーは行を作らず、有効な行を保存順に並べる | サイト廃止で消えた key が storage に残った利用者で、その key を読み飛ばすガードが消える（メニュー・行が欠ける、またはエラー欄にエラーが出る）か、保存し直しても key が残り続ける退行の検出（NFR-05 / SPEC-ST-03） |
+| オプションページ › storage に残った未知のキーは、保存し直すと消える | サイト廃止で消えた key が storage に残った利用者で、その key を読み飛ばすガードが消える（メニュー・行が欠ける、またはエラー欄にエラーが出る）か、保存し直しても key が残り続ける退行の検出（NFR-05 / SPEC-ST-03） |
 | 結果ファイルの書式 › 消毒した URL・伏せ字を含む結果ファイルがインライン HTML を漏らさない | セレクタ検証の生成物が markdownlint（MD033）で落ち、npm run check を止める問題の検出 |
 | service_worker: getTickerCode › 文中の大文字並びには誤マッチしない | 米国株の正規表現から先頭アンカー ^ が失われていないかの検出 |
 | service_worker: compareVersion › マイナー/パッチを数値として比較する | バージョン比較が文字列比較に戻っていないかの検出 |
+| service_worker: コンテキストメニューの再構築 › storage に残った未知のキーは読み飛ばし、エラーを出さない | サイト廃止で消えた key が storage に残った利用者で、その key を読み飛ばすガードが消える（メニュー・行が欠ける、またはエラー欄にエラーが出る）か、保存し直しても key が残り続ける退行の検出（NFR-05 / SPEC-ST-03） |
 | service_worker: retrySetup › 成功したら再試行を止める | 再試行が止まらず、他社サイト上でタイマーが走り続ける問題の検出（FR-13 判定基準2 / NFR-01） |
 | service_worker: retrySetup › 打ち切り時刻を過ぎたら止める | 再試行が止まらず、他社サイト上でタイマーが走り続ける問題の検出（FR-13 判定基準2 / NFR-01） |
 | service_worker: retrySetup › setup が例外を投げたら止める | 再試行が止まらず、他社サイト上でタイマーが走り続ける問題の検出（FR-13 判定基準2 / NFR-01） |
@@ -232,6 +241,7 @@ menuSelectors / watchlistSymbolAttrs から組み立てたフィクスチャに�
 | TradingView: 入れ子メニューのクリック範囲 › 文字の外を左クリックしても、メニューを閉じる Esc の送出は1回だけ | 代行クリックの戻りを握る delegating が消え、他社サイトへ Esc を2回投げる退行の検出（FR-25 / NFR-01） |
 | TradingView: 証券会社の項目は URL を DOM に出さない › 証券会社の項目を左クリックすると、Esc の送出は1回でメニューが閉じる | 代行クリックの戻りを握る delegating が消え、他社サイトへ Esc を2回投げる退行の検出（FR-25 / NFR-01） |
 | TradingView: 右クリックメニューの縦位置補正 › 遷移先が0件で3行を除去するときは margin-top を元に戻す | 遷移先0件でメニューを元に戻すとき、ずらした位置が痕跡として残る退行の検出（FR-24 / SPEC-CS-24 の手順5） |
+| TradingView: storage に残った未知のキー › 未知のキーは入れ子の項目に出さず、残りの遷移先を設定順に並べる | サイト廃止で消えた key が storage に残った利用者で、その key を読み飛ばすガードが消える（メニュー・行が欠ける、またはエラー欄にエラーが出る）か、保存し直しても key が残り続ける退行の検出（NFR-05 / SPEC-ST-03） |
 
 ## 対象外
 

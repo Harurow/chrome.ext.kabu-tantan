@@ -1,4 +1,5 @@
 import { test, expect } from './fixtures/extension.mjs'
+import { STALE_KEYS } from './fixtures/storage.mjs'
 
 const openOptions = async (page, extensionId) => {
   await page.goto(`chrome-extension://${extensionId}/options.html`)
@@ -189,5 +190,60 @@ test.describe('オプションページ', () => {
       expect(width, `${name} のリガチャが効いていない`).toBeGreaterThan(0)
       expect(width, `${name} のリガチャが効いていない`).toBeLessThan(40)
     }
+  })
+
+  // SPEC-ST-03 / NFR-05: サイト廃止で消えた key が storage に残っていても、その行だけ作らない。
+  // ガード（`if (item)`）が無いと createItem(undefined) が TypeError を投げ、
+  // 未知キーより後ろの行が1つも作られない
+  test('storage に残った未知のキーは行を作らず、有効な行を保存順に並べる', async ({ page, extensionId, serviceWorker }) => {
+    const pageErrors = []
+    page.on('pageerror', (error) => pageErrors.push(error.message))
+
+    await page.goto(`chrome-extension://${extensionId}/options.html`)
+    await page.evaluate((staleKeys) => chrome.storage.sync.set({ enableLinkKeys: staleKeys }), STALE_KEYS)
+    await openOptions(page, extensionId)
+
+    // 有効な行が保存順に先に並び、残りは externalUrls の定義順
+    const expected = await serviceWorker.evaluate(() => [
+      'kabutan.jp/stock',
+      'minkabu.jp/stock',
+      ...externalUrls.map((u) => u.key).filter((k) => k !== 'kabutan.jp/stock' && k !== 'minkabu.jp/stock')
+    ])
+
+    const rendered = await page.locator('#link-list li.collection-item').evaluateAll(
+      (items) => items.map((li) => li.id))
+    expect(rendered).toEqual(expected)
+
+    const checked = await page.locator('input.link-list-item:checked').evaluateAll(
+      (inputs) => inputs.map((input) => input.value))
+    expect(checked).toEqual(['kabutan.jp/stock', 'minkabu.jp/stock'])
+
+    expect(pageErrors).toEqual([])
+  })
+
+  // SPEC-ST-03 / SPEC-ST-05: 保存は DOM 上の行（input.link-list-item）だけから組み立てるので、
+  // 行を持たない未知キーは書き戻されない。順序の値も詰め直される
+  test('storage に残った未知のキーは、保存し直すと消える', async ({ page, extensionId }) => {
+    await page.goto(`chrome-extension://${extensionId}/options.html`)
+    await page.evaluate((staleKeys) => chrome.storage.sync.set({ enableLinkKeys: staleKeys }), STALE_KEYS)
+    await openOptions(page, extensionId)
+
+    // 保存ボタンを出すため、トグルを OFF → ON と往復させる（有効な遷移先は変えない）
+    const row = page.locator('#link-list li[id="kabutan.jp/stock"]')
+    await row.locator('span.lever').click()
+    await expect(row.locator('input.link-list-item')).not.toBeChecked()
+    await row.locator('span.lever').click()
+    await expect(row.locator('input.link-list-item')).toBeChecked()
+
+    const save = page.locator('#save')
+    await expect(save).toHaveClass(/scale-in/)
+    await save.click()
+    await expect(save).toHaveClass(/scale-out/)
+
+    const stored = await page.evaluate(async () => {
+      const s = await chrome.storage.sync.get('enableLinkKeys')
+      return s.enableLinkKeys
+    })
+    expect(stored).toEqual({ 'kabutan.jp/stock': 0, 'minkabu.jp/stock': 1 })
   })
 })

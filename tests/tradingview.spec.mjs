@@ -24,6 +24,7 @@ import {
   overlapRootHtml,
   contextMenuHtml
 } from './fixtures/tradingview.mjs'
+import { STALE_KEYS } from './fixtures/storage.mjs'
 
 /**
  * セレクタ → DOM の変換規則（SPEC-CS-27）。
@@ -699,4 +700,41 @@ test.describe('TradingView: 右クリックメニューの縦位置補正', () =
   // **何も起きず `style` 属性も作られない**（Chromium 実測）。
   // 書き戻しを無条件にしても DOM から区別できないため、落とせるテストが書けない。
   // 実装（`shifted` フラグ）は 1.16.0 から入っている
+})
+
+/**
+ * storage に残った未知のキー（SPEC-ST-03 / NFR-05。SPEC-CS-18 の検証を兼ねる）。
+ *
+ * サイト廃止で `externalUrls` から消えた key が storage に残っていても、
+ * 入れ子の情報サイトの項目には出さず、残りを設定順に並べる。
+ * 既存の describe は `beforeEach` で遷移先を `ONLY_SITE_KEY` の1件にする
+ * （縦位置補正の0件経路だけは、テストの中で `{}` に入れ直す）。
+ * 未知キーを含む設定は `beforeEach` で入れたいので、別の describe にする
+ */
+test.describe('TradingView: storage に残った未知のキー', () => {
+  test.beforeEach(async ({ context, extensionId }) => {
+    await setEnableLinkKeysAsync(context, extensionId, STALE_KEYS)
+  })
+
+  // ガード（makeLinkItemsAsync の `item != null`）が無いと項目の組み立てで TypeError になり、
+  // addTickerMenuAsync の catch が3行ごと取り除くので、親行も入れ子も残らない
+  test('未知のキーは入れ子の項目に出さず、残りの遷移先を設定順に並べる',
+    async ({ page, serviceWorker, serveFixture }) => {
+      // 証券会社の項目を出さない（入れ子を情報サイトの項目だけにする）
+      await stubBrokerTabsAsync(serviceWorker, { loggedIn: false })
+      await openChartPageAsync(page, serveFixture)
+      await rightClickAsync(page, `[${CHART_MARK}]`)
+      await openContextMenuAsync(page)
+      await openSubmenuAsync(page)
+
+      const actual = await page.locator('div.ktt-tv-subMenu tr[data-role="menuitem"] a').evaluateAll(
+        (anchors) => anchors.map((a) => ({ text: a.textContent.trim(), href: a.getAttribute('href') })))
+      const expectedHrefs = await serviceWorker.evaluate(([keys, code]) =>
+        keys.map((key) => makeUrl(externalUrlsMap[key].url1, code)),
+      [['kabutan.jp/stock', 'minkabu.jp/stock'], CHART_CODE])
+
+      // 未知キーの項目が無く、残りは設定順（externalUrls の定義順ではない）
+      expect(actual.map((a) => a.text)).toEqual(['株探/基本情報で開く', 'MINKABU/株価情報トップで開く'])
+      expect(actual.map((a) => a.href)).toEqual(expectedHrefs)
+    })
 })

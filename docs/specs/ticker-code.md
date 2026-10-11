@@ -863,8 +863,16 @@ matchInjectionTicker(text, allowUs)
 > サイト側 DOM に強く依存する。TradingView の改修で無言のうちに壊れる。
 
 - 要件: FR-04
-- 検証: `auto`（表そのものは SPEC-EL-09 の `urls.js: exchanges` で検査。
-  `aria-label` の解析自体は TradingView 上でしか動かないため自動テスト対象外）／
+- 検証: `auto`（3つ。(1) 表そのものは SPEC-EL-09 の `urls.js: exchanges`。
+  (2) **`aria-label` の解析**は `tests/content-script.spec.mjs` の `tradingview-cs.js: parseExchangeSymbol`
+  （`canvas の aria-label と行の属性値で同じ結果になる` ほか3件。`node:vm` で関数を取り出し、`TSE:7203 の 1 日 チャート` /
+  `TSE_DLY:…` / `BATS:AAPL の 1 日 チャート` などの文字列を直接渡す。1.15.0〜）。
+  (3) **DOM から読んで解析する経路**は `tests/tradingview.spec.mjs`（1.20.0〜）。フィクスチャの canvas に
+  `aria-label="TSE:7203 の 1 日 チャート"` を置き、入れ子の項目の URL が `7203` を含むことを見る（国内株のみ。
+  米国株のチャートを起点にしたフィクスチャは無い））／
+  〔2026-10-11 訂正〕それまで (2) の位置に「`aria-label` の解析自体は TradingView 上でしか動かないため自動テスト対象外」と書いていた。
+  1.10.1 の記述で、1.15.0 で `parseExchangeSymbol` の単体テストが入った時点で古くなっていた（本節の手順 3 の本文はテストを参照済みだった）。
+  **自動テストで分からないのは、実サイトの canvas が今もこの形の `aria-label` を持つか**で、それは下の半自動と手動が見る／
   `半自動`（`npm run check:selectors -- --only=tradingview` の `chart-canvas` と
   `tv-symbol` 追加検査。SPEC-SC-11）／
   `manual`（`docs/MANUAL-CHECKLIST.md` A-1 / A-7。TradingView にログインして `NASDAQ:AAPL` でも

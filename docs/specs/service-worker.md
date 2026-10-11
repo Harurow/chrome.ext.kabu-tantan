@@ -100,9 +100,9 @@ const remakeContextMenus = () => {
 
 | 種別 | 内容 |
 | --- | --- |
-| `auto` | `tests/service-worker.spec.mjs` の describe **`service_worker: コンテキストメニューの再構築`**（1.20.3 で追加）。下の4件 |
+| `auto` | `tests/service-worker.spec.mjs` の describe **`service_worker: コンテキストメニューの再構築`**（1.20.3 で追加）。下の4件が SPEC-SW-02 の分。**同じ describe の5件目 `storage に残った未知のキーは読み飛ばし、エラーを出さない` は SPEC-ST-03 の自動テスト 2**（2026-10-11 追加） |
 | `review` | 契機のハンドラ（SPEC-SW-03）が `remakeContextMenus()` を呼ぶだけであること。`removeAll` / `create` の呼び出しが `rebuildContextMenusAsync()` / `createContextMenuAsync()` の外に無いこと |
-| `manual` | 下の「手動確認」 |
+| `manual` | 下の「手動確認」（`docs/MANUAL-CHECKLIST.md` **D-2**） |
 
 **自動テスト（describe `service_worker: コンテキストメニューの再構築`）:**
 
@@ -130,10 +130,10 @@ const remakeContextMenus = () => {
 - 1件目・4件目は 1.20.2 の実装では失敗する作りである（1件目は記録が `removeAll, removeAll, …` の順になり `lastError` が出る。
   4件目は B が呼び出し時点で設定を読むので2区間目が `keys` になる）
 
-**手動確認:**
+**手動確認（`docs/MANUAL-CHECKLIST.md` D-2。手順は同じ）:**
 
-1. `chrome://extensions` で株リンクの「エラー」を開き、「すべて消去」する
-2. 同じ画面の「Service Worker」リンクから DevTools を開き、コンソールで `remakeContextMenus(); remakeContextMenus()` を実行する
+1. `chrome://extensions` の株リンクのカードからエラーの一覧を開き、表示中のエラーをすべて消す（ボタンの表示名は Chrome の版・表示言語で異なる）
+2. `chrome://extensions` の一覧に戻り、株リンクのカードにある Service Worker のリンク（例: 「ビューを検査」の横の `service worker`。表示名は版・表示言語で異なる）から DevTools を開き、コンソールで `remakeContextMenus(); remakeContextMenus()` を実行する
 3. コンソールにもエラー欄にも `Unchecked runtime.lastError` と `remakeContextMenus:` が出ないこと
 4. 任意のページで `7203` を選択して右クリックし、株リンクの項目が**有効な遷移先ごとに1回ずつ**、オプションページの並び順で並ぶこと
 5. 拡張を再読み込みしたあと（`onInstalled`）も、エラー欄が空のままであること

@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { test, expect } from './fixtures/extension.mjs'
 import { rootDir } from '../scripts/selector-check/load-selectors.mjs'
+import { STALE_KEY, STALE_KEYS } from './fixtures/storage.mjs'
 
 // Service Worker のトップレベル関数を実コンテキストで直接検証する。
 // ビルドが無くモジュール化もされていないため、これが唯一の単体テスト手段になる。
@@ -603,6 +604,24 @@ test.describe('service_worker: コンテキストメニューの再構築', () =
       return keys
     })
 
+  /**
+   * 記録した呼び出し列を removeAll で区切り、区間ごとの create の id 列にする
+   * @param {string[]} calls `kttMenuRecorder.calls`
+   * @returns {string[][]}
+   */
+  const splitByRemoveAll = (calls) => {
+    const sections = []
+    for (const call of calls) {
+      if (call === 'removeAll' || sections.length === 0) {
+        sections.push([])
+      }
+      if (call !== 'removeAll') {
+        sections.at(-1).push(call)
+      }
+    }
+    return sections
+  }
+
   test('並行して呼んでも create の lastError が出ない', async ({ serviceWorker }) => {
     const keys = await installMenuRecorderAsync(serviceWorker)
 
@@ -701,16 +720,7 @@ test.describe('service_worker: コンテキストメニューの再構築', () =
       return recorder.resultAsync()
     }, keys[0])
 
-    // removeAll で区切った区間ごとの create の id 列
-    const sections = []
-    for (const call of calls) {
-      if (call === 'removeAll' || sections.length === 0) {
-        sections.push([])
-      }
-      if (call !== 'removeAll') {
-        sections.at(-1).push(call)
-      }
-    }
+    const sections = splitByRemoveAll(calls)
 
     // A・B・onChanged 由来の回・待ち切りの回（onChanged の到着時機は問わない）
     expect(sections.length).toBeGreaterThanOrEqual(3)
@@ -719,6 +729,48 @@ test.describe('service_worker: コンテキストメニューの再構築', () =
     // B 以降は変更後の設定で作る。B が呼び出し時点で設定を読んでいれば keys になる
     for (const section of sections.slice(1)) {
       expect(section).toEqual([keys[0]])
+    }
+  })
+
+  // SPEC-ST-03 / NFR-05: サイト廃止で消えた key が storage に残っていても、その項目だけ作らない。
+  // ガード（`if (!externalUrlsMap[key])`）が無いと title の読み出しで TypeError になり、
+  // create の失敗として集計されて console.error に出る
+  test('storage に残った未知のキーは読み飛ばし、エラーを出さない', async ({ serviceWorker }) => {
+    // set が onChanged 経由で積む再構築を、記録を差し替える前に待ち切る。
+    // 差し替えの途中でその回が走ると、removeAll だけが差し替え前に出て create が記録され、
+    // 区間が途中からの列になる。onChanged の受信を待ってから積めば、その回はキューで先に済む
+    // （Service Worker 本体の onChanged リスナーはトップレベルで先に登録されている）
+    await serviceWorker.evaluate(async (staleKeys) => {
+      const changed = new Promise((resolve) => {
+        const listener = () => {
+          chrome.storage.onChanged.removeListener(listener)
+          resolve()
+        }
+        chrome.storage.onChanged.addListener(listener)
+      })
+      await chrome.storage.sync.set({ enableLinkKeys: staleKeys })
+      await changed
+      await remakeContextMenus()
+    }, STALE_KEYS)
+    const keys = await installMenuRecorderAsync(serviceWorker)
+    // 前提: 設定が Service Worker に届いている（未知キーを除いた設定順）
+    expect(keys).toEqual(['kabutan.jp/stock', 'minkabu.jp/stock'])
+
+    const { calls, lastErrors, errors } = await serviceWorker.evaluate(async () => {
+      await remakeContextMenus()
+      return globalThis.kttMenuRecorder.resultAsync()
+    })
+
+    expect(lastErrors).toEqual([])
+    expect(errors).toEqual([])
+    expect(calls).not.toContain(STALE_KEY)
+
+    // onChanged 由来の回は差し替え前に済ませてあるので通常は1区間。
+    // 区間がいくつあっても（仕様は onChanged 由来の回が記録に入るかを問わない）、どれも同じ列で作る
+    const sections = splitByRemoveAll(calls)
+    expect(sections.length).toBeGreaterThanOrEqual(1)
+    for (const section of sections) {
+      expect(section).toEqual(['kabutan.jp/stock', 'minkabu.jp/stock'])
     }
   })
 })

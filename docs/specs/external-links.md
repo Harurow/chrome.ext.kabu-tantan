@@ -23,8 +23,12 @@
 `key` は `chrome.storage.sync` に保存される永続識別子。
 **一度公開した `key` は変更しない。** 変更すると既存ユーザーの設定が失われる。
 
-サイトを廃止する場合はエントリごと削除する。オプション画面と Service Worker は
-storage に残った未知の `key` を無視する（SPEC-ST-03）。
+サイトを廃止する場合はエントリごと削除する。storage に残った未知の `key` は、
+キーから `externalUrlsMap` を引く4経路（Service Worker・オプションページ・`linkMenu.js`・`tradingview-cs.js`）が
+それぞれ無視する（SPEC-ST-03）。
+
+> 2026-10-11 までは「オプション画面と Service Worker は storage に残った未知の `key` を無視する」と、
+> 2経路だけを書いていた。`linkMenu.js` は 1.17.0、`tradingview-cs.js` は 1.11.0 からガードしている（SPEC-ST-03 の表）。
 
 - 要件: NFR-05, CON-05
 - 検証: `manual`（レビュー時に `key` の変更が無いことを確認）

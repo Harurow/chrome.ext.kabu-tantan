@@ -53,10 +53,33 @@ EXTENSION_PATH=/tmp/kt-pkg npm test
 | **拡張が自分で作った** DOM の振る舞い（サイト側は器だけ） | **自動**。サイトの都合では変わらない（`CON-08` の 2026-08-30 改訂） |
 | 見た目の妥当性（配色・読みやすさ） | **手動**。機械では判定できない |
 
-自動テストは **ファイル単位で** `src/` の JS 2701行中 1652行（61%）を対象にしている（行カバレッジではない）。
-残り 39% は `tradingview-cs.js`（1049行）だけで、上表の「手動」条件に該当する。
+自動テストは **ファイル単位で** `src/` の JS 9本・2832行の**すべて**を読み込んで実行している（行カバレッジではない。行単位の計測はしていない）。
 
-> 数値は `wc -l src/*.js` と `wc -l src/tradingview-cs.js` から出している。`src/` を触ったら数え直すこと。
+| ファイル | 行数 | 読み込むテスト |
+| --- | --- | --- |
+| `service_worker.js` | 507 | `service-worker.spec.mjs`（Service Worker 上で直接呼ぶ） |
+| `urls.js` | 388 | `service-worker.spec.mjs`（`importScripts` 経由）／ `options.spec.mjs`（`options.html` が読み込む）／ Content Script を動かす全テスト |
+| `tradingview-cs.js` | 1101 | `tradingview.spec.mjs`（フィクスチャ上で実行）／ `content-script.spec.mjs`（`node:vm` で `isSymbolShaped` / `parseExchangeSymbol` を取り出す）／ `selector-defs.spec.mjs`（`menuSelectors`）／ `service-worker.spec.mjs`（ソースを文字列として読み、正規表現リテラルを照合する。実行はしない） |
+| `rakuten-cs.js` | 225 | `content-script.spec.mjs`（フィクスチャ上で実行）／ `selector-defs.spec.mjs` |
+| `rakuten-scr-cs.js` | 149 | 同上 |
+| `sbi-cs.js` | 123 | 同上 |
+| `sbi-scr-cs.js` | 147 | 同上 |
+| `options.js` | 116 | `options.spec.mjs` |
+| `linkMenu.js` | 76 | `content-script.spec.mjs`（楽天・SBI 系の注入を通して） |
+
+**ファイル単位で 100% でも、`tradingview-cs.js` は中身の一部しか検査していない。**
+1.20.0 で `tests/tradingview.spec.mjs` が入り、**拡張が自分で作った DOM の振る舞い**（入れ子メニューのクリック範囲・
+縦位置の補正・証券会社の項目が URL を DOM に出さないこと）をフィクスチャで見るようになった（`FR-26` の段階1・2。SPEC-CS-27）。
+**サイト側の DOM・見た目・挙動**（挿入先が実在するか・模倣した見た目・サイト側メニュー）は上表の「半自動」「手動」条件に該当し、
+`npm run check:selectors` と [MANUAL-CHECKLIST.md](MANUAL-CHECKLIST.md) の A が見る。
+**拡張側の振る舞いでも未着手のもの**（起点の判定・項目の集合と順序など。`FR-26` の段階3〜5）は、まだ A の手動確認に残っている。
+**`tradingview.spec.mjs` が緑でも実サイトが壊れていない根拠にはならない**（`CON-08`）。
+
+> 2026-10-11 まではこう書いていた: 「`src/` の JS 2701行中 1652行（61%）を対象にしている。
+> 残り 39% は `tradingview-cs.js`（1049行）だけで、上表の『手動』条件に該当する」。1.20.0 で `tests/tradingview.spec.mjs` が入った時点で失効していた。
+>
+> 数値は `wc -l src/*.js` から出している（2026-10-11 / 1.20.3）。どのテストがどのファイルを読み込むかは
+> `tests/` と `tests/fixtures/` を読んで確かめた。`src/` や `tests/` を触ったら数え直すこと。
 
 スクリーナー2種（`rakuten-scr-cs.js` / `sbi-scr-cs.js`）は 1.13.0 で自動の対象に移した。
 FR-13（注入の再試行）で常設監視の対象を `document.body` に上げたため、
