@@ -38,14 +38,25 @@
 
 | 権限 | 用途 |
 | --- | --- |
-| `tabs` | 楽天証券・内藤証券のログイン済みタブの URL からセッション情報を読む（SPEC-SW-06/07） |
+| `tabs` | 楽天証券・内藤証券のログイン済みタブの URL からセッション情報を読む（SPEC-SW-06/07）。**1.21.0 から（FR-29）:** 開けないときの小窓を1つに保つため、ポップアップのタブの `url` / `pendingUrl` を読んで自分の小窓を見つける（SPEC-SW-10）。権限は増えない |
 | `contextMenus` | 選択文字列に対する右クリックメニューの追加（SPEC-SW-02） |
 | `storage` | 利用サイトと並び順の保存（SPEC-ST-01） |
 
 > `tabs` は**全タブの URL を読める強い権限**。ストア審査ではこの用途の説明が必要。
 
-- 要件: FR-06, NFR-03, CON-04
-- 検証: `validate`（想定外の権限追加を警告）
+**1.21.0（FR-29）でも manifest は版しか変えていない。** 開けないときの小窓（SPEC-SW-10 / SPEC-NT）は
+`chrome.windows`（権限不要）と拡張のページ（`web_accessible_resources` 不要）だけで作った。
+FR-29 判定基準 6（権限を増やさない）は下の `auto` で固定する。
+
+- 要件: FR-06, NFR-03, CON-04, FR-29（判定基準 6）
+- 検証: `validate`（想定外の権限追加を**警告**。exit 1 にはしない）／
+  `auto`（`tests/service-worker.spec.mjs` の describe **`manifest: 権限`**（1.21.0 で追加）のテスト
+  **`permissions は3つのままで、ホスト権限・任意権限・web_accessible_resources を宣言しない`**。
+  Node 側で `src/manifest.json` を読み（既存の `米国ティッカーの後続境界: リテラル3本で同じ値` と同じくブラウザを使わない）、
+  `permissions` が `['tabs', 'contextMenus', 'storage']` と完全一致し、`host_permissions` / `optional_permissions` /
+  `optional_host_permissions` / `web_accessible_resources` のキーが無いこと。
+  `validate` は警告で止まらないので、増やしたら落ちる検査はこちらが担う。
+  `permissions` に `notifications` を一時的に足すと落ちることを 1.21.0 の実装時に確かめた）
 
 ## SPEC-MF-04 アイコン
 

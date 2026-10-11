@@ -775,6 +775,245 @@ test.describe('service_worker: コンテキストメニューの再構築', () =
   })
 })
 
+// SPEC-SW-05 / SPEC-SW-10: 右クリックメニューの項目を押しても開けないとき、小窓で理由を知らせる（FR-29）。
+// 回帰テスト: 1.20.3 までは、米国株のページを持たない遷移先や銘柄コードと読み取れない文字列で
+// 項目を押すと、タブも開かず何も出さずに抜けていた（利用者から見ると「押したのに反応しない」）。
+// Chrome の右クリックメニューそのものは Playwright から押せないので、押された後の処理を直接呼ぶ
+test.describe('service_worker: 開けない項目を押したときの小窓', () => {
+  /**
+   * `chrome.tabs.create` を「引数を記録して `{}` を返す」関数に差し替える。
+   * `realWindows` が偽なら `chrome.windows.create` も「引数を記録して `{ id: -1 }` を返す」関数に差し替える（実際には開かない）。
+   * `console.error` は引数を文字列化して記録し、元の関数にも渡す。記録は `globalThis.kttOpenRecorder` に置く。
+   * `context` はテストごとに作り直されるので差し替えを戻す処理は要らない
+   */
+  const installOpenRecorderAsync = (serviceWorker, { realWindows = false } = {}) =>
+    serviceWorker.evaluate((real) => {
+      const originalError = console.error.bind(console)
+      const recorder = { tabsCreate: [], windowsCreate: [], errors: [] }
+
+      chrome.tabs.create = async (properties) => {
+        recorder.tabsCreate.push(properties)
+        return {}
+      }
+      if (!real) {
+        chrome.windows.create = async (properties) => {
+          recorder.windowsCreate.push(properties)
+          return { id: -1 }
+        }
+      }
+      console.error = (...args) => {
+        recorder.errors.push(args.map(String).join(' '))
+        originalError(...args)
+      }
+
+      globalThis.kttOpenRecorder = recorder
+    }, realWindows)
+
+  /** 扱う遷移先の一覧を externalUrls から作る（直書きしない） */
+  const getKeySetsAsync = (serviceWorker) =>
+    serviceWorker.evaluate(() => ({
+      usUnsupportedKeys: externalUrls.filter((u) => !u.url3 && !u.url2).map((u) => u.key),
+      url3Keys: externalUrls.filter((u) => u.url3).map((u) => u.key),
+      url2Keys: externalUrls.filter((u) => u.url2).map((u) => u.key)
+    }))
+
+  /**
+   * 1回ごとに記録を空にしてから `onContextMenuClickedAsync` を呼び、1回分ずつの記録を返す。
+   * `chrome-extension://` の URL は Node の URL では origin が取れないので、分解は Service Worker 側で行う
+   * @param {{ menuItemId: string, selectionText: string, tab?: object }[]} clicks
+   */
+  const clickAndRecordAsync = (serviceWorker, clicks) =>
+    serviceWorker.evaluate(async (list) => {
+      const recorder = globalThis.kttOpenRecorder
+      const results = []
+      for (const { menuItemId, selectionText, tab } of list) {
+        recorder.tabsCreate = []
+        recorder.windowsCreate = []
+        recorder.errors = []
+        const settled = await onContextMenuClickedAsync({ menuItemId, selectionText }, tab)
+          .then(() => 'fulfilled', (error) => `rejected: ${error}`)
+        results.push({
+          label: `${menuItemId} / ${selectionText}`,
+          menuItemId,
+          selectionText,
+          settled,
+          tabsCreate: recorder.tabsCreate,
+          windowsCreate: recorder.windowsCreate.map((properties) => {
+            const url = new URL(properties.url)
+            return { ...properties, urlBase: url.origin + url.pathname, urlParams: [...url.searchParams] }
+          }),
+          errors: recorder.errors
+        })
+      }
+      return { noticeBase: chrome.runtime.getURL('notice.html'), results }
+    }, clicks)
+
+  test('米国株のページが無い遷移先を押すと、タブを開かず小窓を1つ開く', async ({ serviceWorker }) => {
+    await installOpenRecorderAsync(serviceWorker)
+    const { usUnsupportedKeys } = await getKeySetsAsync(serviceWorker)
+    expect(usUnsupportedKeys.length).toBeGreaterThan(0)
+
+    const clicks = usUnsupportedKeys.flatMap((key) =>
+      ['AAPL', 'NASDAQ:AAPL', 'AAPL NASDAQ'].map((selectionText) => ({ menuItemId: key, selectionText })))
+    const { noticeBase, results } = await clickAndRecordAsync(serviceWorker, clicks)
+
+    expect(results).toHaveLength(clicks.length)
+    for (const r of results) {
+      expect(r.tabsCreate, r.label).toEqual([])
+      expect(r.windowsCreate, r.label).toHaveLength(1)
+      expect(r.windowsCreate[0], r.label).toMatchObject({ type: 'popup', focused: true, width: 440, height: 280 })
+      expect(r.windowsCreate[0].urlBase, r.label).toBe(noticeBase)
+      // 選択文字列は渡さない。code は getTickerCode の結果
+      expect(r.windowsCreate[0].urlParams, r.label).toEqual([
+        ['reason', 'us-unsupported'], ['key', r.menuItemId], ['code', 'AAPL']
+      ])
+      expect(r.errors, r.label).toEqual([])
+    }
+  })
+
+  test('開ける場合はこれまでどおりタブを開き、小窓を開かない', async ({ serviceWorker }) => {
+    await installOpenRecorderAsync(serviceWorker)
+    const clicks = await serviceWorker.evaluate(() => [
+      ...externalUrls.map((u) =>
+        ({ menuItemId: u.key, selectionText: '7203', expected: makeUrl(u.url1, '7203') })),
+      ...externalUrls.filter((u) => u.url3).map((u) =>
+        ({ menuItemId: u.key, selectionText: 'AAPL', expected: makeUrl(u.url3, 'AAPL') })),
+      ...externalUrls.filter((u) => u.url2).map((u) =>
+        ({ menuItemId: u.key, selectionText: 'NASDAQ:AAPL', expected: makeUrl(u.url2, 'AAPL', 'NASDAQ') }))
+    ])
+    const { results } = await clickAndRecordAsync(serviceWorker, clicks)
+
+    expect(results).toHaveLength(clicks.length)
+    results.forEach((r, i) => {
+      expect(r.tabsCreate, r.label).toEqual([{ url: clicks[i].expected }])
+    })
+    expect(results.flatMap((r) => r.windowsCreate)).toEqual([])
+  })
+
+  // FR-29 判定基準4（2026-10-11 利用者回答 (a)）: 知らせるが、選択した文字列は小窓に出さない
+  test('銘柄コードと解釈できない文字列では、選択した文字列を渡さずに小窓を開く', async ({ serviceWorker }) => {
+    await installOpenRecorderAsync(serviceWorker)
+    const texts = ['こんにちは', '株価はNYSEで上昇', 'SP:SPX', 'BRK.B']
+    const { noticeBase, results } = await clickAndRecordAsync(serviceWorker,
+      texts.map((selectionText) => ({ menuItemId: 'kabutan.jp/stock', selectionText })))
+
+    expect(results).toHaveLength(texts.length)
+    for (const r of results) {
+      expect(r.tabsCreate, r.label).toEqual([])
+      expect(r.windowsCreate, r.label).toHaveLength(1)
+      expect(r.windowsCreate[0].urlBase, r.label).toBe(noticeBase)
+      expect(r.windowsCreate[0].urlParams, r.label).toEqual([
+        ['reason', 'not-ticker'], ['key', 'kabutan.jp/stock']
+      ])
+      expect(r.windowsCreate[0].url, r.label).not.toContain(r.selectionText)
+      expect(r.windowsCreate[0].url, r.label).not.toContain(encodeURIComponent(r.selectionText))
+    }
+  })
+
+  // 項目は定義にある遷移先からしか作らないので利用者の操作では起きない。防御の分岐（FR-29 の洗い出し 3）
+  test('未知の遷移先キーは小窓もタブも開かず、console.error に出す', async ({ serviceWorker }) => {
+    await installOpenRecorderAsync(serviceWorker)
+    const { results: [r] } = await clickAndRecordAsync(serviceWorker,
+      [{ menuItemId: STALE_KEY, selectionText: '7203' }])
+
+    expect(r.tabsCreate).toEqual([])
+    expect(r.windowsCreate).toEqual([])
+    expect(r.errors).toHaveLength(1)
+    expect(r.errors[0]).toContain('unknown key')
+    expect(r.errors[0]).toContain(STALE_KEY)
+  })
+
+  test('小窓は押した元のウィンドウの中央に開く', async ({ serviceWorker }) => {
+    await installOpenRecorderAsync(serviceWorker)
+    const { usUnsupportedKeys } = await getKeySetsAsync(serviceWorker)
+    const base = await serviceWorker.evaluate(async () =>
+      (await chrome.windows.getAll({ windowTypes: ['normal'] }))[0])
+    // 前提: 元のウィンドウの位置と大きさが取れている
+    for (const name of ['left', 'top', 'width', 'height']) {
+      expect(typeof base[name], name).toBe('number')
+    }
+
+    const key = usUnsupportedKeys[0]
+    const { results } = await clickAndRecordAsync(serviceWorker, [
+      { menuItemId: key, selectionText: 'AAPL', tab: { id: -1, windowId: base.id } },
+      { menuItemId: key, selectionText: 'AAPL', tab: undefined },
+      { menuItemId: key, selectionText: 'AAPL', tab: { id: -1, windowId: -1 } }
+    ])
+
+    for (const r of results) {
+      expect(r.windowsCreate).toHaveLength(1)
+      expect(r.errors).toEqual([])
+    }
+    // (i) 元のウィンドウの中央
+    expect(results[0].windowsCreate[0].left).toBe(base.left + Math.max(0, Math.round((base.width - 440) / 2)))
+    expect(results[0].windowsCreate[0].top).toBe(base.top + Math.max(0, Math.round((base.height - 280) / 2)))
+    // (ii) tab が無い / (iii) windowId が負: 位置は Chrome に任せる
+    for (const r of results.slice(1)) {
+      expect(Object.keys(r.windowsCreate[0])).not.toContain('left')
+      expect(Object.keys(r.windowsCreate[0])).not.toContain('top')
+    }
+  })
+
+  test('何度押しても小窓は1つだけで、最後に押した内容を出す', async ({ serviceWorker }) => {
+    await installOpenRecorderAsync(serviceWorker, { realWindows: true })
+    const { usUnsupportedKeys } = await getKeySetsAsync(serviceWorker)
+
+    const { noticeUrls, tabsCreate } = await serviceWorker.evaluate(async (key) => {
+      const [base] = await chrome.windows.getAll({ windowTypes: ['normal'] })
+      const tab = { id: -1, windowId: base.id }
+      for (const selectionText of ['AAPL', 'MSFT', 'TSLA']) {
+        await onContextMenuClickedAsync({ menuItemId: key, selectionText }, tab)
+      }
+
+      const noticeBase = chrome.runtime.getURL('notice.html')
+      const popups = await chrome.windows.getAll({ populate: true, windowTypes: ['popup'] })
+      const noticeUrls = popups
+        .map((popup) => (popup.tabs ?? [])
+          .flatMap((t) => [t.pendingUrl, t.url])
+          .find((url) => url?.startsWith(noticeBase)))
+        .filter((url) => url !== undefined)
+      return { noticeUrls, tabsCreate: globalThis.kttOpenRecorder.tabsCreate }
+    }, usUnsupportedKeys[0])
+
+    expect(noticeUrls).toHaveLength(1)
+    expect(new URL(noticeUrls[0]).searchParams.get('code')).toBe('TSLA')
+    expect(tabsCreate).toEqual([])
+  })
+
+  test('小窓を開けなくても例外を外へ出さない', async ({ serviceWorker }) => {
+    await installOpenRecorderAsync(serviceWorker)
+    const { usUnsupportedKeys } = await getKeySetsAsync(serviceWorker)
+    await serviceWorker.evaluate(() => {
+      chrome.windows.create = async () => { throw new Error('KTT-TEST') }
+    })
+
+    const { results: [r] } = await clickAndRecordAsync(serviceWorker,
+      [{ menuItemId: usUnsupportedKeys[0], selectionText: 'AAPL' }])
+
+    expect(r.settled).toBe('fulfilled')
+    expect(r.errors).toHaveLength(1)
+    expect(r.errors[0]).toContain('KTT-TEST')
+  })
+
+  test('クリックのハンドラは onClicked に登録されている', async ({ serviceWorker }) => {
+    expect(await serviceWorker.evaluate(() =>
+      chrome.contextMenus.onClicked.hasListener(onContextMenuClickedAsync))).toBe(true)
+  })
+})
+
+// SPEC-MF-03 / FR-29 判定基準6: 権限を増やさない（既存利用者に再承認を求めない）。
+// npm run validate は想定外の権限を警告するだけで止まらないので、増やしたら落ちる検査はここが担う
+test.describe('manifest: 権限', () => {
+  test('permissions は3つのままで、ホスト権限・任意権限・web_accessible_resources を宣言しない', () => {
+    const manifest = JSON.parse(fs.readFileSync(path.join(rootDir, 'src', 'manifest.json'), 'utf8'))
+
+    expect(manifest.permissions).toEqual(['tabs', 'contextMenus', 'storage'])
+    for (const key of ['host_permissions', 'optional_permissions', 'optional_host_permissions', 'web_accessible_resources']) {
+      expect(Object.hasOwn(manifest, key), key).toBe(false)
+    }
+  })
+})
+
 test.describe('urls.js: makeUrl', () => {
   test('${code} を置換する', async ({ serviceWorker }) => {
     const url = await serviceWorker.evaluate(() =>

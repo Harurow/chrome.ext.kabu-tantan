@@ -142,7 +142,7 @@ const remakeContextMenus = () => {
 | 旧手動確認 | 自動テストが代わっている範囲 | 手動に残るもの |
 | --- | --- | --- |
 | 手順 3（作り直しを2回続けてもエラーが出ない） | `並行して呼んでも create の lastError が出ない` が `create` の `lastError` 0件と `console.error` 0回を確かめる。現行実装では、メニュー構築がエラー欄に出す経路はこの2つしか無い（下記） | エラー欄の**表示**。Playwright から読めない（下記の実測） |
-| 手順 4（1回ずつ・設定の順） | 同じテストの呼び出し記録 `['removeAll', ...keys, 'removeAll', ...keys]` の完全一致と `lastError` 0件で、最後に登録された項目が `keys` の順に1回ずつであることが決まる（同じ id の2回目の `create` は `duplicate id` で失敗することを3件目のテストが実際に起こして確かめている）。設定変更の重なりは4件目 | 右クリックメニューの**描画**。作った順に描くのは Chrome の振る舞い。登録済みの項目を読み出す API は `chrome.contextMenus` に無い（事実）。Playwright からブラウザ自身の右クリックメニューを開いて読めるかは試していない（推測では読めない） |
+| 手順 4（1回ずつ・設定の順） | 同じテストの呼び出し記録 `['removeAll', ...keys, 'removeAll', ...keys]` の完全一致と `lastError` 0件で、最後に登録された項目が `keys` の順に1回ずつであることが決まる（同じ id の2回目の `create` は `duplicate id` で失敗することを3件目のテストが実際に起こして確かめている）。設定変更の重なりは4件目 | 右クリックメニューの**描画**。作った順に描くのは Chrome の振る舞い。登録済みの項目を読み出す API は `chrome.contextMenus` に無い（事実）。Playwright からブラウザ自身の右クリックメニューを開いて操作できないことは、2026-10-11 に FR-29 の作業で確かめた（SPEC-SW-10 の「自動化できない理由」） |
 | 旧手順 5（拡張を再読み込みしたあともエラー欄が空） | **確認から外した**（不具合を見分けられない。下記の実測） | なし |
 
 - **メニュー構築がエラー欄に出す経路（実装の読み取り。事実）:** `create` は必ず `createContextMenuAsync()` 経由で、
@@ -254,14 +254,87 @@ chrome.runtime.onInstalled.addListener((details) => {
 
 ## SPEC-SW-05 コンテキストメニュークリック時の動作
 
-1. `info.selectionText` から `getTickerCode()` で銘柄コードを判定（SPEC-TC-04）
-2. `status: false` なら何もしない
-3. `info.menuItemId`（= `key`）から `externalUrlsMap` を引く。未知なら `console.error`
-4. `getUrl()` で遷移先を決める（SPEC-TC-05）
-5. URL が得られれば `chrome.tabs.create({ url })`
+> **1.21.0 から（FR-29）。** 1.20.3 までは `onClicked` に無名関数を渡し、銘柄コードと解釈できなければ
+> `console.log('銘柄コードが見つかりませんでした')` して抜け、URL が決まらなければ（米国株で `url3` の無い遷移先）**何もせずに抜けていた**
+> （FR-29 の「押しても何も起きない」の 1・2）。1.21.0 でハンドラを名前付き関数にし、その2つの分岐で小窓を開くようにした。
+> 判定の順序と、開ける場合の振る舞い（`tabs.create` の引数）は変えていない。設計判断は ADR-0017。
 
-- 要件: FR-05
-- 検証: `auto`（`getTickerCode` / `makeUrl`）／`manual`（実際のクリック）
+### 構成（SPEC-SW-05）
+
+`src/service_worker.js` のトップレベルに置く。
+
+| 名前 | 種別 | 役割 |
+| --- | --- | --- |
+| `onContextMenuClickedAsync(info, tab)` | `const` の `async` 関数 | クリック時の処理（下の手順）。`chrome.contextMenus.onClicked.addListener(onContextMenuClickedAsync)` で登録する。**無名関数で包まない**（テストが同じ関数を直接呼び、登録も `hasListener` で確かめるため） |
+| `openNoticeWindowAsync(params, tab)` | `const` の `async` 関数 | 小窓を開く（SPEC-SW-10） |
+
+### 手順（SPEC-SW-05）
+
+1. `getTickerCode(info.selectionText)` で銘柄コードを判定する（SPEC-TC-04）
+2. `status: false` なら、`await openNoticeWindowAsync({ reason: 'not-ticker', key }, tab)` して終わる。
+   **選択文字列（`info.selectionText`）は `params` に入れない**（FR-29 判定基準 4・7）。コンソールには何も出さない
+3. `externalUrlsMap[key]` が無ければ `console.error(`unknown key: ${key}`)` して終わる（**小窓は開かない**。FR-29 の洗い出し 3）
+4. `getUrl(type, code, exchange, url1, url2, url3)` で遷移先を決める（SPEC-TC-05）
+5. URL が得られれば `chrome.tabs.create({ url })` して終わる（引数は `{ url }` だけ。**小窓は開かない**）
+6. URL が得られなければ `await openNoticeWindowAsync({ reason: 'us-unsupported', key, code }, tab)` する
+
+- 判定の順序は 銘柄コード → 識別子 → URL（1.20.3 と同じ）
+- **未知の識別子でも、選択文字列が銘柄コードとして読めなければ手順 2 が先に当たり、`not-ticker` の小窓が開く。**
+  手順 3（知らせない）に来るのは、未知の識別子で、かつ銘柄コードとして読めた場合だけ。
+  項目は定義にある遷移先からしか作らない（SPEC-SW-02）ので未知の識別子は利用者の操作では起きず、`not-ticker` の小窓は `key` を表示に使わない（SPEC-NT-02）。
+  したがって**順序は入れ替えない**（入れ替えると 1.20.3 からの差分が増えるだけで、利用者に見える違いが無い）
+- 手順 6 に来るのは `type === 'us'` で、`url3` が無く、かつ「`url2` が無いか `exchange` が無い」場合だけ。
+  `type === 'jp'` は `url1` が必須（SPEC-EL-05）なので必ず URL が決まる
+- `onContextMenuClickedAsync` が返す Promise は reject しない（`openNoticeWindowAsync` が例外を内側で処理する。SPEC-SW-10）
+- `params` に入るのは Service Worker が作った値だけ（`reason` は固定の文字列、`key` は `menuItemId`、`code` は `getTickerCode` の結果）
+
+### 検証（SPEC-SW-05）
+
+| 種別 | 内容 |
+| --- | --- |
+| `auto` | `tests/service-worker.spec.mjs` の describe **`service_worker: 開けない項目を押したときの小窓`**（1.21.0 で追加。下の8件） |
+| `review` | `onClicked` のハンドラが `onContextMenuClickedAsync` そのものであること。手順の順序が上のとおりであること。**差分が `src/tradingview-cs.js` / `src/tradingview-cs.css` / `src/linkMenu.js` / `src/*-cs.js` / `src/urls.js` / `src/style.css` に入っていないこと**（FR-29 判定基準 8。TradingView のメニューと注入メニューの組み立てに触れない） |
+| `auto`（既存） | FR-29 判定基準 8 の退行検知として、既存の `tests/tradingview.spec.mjs` と `tests/content-script.spec.mjs` が全件通ること。**ただし FR-07 判定基準 1〜4（米国株でボタンメニューに出る項目の集合）を直接見るテストは無い**（FR-07 の「確認方法」。自動化は FR-26 の段階 4）。本件はそれらのファイルを変えないので、上の `review` と合わせて退行しないことの根拠にする |
+| `manual` | SPEC-SW-10 の手動確認 M-1（Chrome の右クリックメニューを実際に押す。自動化できないことは 2026-10-11 に確かめた。同節） |
+
+**共通の前処理（`installOpenRecorderAsync(serviceWorker, { realWindows })`）:**
+`serviceWorker.evaluate` の中で、`chrome.tabs.create` を「引数を記録して `{}` を返す」関数に差し替える。
+`realWindows` が偽なら `chrome.windows.create` も「引数を記録して `{ id: -1 }` を返す」関数に差し替える（実際には開かない）。
+`console.error` は引数を文字列化して記録し、元の関数にも渡す。記録は `globalThis.kttOpenRecorder` に置く。
+`context` はテストごとに作り直されるので差し替えを戻す処理は要らない（既存の `証券会社の応答` と同じ）。
+各テストで扱う遷移先の一覧は、`externalUrls` から実行時に作る（直書きしない）。
+
+- `usUnsupportedKeys`: `url3` も `url2` も持たない key（前提として1件以上あること）
+- `url3Keys`: `url3` を持つ key（前提として1件以上あること）
+- `url2Keys`: `url2` を持つ key
+
+| # | テスト名 | 手順 | 期待 |
+| --- | --- | --- | --- |
+| 1 | `米国株のページが無い遷移先を押すと、タブを開かず小窓を1つ開く` | `usUnsupportedKeys` の各 key について、選択文字列 `AAPL` / `NASDAQ:AAPL` / `AAPL NASDAQ` のそれぞれで、記録を空にしてから `await onContextMenuClickedAsync({ menuItemId: key, selectionText }, undefined)` | 毎回、`tabs.create` が0回、`windows.create` が1回。その引数は `type: 'popup'`・`focused: true`・`width: 440`・`height: 280`。`url` を `new URL()` で分解し、`origin + pathname` が `chrome.runtime.getURL('notice.html')` と一致し、`[...searchParams]` が `[['reason', 'us-unsupported'], ['key', key], ['code', 'AAPL']]` と完全一致。`console.error` が0回 |
+| 2 | `開ける場合はこれまでどおりタブを開き、小窓を開かない` | 全 key で `7203`、`url3Keys` で `AAPL`、`url2Keys` で `NASDAQ:AAPL` を押す（1回ごとに記録を空にする） | 毎回、`tabs.create` がちょうど1回で、引数が `{ url: 期待値 }` と完全一致（期待値は `makeUrl(url1, '7203')` / `makeUrl(url3, 'AAPL')` / `makeUrl(url2, 'AAPL', 'NASDAQ')`）。`windows.create` は全体で0回 |
+| 3 | `銘柄コードと解釈できない文字列では、選択した文字列を渡さずに小窓を開く` | key `kabutan.jp/stock` で、選択文字列 `こんにちは` / `株価はNYSEで上昇` / `SP:SPX` / `BRK.B` を押す | 毎回、`tabs.create` 0回、`windows.create` 1回。`[...searchParams]` が `[['reason', 'not-ticker'], ['key', 'kabutan.jp/stock']]` と完全一致。`url` が選択文字列そのものも `encodeURIComponent(選択文字列)` も含まない。`console.error` 0回 |
+| 4 | `未知の遷移先キーは小窓もタブも開かず、console.error に出す` | `menuItemId` に `STALE_KEY`（`tests/fixtures/storage.mjs`）、選択文字列 `7203` | `tabs.create` 0回、`windows.create` 0回。`console.error` が1回で、`unknown key` と `STALE_KEY` を含む |
+| 5 | `小窓は押した元のウィンドウの中央に開く` | `base = (await chrome.windows.getAll({ windowTypes: ['normal'] }))[0]`。(i) `tab = { id: -1, windowId: base.id }`、(ii) `tab = undefined`、(iii) `tab = { id: -1, windowId: -1 }` で、`usUnsupportedKeys[0]` と `AAPL` を押す | (i) `left === base.left + Math.max(0, Math.round((base.width - 440) / 2))`、`top === base.top + Math.max(0, Math.round((base.height - 280) / 2))`。(ii)(iii) 引数に `left` / `top` のキーが無い。(i)〜(iii) とも `windows.create` が1回、`console.error` 0回 |
+| 6 | `何度押しても小窓は1つだけで、最後に押した内容を出す` | `realWindows: true`。`usUnsupportedKeys[0]` で `AAPL` → `MSFT` → `TSLA` を順に `await` して押す（`tab` は (i) と同じ） | `chrome.windows.getAll({ populate: true, windowTypes: ['popup'] })` のうち、タブの `pendingUrl` か `url` が `chrome.runtime.getURL('notice.html')` で始まるウィンドウがちょうど1つ。その URL の `code` が `TSLA`。`tabs.create` 0回 |
+| 7 | `小窓を開けなくても例外を外へ出さない` | `chrome.windows.create` を `async () => { throw new Error('KTT-TEST') }` に差し替えて、`usUnsupportedKeys[0]` と `AAPL` を押す | `onContextMenuClickedAsync` の Promise が fulfill する。`console.error` が1回で `KTT-TEST` を含む |
+| 8 | `クリックのハンドラは onClicked に登録されている` | `chrome.contextMenus.onClicked.hasListener(onContextMenuClickedAsync)` | `true` |
+
+**「ガードを外すと落ちる」ことの実証（1.21.0 の実装時に developer が1回ずつ行い、下の全行で該当テストが落ちることを確かめた。変更はコミットしていない）:**
+
+| 一時的に入れる変更 | 落ちるべきテスト |
+| --- | --- |
+| 手順 6 を消す（URL が無ければ黙って抜ける。1.20.3 の振る舞い） | 1 |
+| 手順 5 のあとも小窓を開く | 2 |
+| 手順 3 で小窓を開く／`console.error` を消す | 4 |
+| SPEC-SW-10 の手順 2（既存の小窓を閉じる）を消す | 6（ウィンドウが3つになる） |
+| SPEC-SW-10 の手順 3（位置）を消す | 5 の (i) |
+| SPEC-SW-10 の `try` / `catch` を消す | 7 |
+| `addListener` に無名関数を渡す形に戻す | 8 |
+| 手順 2 で `params` に `info.selectionText` を足す | 3 |
+| 手順 2 を現行（`console.log` して抜ける）に戻す | 3 |
+
+- 要件: FR-05, FR-29（判定基準 1〜5・8・9）
+- 検証: 上の表
 
 ## SPEC-SW-06 楽天証券 URL の生成
 
@@ -346,3 +419,107 @@ chrome.runtime.onInstalled.addListener((details) => {
 
 - 要件: NFR-04
 - 検証: `auto`（`compareVersion › マイナー/パッチを数値として比較する`）
+
+## SPEC-SW-10 開けないときの小窓を開く
+
+> **1.21.0 から。** 要件は FR-29。設計判断は ADR-0017。
+
+`openNoticeWindowAsync(params, tab)`。`src/service_worker.js` のトップレベルに `const` の `async` 関数で置く。
+呼ぶのは `onContextMenuClickedAsync`（SPEC-SW-05）だけ。小窓のページそのものは SPEC-NT。
+
+### 定数
+
+| 名前 | 値 | 用途 |
+| --- | --- | --- |
+| `noticePagePath` | `'notice.html'` | 小窓のページ（SPEC-NT-01） |
+| `noticeWindowWidth` | `440` | 小窓の幅（枠を含む。px） |
+| `noticeWindowHeight` | `280` | 小窓の高さ（枠・タイトルバーを含む。px） |
+
+### 引数
+
+| 引数 | 内容 |
+| --- | --- |
+| `params` | `{ reason: 'us-unsupported', key, code }` または `{ reason: 'not-ticker', key }`（後者は FR-29 判定基準 4） |
+| `tab` | `onClicked` の第2引数をそのまま渡す。`undefined` のこともある |
+
+### 手順（SPEC-SW-10）
+
+関数の本体全体を `try` / `catch` で包み、例外は `console.error('openNoticeWindowAsync:', error)` に1回出して握る（**reject しない**）。
+
+1. **URL を作る。** `chrome.runtime.getURL(noticePagePath) + '?' + new URLSearchParams(params)`。
+   クエリの並びは `params` のキーの順（`reason` → `key` → `code`）
+2. **既存の小窓を閉じる。** `await chrome.windows.getAll({ populate: true, windowTypes: ['popup'] })` のうち、
+   いずれかのタブの `pendingUrl ?? url ?? ''` が `chrome.runtime.getURL(noticePagePath)` で始まるウィンドウを、
+   1つずつ `await chrome.windows.remove(id)` で閉じる。`remove` の失敗（利用者が同時に閉じた等）は個別に握って続ける
+3. **位置を決める。** `tab?.windowId` が 0 以上の数なら `await chrome.windows.get(tab.windowId)` を試み、
+   得られたウィンドウ `base` の `left` / `top` / `width` / `height` がすべて数なら次の位置にする。
+   それ以外（`tab` が無い・`windowId` が負・`get` が失敗）は位置を指定しない（Chrome に任せる）
+
+   ```javascript
+   left = base.left + Math.max(0, Math.round((base.width - noticeWindowWidth) / 2))
+   top = base.top + Math.max(0, Math.round((base.height - noticeWindowHeight) / 2))
+   ```
+
+4. **開く。** `await chrome.windows.create({ url, type: 'popup', width: noticeWindowWidth, height: noticeWindowHeight, focused: true })`。
+   手順 3 で位置が決まったときだけ `left` / `top` を足す
+
+- **小窓は同時に1つまで**（FR-29 判定基準 5）。手順 2 で閉じてから開くので、何度押しても増えない。
+  既存の小窓を使い回さず作り直すのは、押した元のウィンドウの中央に開き直し、前面に出すため（ADR-0017 の 2）
+- 手順 2 で `pendingUrl` を見るのは、開いた直後でまだ読み込みが終わっていない小窓も拾うため（下の実測 2）
+- 選択文字列は受け取らず、URL にも入れない（NFR-03。FR-29 判定基準 7）
+- 押した元のウィンドウがシークレットウィンドウの場合の振る舞いは確かめていない。
+  推測: 拡張の既定の動作（`spanning`）では拡張のページはシークレットウィンドウに読み込めないため、小窓は通常のウィンドウとして開く
+
+### 権限と manifest
+
+| 項目 | 結論 | 根拠 |
+| --- | --- | --- |
+| `chrome.windows` の権限 | **不要** | 公式リファレンスに `windows` 用の権限の記載が無い。`tabs` 権限が要るのはタブの `url` / `pendingUrl` / `title` / `favIconUrl` を読むときだけ（[chrome.windows](https://developer.chrome.com/docs/extensions/reference/api/windows)） |
+| タブの `url` / `pendingUrl` を読む（手順 2） | 既存の `tabs` 権限で読める。**権限は増えない** | SPEC-MF-03 に用途を1行足す |
+| `chrome.runtime.getURL` | 権限不要 | [chrome.runtime](https://developer.chrome.com/docs/extensions/reference/api/runtime)（権限が要るのはネイティブメッセージングだけ） |
+| `web_accessible_resources` | **不要** | 拡張自身が開く拡張のページで、Web ページから読み込ませるものではない（同上の `getURL` の説明。要るのは Web ページが拡張の資源を読むとき） |
+| `src/manifest.json` | **変更しない**（版を除く） | 小窓のページは宣言の要る項目（`options_page` 等）に当たらない。`npm run validate` は manifest から参照されるファイルしか見ないので、検査内容は変わらない。`notice.*` の実在はページを開く自動テスト（SPEC-NT）が見る |
+
+### 実測（2026-10-11。architect の使い捨てスクリプト。リポジトリには入れていない）
+
+既存テストと同じ `chromium.launchPersistentContext('', { channel: 'chromium', args: ['--disable-extensions-except=…', '--load-extension=…'] })`
+（`@playwright/test` 1.64.0 / Chromium 156.0.8078.4、ヘッドレス）で、`src/` の複製に仮の `notice.html` / `notice.js` を足して試した。
+
+| # | 試したこと | 結果 |
+| --- | --- | --- |
+| 1 | Service Worker から `chrome.windows.create({ type: 'popup', url: chrome.runtime.getURL('notice.html?key=abc'), width: 360, height: 200 })` | 開いた。`type: 'popup'`・`360×200`・`focused: true`・タブ1つ。Playwright の `context` の `page` イベントで小窓のページを取れ、クエリも読めた |
+| 2 | 開いた直後に `chrome.windows.getAll({ populate: true, windowTypes: ['popup'] })` | 小窓のタブは `url: ''`・`pendingUrl: 'chrome-extension://…/notice.html?a=1'`。**`pendingUrl` を見れば読み込み前でも拾える** |
+| 3 | 開いた直後に `chrome.runtime.getContexts({ contextTypes: ['TAB'] })` | **小窓が含まれなかった**（500ms 待つと含まれた）。読み込み前の小窓を拾えない |
+| 4 | `left: 300, top: 200` を指定 | `left: 300`・`top: 200` で開いた。指定しないと `0, 0` |
+| 5 | `width: 50, height: 50` を指定 | `86×73` に広げられた（下限がある。値は環境依存と推測） |
+| 6 | 小窓のページのボタンで `window.close()` | 閉じた（`page` の `close` イベント。その後 `popup` のウィンドウは0）。`chrome.tabs.update` で別の URL に移った後でも閉じた |
+| 7 | 小窓のページの `innerWidth` / `innerHeight` | **1280×720**（ウィンドウは 440×260）。Playwright が既定のビューポートに置き換える。**実際のウィンドウでの収まりは自動テストで測れない**（SPEC-NT-05） |
+| 8 | 小窓のページの `document.hasFocus()` | `true` |
+
+### 検証（SPEC-SW-10）
+
+| 種別 | 内容 |
+| --- | --- |
+| `auto` | SPEC-SW-05 の describe `service_worker: 開けない項目を押したときの小窓` の 1・5・6・7（URL・大きさ・位置・1つまで・例外を外へ出さない）。小窓のページの表示と閉じ方は SPEC-NT |
+| `review` | `windows.create` を呼ぶのが `openNoticeWindowAsync` の中だけであること。`params` に選択文字列が入る経路が無いこと |
+| `manual` | 下の M-1 |
+
+**手動確認 M-1（1.21.0 のリリース前に1回。以後は `src/notice.*` か本節の大きさ・位置を変えたときだけ）:**
+
+1. 拡張を読み込んだ Chrome で、任意のページの `AAPL` という文字列を選択して右クリックし、「四季報」を押す
+2. 押した元のウィンドウの中央付近に小窓が前面で開き、新しいタブは開かないこと
+3. 小窓の文言が切れずに読め、「閉じる」ボタンがスクロールせずに見えること
+4. 「閉じる」で小窓が閉じること
+
+**自動化できない理由:** (1) 手順 1 の「Chrome の右クリックメニューを実際に押す」操作は、Playwright から行えない（**2026-10-11 に developer が確かめた**）。
+example.com をフィクスチャで返して `AAPL` を選択し、`page.click({ button: 'right' })` → `ArrowDown` ×8 → `Enter` をヘッドレスと `--headed` の両方で試した。
+ページには `contextmenu` イベントが届いたが、Service Worker に足したリスナーで `chrome.contextMenus.onClicked` は**一度も発火せず**、タブも小窓も開かなかった。
+CDP に右クリックメニューを扱うドメインは無く、`chrome.contextMenus` にクリックを模擬する API も無い（事実）。
+OS の操作（osascript / xdotool）はアクセシビリティ権限が要り CI に持ち込めないため試していない。
+押した後の処理と登録（`hasListener`）は自動テストが見る。(2) 手順 3 の収まりは、実測 7 のとおり Playwright が小窓の表示領域を置き換えるため、
+実際のウィンドウの大きさで測れない。自動テストは控えめな大きさで近似する（SPEC-NT-05）。
+
+> M-1 は `docs/MANUAL-CHECKLIST.md` の **D-3** に置いた。D-1 の `AAPL` の行と「何も開かない」3行も小窓に合わせて直した。
+> M-1 は FR-29 の ✅ の条件にしない（FR-29 の「手動確認」欄。FR-05 / FR-10 と同じ扱い）。
+
+- 要件: FR-29（判定基準 1・5・6・7・9）, NFR-03

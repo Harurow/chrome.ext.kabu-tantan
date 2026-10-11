@@ -304,18 +304,35 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
   remakeContextMenus()
 })
 
-// コンテキストメニューのクリックイベントハンドラを登録
-// 選択文字列がありその文字列が証券コードとして扱える場合はクリックしたメニューのサイトのURLを開く
-chrome.contextMenus.onClicked.addListener((info, tab) => {
+/** 開けないときの小窓のページ(SPEC-SW-10 / SPEC-NT-01) */
+const noticePagePath = 'notice.html'
+
+/** 小窓の幅(枠を含む。px。SPEC-SW-10) */
+const noticeWindowWidth = 440
+
+/** 小窓の高さ(枠・タイトルバーを含む。px。SPEC-SW-10) */
+const noticeWindowHeight = 280
+
+/**
+ * コンテキストメニューの項目が押されたときの処理(SPEC-SW-05)
+ * 選択文字列が銘柄コードとして扱え、その遷移先にページがあれば新しいタブで開く。
+ * 開けないときは黙って抜けず、小窓で理由を知らせる(FR-29)。
+ * テストが同じ関数を直接呼び、登録もhasListenerで確かめるので、addListenerに無名関数で包まずに渡す
+ * @param {chrome.contextMenus.OnClickData} info
+ * @param {chrome.tabs.Tab | undefined} tab
+ * @returns {Promise<void>} rejectしない(小窓を開く失敗はopenNoticeWindowAsyncの中で処理する)
+ */
+const onContextMenuClickedAsync = async (info, tab) => {
   const key = info.menuItemId
-  const selectionText = info.selectionText
-  const { status, type, code, exchange } = getTickerCode(selectionText)
+  const { status, type, code, exchange } = getTickerCode(info.selectionText)
 
   if (!status) {
-    console.log('銘柄コードが見つかりませんでした')
+    // 選択文字列(info.selectionText)は小窓に渡さない(FR-29 判定基準7 / NFR-03)
+    await openNoticeWindowAsync({ reason: 'not-ticker', key }, tab)
     return
   }
 
+  // 項目は定義にある遷移先からしか作らないので、利用者の操作では起きない(小窓は開かない)
   const externalInfo = externalUrlsMap[key]
   if (!externalInfo) {
     console.error(`unknown key: ${key}`)
@@ -327,8 +344,70 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
 
   if (url) {
     chrome.tabs.create({ url })
+    return
   }
-})
+
+  // 米国株で、その遷移先に米国株のページが無い
+  await openNoticeWindowAsync({ reason: 'us-unsupported', key, code }, tab)
+}
+
+/**
+ * 開けないときの小窓を開く(SPEC-SW-10)
+ * 小窓は同時に1つまで。既存の小窓を閉じてから、押した元のウィンドウの中央に開き直す。
+ * 例外はconsole.errorに出して握る(rejectしない)
+ * @param {{ reason: 'us-unsupported', key: string, code: string } | { reason: 'not-ticker', key: string }} params
+ *   小窓のクエリ。Service Workerが作った値だけを入れ、選択文字列は入れない
+ * @param {chrome.tabs.Tab | undefined} tab onClickedの第2引数
+ */
+const openNoticeWindowAsync = async (params, tab) => {
+  try {
+    const noticeUrl = chrome.runtime.getURL(noticePagePath)
+    const url = `${noticeUrl}?${new URLSearchParams(params)}`
+
+    // 既存の小窓を閉じる。開いた直後で読み込み前の小窓はurlが空なのでpendingUrlも見る
+    const popups = await chrome.windows.getAll({ populate: true, windowTypes: ['popup'] })
+    for (const popup of popups) {
+      const isNotice = (popup.tabs ?? [])
+        .some((popupTab) => (popupTab.pendingUrl ?? popupTab.url ?? '').startsWith(noticeUrl))
+      if (!isNotice) {
+        continue
+      }
+      try {
+        await chrome.windows.remove(popup.id)
+      } catch {
+        // 利用者が同時に閉じた等。残りの小窓を閉じ続ける
+      }
+    }
+
+    // 押した元のウィンドウの中央に置く。分からなければ位置はChromeに任せる
+    const position = {}
+    if (typeof tab?.windowId === 'number' && tab.windowId >= 0) {
+      try {
+        const base = await chrome.windows.get(tab.windowId)
+        if ([base.left, base.top, base.width, base.height].every((value) => typeof value === 'number')) {
+          position.left = base.left + Math.max(0, Math.round((base.width - noticeWindowWidth) / 2))
+          position.top = base.top + Math.max(0, Math.round((base.height - noticeWindowHeight) / 2))
+        }
+      } catch {
+        // 元のウィンドウが閉じられた等。位置を指定せずに開く
+      }
+    }
+
+    await chrome.windows.create({
+      url,
+      type: 'popup',
+      width: noticeWindowWidth,
+      height: noticeWindowHeight,
+      focused: true,
+      ...position
+    })
+  } catch (error) {
+    console.error('openNoticeWindowAsync:', error)
+  }
+}
+
+// コンテキストメニューのクリックイベントハンドラを登録(SPEC-SW-05)
+chrome.contextMenus.onClicked.addListener(onContextMenuClickedAsync)
 
 // Chrome拡張をクリックした時のイベントハンドラを登録
 // オプションページを開く

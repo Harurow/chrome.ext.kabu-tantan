@@ -53,11 +53,11 @@ EXTENSION_PATH=/tmp/kt-pkg npm test
 | **拡張が自分で作った** DOM の振る舞い（サイト側は器だけ） | **自動**。サイトの都合では変わらない（`CON-08` の 2026-08-30 改訂） |
 | 見た目の妥当性（配色・読みやすさ） | **手動**。機械では判定できない |
 
-自動テストは **ファイル単位で** `src/` の JS 9本・2832行の**すべて**を読み込んで実行している（行カバレッジではない。行単位の計測はしていない）。
+自動テストは **ファイル単位で** `src/` の JS 10本・2991行の**すべて**を読み込んで実行している（行カバレッジではない。行単位の計測はしていない）。
 
 | ファイル | 行数 | 読み込むテスト |
 | --- | --- | --- |
-| `service_worker.js` | 507 | `service-worker.spec.mjs`（Service Worker 上で直接呼ぶ） |
+| `service_worker.js` | 586 | `service-worker.spec.mjs`（Service Worker 上で直接呼ぶ） |
 | `urls.js` | 388 | `service-worker.spec.mjs`（`importScripts` 経由）／ `options.spec.mjs`（`options.html` が読み込む）／ Content Script を動かす全テスト |
 | `tradingview-cs.js` | 1101 | `tradingview.spec.mjs`（フィクスチャ上で実行）／ `content-script.spec.mjs`（`node:vm` で `isSymbolShaped` / `parseExchangeSymbol` を取り出す）／ `selector-defs.spec.mjs`（`menuSelectors`）／ `service-worker.spec.mjs`（ソースを文字列として読み、正規表現リテラルを照合する。実行はしない） |
 | `rakuten-cs.js` | 225 | `content-script.spec.mjs`（フィクスチャ上で実行）／ `selector-defs.spec.mjs` |
@@ -66,6 +66,7 @@ EXTENSION_PATH=/tmp/kt-pkg npm test
 | `sbi-scr-cs.js` | 147 | 同上 |
 | `options.js` | 116 | `options.spec.mjs` |
 | `linkMenu.js` | 76 | `content-script.spec.mjs`（楽天・SBI 系の注入を通して） |
+| `notice.js` | 80 | `notice.spec.mjs`（Service Worker のクリック処理から実際に小窓を開く／`notice.html` に直接遷移する） |
 
 **ファイル単位で 100% でも、`tradingview-cs.js` は中身の一部しか検査していない。**
 1.20.0 で `tests/tradingview.spec.mjs` が入り、**拡張が自分で作った DOM の振る舞い**（入れ子メニューのクリック範囲・
@@ -308,6 +309,23 @@ DOM を写さず、**`menuSelectors` と `watchlistSymbolAttrs` から実行時�
 契約（セレクタ定義・属性名）だけを再現すれば、サイト改修でフィクスチャの更新が要らない。
 詳細は SPEC-CS-27。
 
+### 4. 開けないときの小窓（FR-29 / SPEC-NT。1.21.0〜）
+
+`tests/notice.spec.mjs`。Chrome の右クリックメニューそのものは Playwright から押せない（2026-10-11 に確かめた。ページに `contextmenu` は届くが `onClicked` が発火しない。SPEC-SW-10）ので、
+**押された後の処理**を `serviceWorker.evaluate` で直接呼び（`onContextMenuClickedAsync`）、開いた小窓を `context` の `page` イベントで受け取る。
+
+```js
+const opened = context.waitForEvent('page', { predicate: (p) => p.url().includes('/notice.html') })
+await serviceWorker.evaluate((info) => onContextMenuClickedAsync(info, undefined),
+  { menuItemId: 'shikiho.toyokeizai.net/stocks', selectionText: 'AAPL' })
+const page = await opened
+```
+
+- 小窓のページは Playwright が表示領域を 1280×720 に置き換える（SPEC-SW-10 の実測 7）。収まりはビューポートを 424×220 に設定し直して近似する（SPEC-NT-05）
+- `notice.html` そのもののリクエストは `request` イベントに出ない（Playwright が新しいウィンドウにつながる前に出るため）。外部リクエストゼロの検査は `notice.css` / `notice.js` が取れていることを前提にする（SPEC-NT-06 の 10）
+- Esc で閉じるテストは `keyboard.down` を使う。`press` は keydown で小窓が閉じた後の keyup で落ちることがある（SPEC-NT-06 の 8）
+- クリック処理の分岐（タブを開く／小窓を開く／何もしない）は `tests/service-worker.spec.mjs` の describe `service_worker: 開けない項目を押したときの小窓` が見る（SPEC-SW-05）
+
 > テストの**一覧**は [TEST-CATALOG.md](TEST-CATALOG.md)（`npm run docs:tests` で自動生成）。
 > このファイルには方針と手法だけを書く。
 
@@ -321,6 +339,7 @@ DOM を写さず、**`menuSelectors` と `watchlistSymbolAttrs` から実行時�
 | --- | --- |
 | ロジック | `getTickerCode`（誤マッチ防止を含む） / `compareVersion` / `makeUrl` / `externalUrls` の整合性 |
 | オプションページ | 一覧表示・初期値・グリッドレイアウト・トグル保存・ドラッグ並び替え・リンク属性・外部リクエストゼロ・アイコンフォント |
+| 開けないときの小窓（FR-29） | クリック処理の分岐（開ける場合は従来どおり・米国株のページが無い／銘柄コードと読み取れないときは小窓）・小窓は1つまで・位置・文言・閉じ方・外部リクエストゼロ・収まり（近似）・権限が増えていないこと（`manifest: 権限`） |
 | Content Script | 楽天証券とSBI証券へのメニュー注入、URL生成、ホバー開閉、対象外ページで注入しないこと、設定の反映 |
 | TradingView（**拡張の持ち物だけ**） | 項目のクリックできる範囲・`delegating`（Esc は1回）・メニューの縦位置補正・除去時の後始末。**サイト側の実在・見た目は見ていない**（SPEC-CS-27 / FR-26） |
 | セレクタ定義 | `menuSelectors` の読み出し・構造・`targets.mjs` との1対1対応（半自動検証の前提。NFR-13） |

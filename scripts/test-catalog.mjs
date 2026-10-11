@@ -15,8 +15,10 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const FILE_INFO = {
   'service-worker.spec.mjs': {
     title: 'Service Worker / 共有モジュール',
-    detail: 'Service Worker のグローバルスコープを直接 evaluate して、純粋なロジックを検証する。',
-    specs: 'SPEC-TC, SPEC-EL, SPEC-SW'
+    detail: 'Service Worker のグローバルスコープを直接 evaluate して、純粋なロジックを検証する。' +
+      '右クリックメニューの項目を押した後の処理（タブを開くか・小窓を開くか）も、同じ関数を直接呼んで見る。' +
+      'manifest の権限はブラウザを使わず src/manifest.json を読んで固定する。',
+    specs: 'SPEC-TC, SPEC-EL, SPEC-SW, SPEC-MF-03'
   },
   'options.spec.mjs': {
     title: 'オプションページ',
@@ -35,6 +37,13 @@ const FILE_INFO = {
       '**このファイルが緑でも実サイトが壊れていないことにはならない**（改訂後の CON-08 / FR-26 判定基準7）。' +
       '見ているのは自分たちのコードの退行だけで、サイト改修は npm run check:selectors（FR-12）と手動確認 A が見る。',
     specs: 'SPEC-CS-24, SPEC-CS-25, SPEC-CS-27'
+  },
+  'notice.spec.mjs': {
+    title: '開けないときの小窓（FR-29）',
+    detail: 'Service Worker のクリック処理（onContextMenuClickedAsync）を直接呼んで実際に小窓を開き、文言・閉じ方・外部リクエスト・収まりを検証する。' +
+      '想定外の引数は notice.html に直接遷移して見る。' +
+      'Chrome の右クリックメニューそのものを押す操作と、実際のウィンドウでの見え方は自動化できない（SPEC-SW-10 の手動確認 M-1）。',
+    specs: 'SPEC-NT, SPEC-SW-10'
   },
   'selector-defs.spec.mjs': {
     title: 'セレクタ定義（半自動検証の土台）',
@@ -60,6 +69,10 @@ const REGRESSION = {
   未対応の記法: 'フィクスチャがセレクタと食い違ったまま緑になる状態の検出（改訂後の CON-08 の条件1・2 / FR-26 判定基準2）',
   'Esc の送出': '代行クリックの戻りを握る delegating が消え、他社サイトへ Esc を2回投げる退行の検出（FR-25 / NFR-01）',
   'margin-top を元に戻す': '遷移先0件でメニューを元に戻すとき、ずらした位置が痕跡として残る退行の検出（FR-24 / SPEC-CS-24 の手順5）',
+  タブを開かず小窓を1つ開く: '右クリックメニューで米国株のページが無い遷移先を押しても、黙って何もしない（1.20.3 までの振る舞い）に戻る退行の検出（FR-29 判定基準1）',
+  選択した文字列を: '選択文字列が小窓の URL や表示に載る退行の検出（FR-29 判定基準7 / NFR-03）',
+  'HTML として解釈しない': '小窓がクエリの値を HTML として差し込む退行の検出（SPEC-NT-02）',
+  'permissions は3つのまま': '権限が増えて既存利用者に再承認を求める状態の検出。npm run validate は警告で止まらないので、ここが止める（FR-29 判定基準6 / SPEC-MF-03）',
   'storage に残った未知のキー': 'サイト廃止で消えた key が storage に残った利用者で、その key を読み飛ばすガードが消える（メニュー・行が欠ける、またはエラー欄にエラーが出る）か、保存し直しても key が残り続ける退行の検出（NFR-05 / SPEC-ST-03）'
 }
 
@@ -138,6 +151,7 @@ lines.push('| 対象 | 理由 |', '| --- | --- |')
 lines.push('| TradingView の**実 DOM と見た目**（挿入先が実在するか / 模倣した見た目が揃っているか / サイト側メニューの開閉・スクロール） | フィクスチャでは実サイトとの乖離を検出できない (CON-08)。`npm run check:selectors` (FR-12) と手動確認 A が見る |')
 lines.push('| TradingView の**起点の判定**（FR-19）と**項目の集合と順序**（FR-07 / FR-18） | FR-26 の段階3・4 で自動テストへ移す予定。それまでは手動確認 A |')
 lines.push('| 楽天証券・内藤証券のセッション連携 | ログイン済みタブが前提のため自動化していない (CON-04) |')
+lines.push('| Chrome の右クリックメニューを実際に押す操作と、開けないときの小窓の実際のウィンドウでの見え方（FR-29） | Playwright から Chrome 自身の右クリックメニューの項目を押す手段が無く（2026-10-11 に試行。ヘッドレス・画面ありとも `onClicked` が発火しない）、小窓の表示領域は Playwright が 1280×720 に置き換える。押した後の処理と登録（`hasListener`）、424×220 での収まりは自動テストが見る。実機は SPEC-SW-10 の手動確認 M-1 |')
 lines.push('| 楽天スーパースクリーナー / SBI銘柄スクリーニング の**見た目と実 DOM** | 注入そのものは 1.13.0 で自動化した（常設監視を document.body に上げたためフィクスチャで再現できる）。実 DOM との乖離は `npm run check:selectors` と手動確認 C-2 / C-4 で見る |')
 lines.push('')
 lines.push('これらは変更時に手動確認する。手順は [TESTING.md](TESTING.md) を参照。')

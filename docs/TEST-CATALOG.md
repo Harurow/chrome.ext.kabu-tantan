@@ -3,7 +3,7 @@
 > **このファイルは `npm run docs:tests` で自動生成される。手で編集しない。**
 > 説明文を変えたい場合は `scripts/test-catalog.mjs` を編集する。
 
-テスト総数: **150**
+テスト総数: **170**
 
 テストの方針・手法は [TESTING.md](TESTING.md) を参照。
 
@@ -52,6 +52,28 @@ context.route() で対象オリジンにフィクスチャ HTML を返し、実�
 | 33 | tradingview-cs.js: parseExchangeSymbol | canvas の aria-label と行の属性値で同じ結果になる |
 | 34 | tradingview-cs.js: parseExchangeSymbol | 米国ティッカーは後続境界を見て、切り出せないときは何も返さない |
 | 35 | tradingview-cs.js: parseExchangeSymbol | 取引所を解釈できない・形が合わないものは何も返さない |
+
+## 開けないときの小窓（FR-29）
+
+`tests/notice.spec.mjs` — 11 件
+
+Service Worker のクリック処理（onContextMenuClickedAsync）を直接呼んで実際に小窓を開き、文言・閉じ方・外部リクエスト・収まりを検証する。想定外の引数は notice.html に直接遷移して見る。Chrome の右クリックメニューそのものを押す操作と、実際のウィンドウでの見え方は自動化できない（SPEC-SW-10 の手動確認 M-1）。
+
+対応する仕様: SPEC-NT, SPEC-SW-10
+
+| # | グループ | テスト |
+| --- | --- | --- |
+| 1 | 小窓のページ | 米国株のページが無い遷移先では、遷移先の名前と銘柄を出す |
+| 2 | 小窓のページ | 米国株のページがある有効な遷移先を、設定の順に並べる |
+| 3 | 小窓のページ | 米国株のページがある遷移先が有効な中に無ければ、その旨を出す |
+| 4 | 小窓のページ | 銘柄コードと読み取れない文字列では、選択した文字列を出さない |
+| 5 | 小窓のページ | 想定外の引数では、汎用の文言だけを出す |
+| 6 | 小窓のページ | 引数の文字列を HTML として解釈しない |
+| 7 | 小窓のページ | 閉じるボタンで小窓が閉じる |
+| 8 | 小窓のページ | Esc キーで小窓が閉じる |
+| 9 | 小窓のページ | 開いた直後は閉じるボタンにフォーカスがある |
+| 10 | 小窓のページ | 外部ホストへ一切リクエストしない |
+| 11 | 小窓のページ | 既定の設定で、文言が小窓の大きさに収まる |
 
 ## オプションページ
 
@@ -122,11 +144,11 @@ chrome-extension:// のオプションページを開き、表示・操作・保
 
 ## Service Worker / 共有モジュール
 
-`tests/service-worker.spec.mjs` — 42 件
+`tests/service-worker.spec.mjs` — 51 件
 
-Service Worker のグローバルスコープを直接 evaluate して、純粋なロジックを検証する。
+Service Worker のグローバルスコープを直接 evaluate して、純粋なロジックを検証する。右クリックメニューの項目を押した後の処理（タブを開くか・小窓を開くか）も、同じ関数を直接呼んで見る。manifest の権限はブラウザを使わず src/manifest.json を読んで固定する。
 
-対応する仕様: SPEC-TC, SPEC-EL, SPEC-SW
+対応する仕様: SPEC-TC, SPEC-EL, SPEC-SW, SPEC-MF-03
 
 | # | グループ | テスト |
 | --- | --- | --- |
@@ -162,16 +184,25 @@ Service Worker のグローバルスコープを直接 evaluate して、純粋�
 | 30 | service_worker: コンテキストメニューの再構築 | create の失敗を console.error に出し、残りの項目も作る |
 | 31 | service_worker: コンテキストメニューの再構築 | 各回は自分の番になった時点の設定で作る |
 | 32 | service_worker: コンテキストメニューの再構築 | storage に残った未知のキーは読み飛ばし、エラーを出さない |
-| 33 | urls.js: makeUrl | ${code} を置換する |
-| 34 | urls.js: makeUrl | ${code:0} は先頭1文字に置換する |
-| 35 | urls.js: makeUrl | ${exchange} は指定時のみ置換する |
-| 36 | urls.js: exchanges | 取引所コードは大文字英字のみで、市場種別は jp / us のいずれか |
-| 37 | urls.js: externalUrls の整合性 | key が一意で必須フィールドが揃っている |
-| 38 | urls.js: externalUrls の整合性 | url1 は必ず ${code} を含む |
-| 39 | service_worker: retrySetup | 成功したら再試行を止める |
-| 40 | service_worker: retrySetup | 打ち切り時刻を過ぎたら止める |
-| 41 | service_worker: retrySetup | setup が例外を投げたら止める |
-| 42 | 米国ティッカーの後続境界: リテラル3本で同じ値 | リテラル3本とも同じ境界で、u フラグが付いている |
+| 33 | service_worker: 開けない項目を押したときの小窓 | 米国株のページが無い遷移先を押すと、タブを開かず小窓を1つ開く |
+| 34 | service_worker: 開けない項目を押したときの小窓 | 開ける場合はこれまでどおりタブを開き、小窓を開かない |
+| 35 | service_worker: 開けない項目を押したときの小窓 | 銘柄コードと解釈できない文字列では、選択した文字列を渡さずに小窓を開く |
+| 36 | service_worker: 開けない項目を押したときの小窓 | 未知の遷移先キーは小窓もタブも開かず、console.error に出す |
+| 37 | service_worker: 開けない項目を押したときの小窓 | 小窓は押した元のウィンドウの中央に開く |
+| 38 | service_worker: 開けない項目を押したときの小窓 | 何度押しても小窓は1つだけで、最後に押した内容を出す |
+| 39 | service_worker: 開けない項目を押したときの小窓 | 小窓を開けなくても例外を外へ出さない |
+| 40 | service_worker: 開けない項目を押したときの小窓 | クリックのハンドラは onClicked に登録されている |
+| 41 | manifest: 権限 | permissions は3つのままで、ホスト権限・任意権限・web_accessible_resources を宣言しない |
+| 42 | urls.js: makeUrl | ${code} を置換する |
+| 43 | urls.js: makeUrl | ${code:0} は先頭1文字に置換する |
+| 44 | urls.js: makeUrl | ${exchange} は指定時のみ置換する |
+| 45 | urls.js: exchanges | 取引所コードは大文字英字のみで、市場種別は jp / us のいずれか |
+| 46 | urls.js: externalUrls の整合性 | key が一意で必須フィールドが揃っている |
+| 47 | urls.js: externalUrls の整合性 | url1 は必ず ${code} を含む |
+| 48 | service_worker: retrySetup | 成功したら再試行を止める |
+| 49 | service_worker: retrySetup | 打ち切り時刻を過ぎたら止める |
+| 50 | service_worker: retrySetup | setup が例外を投げたら止める |
+| 51 | 米国ティッカーの後続境界: リテラル3本で同じ値 | リテラル3本とも同じ境界で、u フラグが付いている |
 
 ## TradingView（拡張が自分で作った DOM の振る舞い）
 
@@ -224,6 +255,9 @@ menuSelectors / watchlistSymbolAttrs から組み立てたフィクスチャに�
 | スクリーナー Content Script › 楽天スーパースクリーナー: 後から現れた結果一覧に注入する | スクリーナーの常設監視が結果一覧の器に戻り、検索前に開いたタブで注入されなくなる退行の検出（FR-13） |
 | スクリーナー Content Script › SBI銘柄スクリーニング: 後から現れた結果一覧に注入する | スクリーナーの常設監視が結果一覧の器に戻り、検索前に開いたタブで注入されなくなる退行の検出（FR-13） |
 | 設定の反映 › storage に残った未知のキーは読み飛ばし、残りの遷移先でメニューを作る | サイト廃止で消えた key が storage に残った利用者で、その key を読み飛ばすガードが消える（メニュー・行が欠ける、またはエラー欄にエラーが出る）か、保存し直しても key が残り続ける退行の検出（NFR-05 / SPEC-ST-03） |
+| 小窓のページ › 銘柄コードと読み取れない文字列では、選択した文字列を出さない | 選択文字列が小窓の URL や表示に載る退行の検出（FR-29 判定基準7 / NFR-03） |
+| 小窓のページ › 引数の文字列を HTML として解釈しない | 小窓がクエリの値を HTML として差し込む退行の検出（SPEC-NT-02） |
+| 小窓のページ › 外部ホストへ一切リクエストしない | CDN・外部フォント・外部画像への依存が再混入していないかの検出 |
 | オプションページ › 行がグリッドとして横並びにレイアウトされる | Materialize 2.x で .col が廃止され .row が CSS Grid 化した影響の検出 |
 | オプションページ › ハンドルをドラッグして並び替えた順序が保存される | jQuery UI 1.14.2 が jQuery 4.0.0 上で動くことの実証 |
 | オプションページ › 外部ホストへ一切リクエストしない | CDN・外部フォント・外部画像への依存が再混入していないかの検出 |
@@ -234,6 +268,9 @@ menuSelectors / watchlistSymbolAttrs から組み立てたフィクスチャに�
 | service_worker: getTickerCode › 文中の大文字並びには誤マッチしない | 米国株の正規表現から先頭アンカー ^ が失われていないかの検出 |
 | service_worker: compareVersion › マイナー/パッチを数値として比較する | バージョン比較が文字列比較に戻っていないかの検出 |
 | service_worker: コンテキストメニューの再構築 › storage に残った未知のキーは読み飛ばし、エラーを出さない | サイト廃止で消えた key が storage に残った利用者で、その key を読み飛ばすガードが消える（メニュー・行が欠ける、またはエラー欄にエラーが出る）か、保存し直しても key が残り続ける退行の検出（NFR-05 / SPEC-ST-03） |
+| service_worker: 開けない項目を押したときの小窓 › 米国株のページが無い遷移先を押すと、タブを開かず小窓を1つ開く | 右クリックメニューで米国株のページが無い遷移先を押しても、黙って何もしない（1.20.3 までの振る舞い）に戻る退行の検出（FR-29 判定基準1） |
+| service_worker: 開けない項目を押したときの小窓 › 銘柄コードと解釈できない文字列では、選択した文字列を渡さずに小窓を開く | 選択文字列が小窓の URL や表示に載る退行の検出（FR-29 判定基準7 / NFR-03） |
+| manifest: 権限 › permissions は3つのままで、ホスト権限・任意権限・web_accessible_resources を宣言しない | 権限が増えて既存利用者に再承認を求める状態の検出。npm run validate は警告で止まらないので、ここが止める（FR-29 判定基準6 / SPEC-MF-03） |
 | service_worker: retrySetup › 成功したら再試行を止める | 再試行が止まらず、他社サイト上でタイマーが走り続ける問題の検出（FR-13 判定基準2 / NFR-01） |
 | service_worker: retrySetup › 打ち切り時刻を過ぎたら止める | 再試行が止まらず、他社サイト上でタイマーが走り続ける問題の検出（FR-13 判定基準2 / NFR-01） |
 | service_worker: retrySetup › setup が例外を投げたら止める | 再試行が止まらず、他社サイト上でタイマーが走り続ける問題の検出（FR-13 判定基準2 / NFR-01） |
@@ -250,6 +287,7 @@ menuSelectors / watchlistSymbolAttrs から組み立てたフィクスチャに�
 | TradingView の**実 DOM と見た目**（挿入先が実在するか / 模倣した見た目が揃っているか / サイト側メニューの開閉・スクロール） | フィクスチャでは実サイトとの乖離を検出できない (CON-08)。`npm run check:selectors` (FR-12) と手動確認 A が見る |
 | TradingView の**起点の判定**（FR-19）と**項目の集合と順序**（FR-07 / FR-18） | FR-26 の段階3・4 で自動テストへ移す予定。それまでは手動確認 A |
 | 楽天証券・内藤証券のセッション連携 | ログイン済みタブが前提のため自動化していない (CON-04) |
+| Chrome の右クリックメニューを実際に押す操作と、開けないときの小窓の実際のウィンドウでの見え方（FR-29） | Playwright から Chrome 自身の右クリックメニューの項目を押す手段が無く（2026-10-11 に試行。ヘッドレス・画面ありとも `onClicked` が発火しない）、小窓の表示領域は Playwright が 1280×720 に置き換える。押した後の処理と登録（`hasListener`）、424×220 での収まりは自動テストが見る。実機は SPEC-SW-10 の手動確認 M-1 |
 | 楽天スーパースクリーナー / SBI銘柄スクリーニング の**見た目と実 DOM** | 注入そのものは 1.13.0 で自動化した（常設監視を document.body に上げたためフィクスチャで再現できる）。実 DOM との乖離は `npm run check:selectors` と手動確認 C-2 / C-4 で見る |
 
 これらは変更時に手動確認する。手順は [TESTING.md](TESTING.md) を参照。

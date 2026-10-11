@@ -881,7 +881,11 @@ matchInjectionTicker(text, allowUs)
 ## SPEC-TC-08 コンテキストメニューでの抽出
 
 `chrome.contextMenus.onClicked` の `info.selectionText` に対して SPEC-TC-04 を適用する。
-`status: false` の場合は何も開かず、コンソールに「銘柄コードが見つかりませんでした」を出す。
+`status: false` の場合は遷移先のページを開かず、小窓で銘柄コードとして読み取れなかったことを知らせる（選択文字列は渡さない）。
+コンソールには何も出さない。正本は SPEC-SW-05 の手順 2。
 
-- 要件: FR-05
-- 検証: `auto`（`getTickerCode` のテスト）／`manual`（実際に選択して右クリック）
+> **1.21.0 から（FR-29）。** 1.20.3 までは `status: false` のとき、何も開かずコンソールに「銘柄コードが見つかりませんでした」を出すだけだった。
+> 抽出の規則（SPEC-TC-04）は変えていない。
+
+- 要件: FR-05, FR-29
+- 検証: `auto`（`getTickerCode` のテスト／`service_worker: 開けない項目を押したときの小窓 › 銘柄コードと解釈できない文字列では、選択した文字列を渡さずに小窓を開く`）／`manual`（実際に選択して右クリック。`docs/MANUAL-CHECKLIST.md` D-1）

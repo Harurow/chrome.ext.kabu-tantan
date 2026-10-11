@@ -111,6 +111,7 @@ export default [
         compareVersion: 'readonly',
         shouldOpenOptionsPage: 'readonly',
         remakeContextMenus: 'readonly',
+        onContextMenuClickedAsync: 'readonly',
         onMessageRakutenSecInfoAsync: 'readonly',
         onMessageRakutenSecOpenAsync: 'readonly',
         onMessageNaitoSecInfoAsync: 'readonly',

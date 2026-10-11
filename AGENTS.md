@@ -59,6 +59,7 @@ src/                        ← このディレクトリがそのまま拡張機
 ├── tradingview-cs.js       # TradingView
 ├── tradingview-cs.css      # TradingView 用スタイル
 ├── options.html/js/css     # オプションページ
+├── notice.html/js/css      # 右クリックの項目で開けないときに理由を知らせる小窓
 ├── _locales/ja/            # 日本語ローカライズ
 ├── images/                 # アイコン画像
 └── third-party/            # 同梱ライブラリ (編集しない。docs/ARCHITECTURE.md 参照)
@@ -251,6 +252,7 @@ Playwright で拡張機能を実際に Chromium へロードして検証する�
 | `tests/options.spec.mjs` | オプションページの表示・保存・並び替え・外部リクエスト有無 |
 | `tests/content-script.spec.mjs` | 楽天・SBI へのメニュー注入（フィクスチャ HTML を実オリジンで差し替え） |
 | `tests/tradingview.spec.mjs` | TradingView で拡張が作った DOM（入れ子メニューのクリック範囲・縦位置補正・証券会社の項目が URL を DOM に出さないこと・未知キーの読み飛ばし）と、セレクタからフィクスチャを組み立てる規則。サイト側の実 DOM は見ない（CON-08） |
+| `tests/notice.spec.mjs` | 右クリックの項目で開けないときの小窓（文言・設定順の並び・選択文字列を出さないこと・HTML として解釈しないこと・閉じ方・外部リクエストゼロ・大きさへの収まり） |
 | `tests/selector-defs.spec.mjs` | `menuSelectors` の定義・`check:selectors` の中断処理・手がかりの消毒と書式 |
 
 テストの一覧は [docs/TEST-CATALOG.md](docs/TEST-CATALOG.md)（`npm run docs:tests` で自動生成）。
@@ -312,6 +314,7 @@ Playwright で拡張機能を実際に Chromium へロードして検証する�
 | 対象 | 確かめたこと | 代わりに何で見るか |
 | --- | --- | --- |
 | `chrome://extensions` のエラー欄 | 2026-10-11。Playwright の Chromium で `chrome.developerPrivate.getExtensionInfo()` の `runtimeErrors` を読んだが、開発者モードを有効にしても、ヘッドレス・画面ありとも常に空。Service Worker の `console.error` や例外も載らなかった（試した条件は SPEC-SW-02 の実測表） | エラーの元（`chrome.contextMenus.create` の `lastError` など）をテストで直接記録する |
+| Chrome の右クリックメニューの項目を押す | 2026-10-11。選択して `page.click({ button: 'right' })` → 矢印キー → Enter を、ヘッドレス・画面ありとも試したが `chrome.contextMenus.onClicked` が発火しない。CDP にも `chrome.contextMenus` にも、メニューを操作・模擬する手段が無い | 押したあとの処理を `onContextMenuClickedAsync` の直接呼び出しで見る。押す操作と小窓の実際の見え方は手動確認 D-3 |
 | 実サイトの DOM・見た目、ログインが要るもの | フィクスチャでは実サイトの変化を検出できない（CON-08）。ログイン済みタブが前提（CON-04） | `npm run check:selectors` と手動確認 |
 
 **まだ試していないもの:** 切断状態（拡張機能の更新・再読み込みの後に残った古いタブ。手動確認 G）。

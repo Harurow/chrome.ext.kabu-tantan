@@ -1,0 +1,42 @@
+/* 株リンク 開けないときの小窓(SPEC-NT-05) */
+
+body {
+  margin: 0;
+  font-family: system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #212121;
+  background: #fff;
+}
+
+.notice {
+  padding: 20px;
+}
+
+/* 長い文言は折り返す(横スクロールを出さない) */
+.notice-message,
+.notice-detail {
+  overflow-wrap: anywhere;
+}
+
+.notice-message {
+  margin: 0;
+}
+
+.notice-detail {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: #5f6368;
+}
+
+.notice-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+
+.notice-actions button {
+  min-width: 80px;
+  padding: 4px 16px;
+  font: inherit;
+}

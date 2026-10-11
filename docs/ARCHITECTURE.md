@@ -23,6 +23,8 @@ flowchart TD
     CS -->|"target=_blank"| EXT
 
     SW -.->|"tabs.query()<br/>セッションIDを借用"| BROKER["ログイン済みタブ<br/>楽天証券 / 内藤証券"]
+    SW -->|"windows.create()<br/>開けないとき（FR-29）"| NOTICE["小窓<br/>notice.html / notice.js"]
+    ST -->|"get()"| NOTICE
 ```
 
 ### 処理の流れ
@@ -32,7 +34,7 @@ flowchart TD
 | 1 | 利用者がオプションページで設定を保存 | `chrome.storage.sync` に `enableLinkKeys` を書く |
 | 2 | storage が変わった | Service Worker が `onChanged` で検知し、コンテキストメニューを作り直す |
 | 3 | 対象サイトを開いた | Content Script が storage を読み、銘柄コードにメニューを注入する。**注入対象がまだ無ければ、現れるまで最大 30 秒試し直す**（SPEC-CS-22。1.13.0） |
-| 4 | メニューを選んだ | 新しいタブで遷移先サイトを開く |
+| 4 | メニューを選んだ | 新しいタブで遷移先サイトを開く。**1.21.0〜（FR-29）:** Chrome の右クリックメニューで、選択した銘柄ではその遷移先を開けない（米国株で `url3` が無い）ときは、タブを開かず小窓 `notice.html` を開いて理由を出す（SPEC-SW-05 / SPEC-SW-10 / SPEC-NT） |
 | 5 | TradingView で証券会社連携を使った | Content Script が Service Worker に問い合わせ、ログイン済みタブの URL からセッションIDを借りて遷移先を組み立てる |
 
 ## モジュール共有の仕組み
@@ -215,10 +217,11 @@ npm test   # 差し替え後は必ず実行する
 
 | 変更ファイル | 影響 |
 | --- | --- |
-| `src/urls.js` | 全 Content Script + Service Worker + オプションページ |
+| `src/urls.js` | 全 Content Script + Service Worker + オプションページ + 小窓（FR-29） |
 | `src/*-cs.js` の起動シーケンス・監視 | `docs/specs/content-scripts.md`（SPEC-CS-01 / 08 / 10 / 12 / 19 / 22）。**固定待機・再試行間隔・デバウンスを変えたら `scripts/selector-check/targets.mjs` の `settleMs` の下限を確かめる**（SPEC-SC-25。自動テストでは落ちない） |
 | `src/linkMenu.js` | 楽天・SBI の Content Script **4本すべて**（国内株の経路も同時に変わる。FR-28 判定基準5 が崩れうる唯一の場所） |
-| `src/service_worker.js` | コンテキストメニュー、メッセージ通信全体 |
+| `src/service_worker.js` | コンテキストメニュー、メッセージ通信全体、開けないときの小窓を開く処理（SPEC-SW-10） |
+| `src/notice.*`（FR-29） | 開けないときの小窓だけ。`urls.js` を読むので、`urls.js` の `externalUrlsMap` / `getEnableLinkKeysAsync` の形を変えたら `tests/notice.spec.mjs` も通す。大きさを変えたら SPEC-SW-10 の手動確認 M-1 |
 | `src/style.css` | 楽天・SBI のメニュー表示 |
 | `src/tradingview-cs.css` | TradingView のみ |
 | `src/manifest.json` | 拡張機能全体（権限、Content Script 注入先） |
