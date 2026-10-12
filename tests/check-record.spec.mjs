@@ -94,6 +94,27 @@ test.describe('コミットゲート: 全件のチェックの記録', () => {
   })
 })
 
+test.describe('コミットゲート: 作業ツリーのハッシュ', () => {
+  test('日本語の名前の未追跡ファイルも、中身を変えればハッシュが変わる', async () => {
+    await writeFile(path.join(root, 'メモ.txt'), 'first\n')
+    const first = await computeChangeHash(root)
+    await writeFile(path.join(root, 'メモ.txt'), 'second\n')
+    const second = await computeChangeHash(root)
+
+    expect(second.hash).not.toBe(first.hash)
+    expect(second.files).toContain('メモ.txt')
+  })
+
+  test('名前を変えたファイルは、新しい名前だけを一覧に出す', async () => {
+    await gitAsync('checkout', '--', 'a.txt')
+    await gitAsync('mv', 'a.txt', 'c.txt')
+
+    const state = await computeChangeHash(root)
+
+    expect(state.files).toEqual(['c.txt'])
+  })
+})
+
 test.describe('コミットゲート: npm run approve がチェックを使い回す条件', () => {
   test('同じ作業ツリーで通った記録があれば、チェックを流さずに承認する', async () => {
     await runRecordedCheckAsync({ root, runStepsAsync: async () => 0, env: {} })
@@ -150,6 +171,25 @@ test.describe('コミットゲート: npm run approve がチェックを使い�
 
     expect(result).toEqual({ ok: false, reason: 'not-recorded' })
     expect(await existsAsync(APPROVAL_FILE)).toBe(false)
+  })
+
+  test('チェックの途中で変わってから通ったときは、チェックが通った状態で承認する', async () => {
+    const before = await computeChangeHash(root)
+    const check = passingCheck()
+
+    const result = await approveAsync({
+      root,
+      runCheckAsync: async () => {
+        await writeFile(path.join(root, 'b.txt'), 'written before the check\n')
+        return check()
+      }
+    })
+
+    expect(result.ok).toBe(true)
+    const approval = await readJsonAsync(APPROVAL_FILE)
+    const after = await computeChangeHash(root)
+    expect(approval.hash).toBe(after.hash)
+    expect(approval.hash).not.toBe(before.hash)
   })
 
   test('変更が無ければ、チェックを流さずに止める', async () => {

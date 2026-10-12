@@ -300,7 +300,7 @@ try {
   3. npm run approve で承認を記録する
 
 reviewer のレビューを通してから 'npm run approve' を実行してください。
-（npm run approve は npm run check も自動で実行します）`)
+（npm run approve は、同じ作業ツリーで npm run check が通った記録が無ければ、npm run check も実行します）`)
 }
 
 let current
