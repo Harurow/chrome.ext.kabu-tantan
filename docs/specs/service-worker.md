@@ -511,6 +511,12 @@ chrome.runtime.onInstalled.addListener((details) => {
 3. 小窓の文言が切れずに読め、「閉じる」ボタンがスクロールせずに見えること
 4. 「閉じる」で小窓が閉じること
 
+**実施記録:**
+
+| 日付 | 実施者 | 版 | 結果 |
+| --- | --- | --- | --- |
+| 2026-10-12 | 利用者（実際の Chrome で `src/` を読み込んで実施） | 1.21.0（`90d4b8a`） | **OK。** D-3 の期待結果 1〜4 すべてそのとおり（利用者の報告は「D3はOK」）。`AAPL` で四季報 → 日本経済新聞の順に押した |
+
 **自動化できない理由:** (1) 手順 1 の「Chrome の右クリックメニューを実際に押す」操作は、Playwright から行えない（**2026-10-11 に developer が確かめた**）。
 example.com をフィクスチャで返して `AAPL` を選択し、`page.click({ button: 'right' })` → `ArrowDown` ×8 → `Enter` をヘッドレスと `--headed` の両方で試した。
 ページには `contextmenu` イベントが届いたが、Service Worker に足したリスナーで `chrome.contextMenus.onClicked` は**一度も発火せず**、タブも小窓も開かなかった。
