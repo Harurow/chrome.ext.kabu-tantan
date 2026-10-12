@@ -251,7 +251,8 @@ Playwright で拡張機能を実際に Chromium へロードして検証する�
 | `tests/service-worker.spec.mjs` | `getTickerCode` / `compareVersion` / `makeUrl` / `externalUrls` の整合性 |
 | `tests/options.spec.mjs` | オプションページの表示・保存・並び替え・外部リクエスト有無 |
 | `tests/content-script.spec.mjs` | 楽天・SBI へのメニュー注入（フィクスチャ HTML を実オリジンで差し替え） |
-| `tests/tradingview.spec.mjs` | TradingView で拡張が作った DOM（入れ子メニューのクリック範囲・縦位置補正・証券会社の項目が URL を DOM に出さないこと・未知キーの読み飛ばし）と、セレクタからフィクスチャを組み立てる規則。サイト側の実 DOM は見ない（CON-08） |
+| `tests/tradingview.spec.mjs` | TradingView で拡張が作った DOM（入れ子メニューのクリック範囲・縦位置補正・証券会社の項目が URL を DOM に出さないこと・未知キーの読み飛ばし・「株Link」ボタンの表示と隠れ方・遅れて出たボタンの追随・項目0件のとき・証券会社のタブの有無）と、セレクタからフィクスチャを組み立てる規則。サイト側の実 DOM は見ない（CON-08） |
+| `tests/disconnected.spec.mjs` | 拡張機能を再読み込みした後に残った古いタブ（切断状態）。TradingView・スクリーナー・楽天証券・SBI証券で、注入しない・例外を出さない・タブを再読み込みすれば戻ること（NFR-14 / 手動確認だった G 節） |
 | `tests/notice.spec.mjs` | 右クリックの項目で開けないときの小窓（文言・設定順の並び・選択文字列を出さないこと・HTML として解釈しないこと・閉じ方・外部リクエストゼロ・大きさへの収まり） |
 | `tests/selector-defs.spec.mjs` | `menuSelectors` の定義・`check:selectors` の中断処理・手がかりの消毒と書式 |
 
@@ -328,11 +329,36 @@ Playwright で拡張機能を実際に Chromium へロードして検証する�
 | Chrome の右クリックメニューの項目を押す | 2026-10-11。選択して `page.click({ button: 'right' })` → 矢印キー → Enter を、ヘッドレス・画面ありとも試したが `chrome.contextMenus.onClicked` が発火しない。CDP にも `chrome.contextMenus` にも、メニューを操作・模擬する手段が無い | 押したあとの処理を `onContextMenuClickedAsync` の直接呼び出しで見る。押す操作と小窓の実際の見え方は手動確認 D-3 |
 | 実サイトの DOM・見た目、ログインが要るもの | フィクスチャでは実サイトの変化を検出できない（CON-08）。ログイン済みタブが前提（CON-04） | `npm run check:selectors` と手動確認 |
 
-**まだ試していないもの:** 切断状態（拡張機能の更新・再読み込みの後に残った古いタブ。手動確認 G）。
-再読み込みそのものは Playwright で再現できる（2026-10-11 実測。開発者モードを有効にして `chrome.developerPrivate.reload(id)`）ので、
-古いタブで切断状態になるかを確かめれば自動化できる見込みがある。SPEC-CS-19 などの「再読み込みを再現できない」という記述は、この実測より前のもの。
+**試して自動化できたもの:** 切断状態（拡張機能の更新・再読み込みの後に残った古いタブ。手動確認 G）。
+2026-10-12 に確かめた。`chrome://extensions` で開発者モードを有効にしてから `chrome.developerPrivate.reload(id)` を呼ぶと、
+古いタブの Content Script は直後から切断状態になる（`chrome.runtime` がオブジェクトごと `undefined`）。
+**開発者モードが必須**で、無いと拡張が戻ってこない（新しい Service Worker が立たない）。
+`chrome://extensions` を開くだけでは足りない。
+
+**まだ試していないもの:** A-8 の前提（TradingView は銘柄を切り替えたりチャート以外の画面へ移ったりすると、チャートの canvas の属性をその場で書き換える）。
+フィクスチャの自動テストでは見えないことは確かめた（テストが属性を書き換えるので、見ているのは拡張側の振る舞いだけ。実サイトが canvas を作り直す作りに変わっても緑のまま）。
+`npm run check:selectors` で実サイトの同じタブの銘柄を切り替えて、canvas が同じ要素のままか・ボタンが隠れるかを見る半自動化は、
+CON-10 の上では許されている（銘柄の切り替えは許容操作）が、まだ試していない。それまでは手動確認 A-8 の2行で見る。
 
 > 利用者の言葉（2026-10-11）: 「自動でテストできるとか、基本的に自動でテストしてください。」
+
+### 拡張が開いたタブは `context.route` で止まらない
+
+Service Worker の `chrome.tabs.create` で開いたタブは、**最初の遷移が `context.route` を素通りし、`request` イベントにも出ない**（2026-10-12 実測）。
+同じタブでの2回目以降の遷移と、ページから開いたタブ（`<a target="_blank">` / `window.open`）には route が効く。
+素通りすると実在のサイトへリクエストが出て、Playwright からは見えない。2026-10-12 の試行では、実在しないセッション ID で楽天証券へ実際に1回出てしまった。
+
+- テストの context は名前解決を塞いである（`tests/fixtures/extension.mjs`。`--host-resolver-rules`）。route の差し替えは名前解決より前に応えるので効く
+- それでも、拡張がタブを開きうるテストでは Service Worker の `chrome.tabs.create` を差し替えて、開く URL を記録する
+  （`tests/tradingview.spec.mjs` の `stubBrokerTabsAsync` や `tests/service-worker.spec.mjs` と同じやり方）
+- 拡張を再読み込みすると Service Worker が入れ替わるので、差し替えはかけ直す
+
+### Playwright でのテストの癖
+
+- **初回インストールのオプションページが、テストのタブを奪うことがある。** オプションページは起動の約 100ms 後に、空のタブを上書きして開く。
+  テストのページが先にできていると、そちらが遷移させられる（2026-10-12 に B-1 を25回流して2回落ちて見つかった）。`context` fixture で開き終わるのを待っている
+- **ガードを外すと落ちることの確かめは、`src/` を書き換えずに行う。** `src/` の複製に変異を当て、環境変数 `EXTENSION_PATH` でその複製を読み込ませる。
+  `src/` を戻し忘れる心配がない
 
 ### 修正したら、レビュー → テスト → コミット → push までをセットで行う
 

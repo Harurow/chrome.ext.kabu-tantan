@@ -169,12 +169,13 @@ const remakeContextMenus = () => {
 | 項目 | 内容 |
 | --- | --- |
 | 再読み込みの再現 | **できた。** 上と同じ起動方法で、`chrome://extensions` で開発者モードを有効にしたうえで `chrome.developerPrivate.reload(id, { failQuietly: true })`、または Service Worker から `chrome.runtime.reload()` を呼ぶと、新しい Service Worker が立ち上がり `context` の `serviceworker` イベントが来た（各1回） |
-| 再現しなかった条件 | 開発者モードを有効にせず `chrome://extensions` も開かずに `chrome.runtime.reload()` を呼んだ1回は、新しい Service Worker が立ち上がらず、拡張のページが `net::ERR_BLOCKED_BY_CLIENT` になった。**どちらの差が効いているかは切り分けていない** |
+| 再現しなかった条件 | 開発者モードを有効にせず `chrome://extensions` も開かずに `chrome.runtime.reload()` を呼んだ1回は、新しい Service Worker が立ち上がらず、拡張のページが `net::ERR_BLOCKED_BY_CLIENT` になった。**〔2026-10-12 に切り分けた〕効いているのは開発者モード。** 3条件で `chrome.runtime.reload()` を呼んだ。(a) 何もしない、(b) `chrome://extensions` を開くだけ、(c) 開発者モードを有効にする。(a)(b) は8秒待っても新しい Service Worker が立たず、新しいタブにも注入されなかった（拡張が外れたまま戻らない）。(c) だけ戻った。**どの条件でも、古いタブの Content Script は切断状態になった**（`isExtensionAlive()` が偽）。architect の使い捨てスクリプト（リポジトリには入れていない） |
 | 再読み込みで起きる作り直し | 1.20.2 と現行（1.20.3）の `src/` を作業用ディレクトリに複製し、`service_worker.js` の先頭に `create` / `removeAll` / `onInstalled` を記録する処理を足して、`developerPrivate.reload` を2回ずつ実行した。**両版とも毎回** `onInstalled` の `reason` は `update`、`removeAll` 1回・`create` 22回・`lastError` **0件**。初回インストール時（`reason: 'install'`）も両版とも同じ |
 | 結論 | 再読み込みは作り直しを1回起こすだけで、重なりを作らない。**1.20.2 でもエラーが出ないので、旧手順 5 は不具合を見分けられない。** 自動化もしない（見分ける力の無い確認を移しても守るものが無い） |
 
-- **SPEC-CS-19 の「拡張機能の再読み込みは Playwright から再現できず」は本件には当てはまらない。** 上のとおり再読み込みそのものは再現できた。
-  SPEC-CS-19 が自動化できないとしている本体は「切断状態（古いタブの Content Script）」で、そちらが再現できるかは確かめていない（SPEC-CS-19 に注記した）
+- **切断状態も再現できた（2026-10-12）。** 上と同じ手順で再読み込みすると、古いタブの Content Script では直後から `chrome.runtime` が `undefined` になり、
+  `isExtensionAlive()` が偽を返した（ヘッドレスでも同じ）。これにより SPEC-CS-19 の切断状態は自動テストへ移った（`tests/disconnected.spec.mjs`。SPEC-CS-19「検証との対応」）。
+  〔2026-10-11 時点〕本項は「SPEC-CS-19 の『再現できず』は本件には当てはまらない。切断状態が再現できるかは確かめていない」と書いていた
 - 推測（未検証）: 利用者の Chrome でも、再読み込みだけでは他の契機（`onStartup` / `storage.onChanged`）は起きず、重ならない。Playwright の Chromium と同じ結果になると見ている
 
 > Chrome 本体の更新（`onInstalled` の `chrome_update` と `onStartup` の重なり）は手元で再現できないため、自動テストに委ねる。

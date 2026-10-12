@@ -20,11 +20,20 @@ import {
   ROW_MARK,
   OVERLAP_MARK,
   MENU_BOX_MARK,
+  chartLabel,
   tradingViewPageHtml,
   overlapRootHtml,
-  contextMenuHtml
+  contextMenuHtml,
+  insertToolbarAsync,
+  setChartLabelAsync
 } from './fixtures/tradingview.mjs'
 import { STALE_KEYS } from './fixtures/storage.mjs'
+import {
+  recordAddedNodesAsync,
+  addedNodesAsync,
+  clickReceiverAsync,
+  watchContentScriptAsync
+} from './fixtures/probes.mjs'
 
 /**
  * セレクタ → DOM の変換規則（SPEC-CS-27）。
@@ -736,5 +745,153 @@ test.describe('TradingView: storage に残った未知のキー', () => {
       // 未知キーの項目が無く、残りは設定順（externalUrls の定義順ではない）
       expect(actual.map((a) => a.text)).toEqual(['株探/基本情報で開く', 'MINKABU/株価情報トップで開く'])
       expect(actual.map((a) => a.href)).toEqual(expectedHrefs)
+    })
+})
+
+/** 「株Link」ボタン（SPEC-CS-12） */
+const KABU_LINK_BUTTON = 'div.ktt-tv-kabuLinkMenu'
+/** 「株Link」ボタンのメニューの項目。メニューは全画面の背景の中に置かれる */
+const BUTTON_MENU_ITEMS = 'div.ktt-tv-menuBack tr[data-role="menuitem"]'
+
+/** 銘柄が取れない canvas の値（実サイトでもスクリーナー等へ移るとこう変わる前提。手動確認 A-8 で見る） */
+const NOT_A_SYMBOL = 'スクリーナー'
+
+/**
+ * Service Worker の `chrome.tabs.create` だけを差し替え、開こうとした URL を `self.__openedUrls` に積む。
+ * `chrome.tabs.query` は差し替えない（実際のタブを数えさせるとき用。証券会社の項目は `stubBrokerTabsAsync`）
+ */
+const stubTabsCreateAsync = (serviceWorker) => serviceWorker.evaluate(() => {
+  self.__openedUrls = []
+  chrome.tabs.create = (props) => {
+    self.__openedUrls.push(props.url)
+    return Promise.resolve({})
+  }
+})
+
+/**
+ * 「株Link」ボタンの表示の切り替え（FR-26 の段階5。手動確認 A-8 / A-12）。
+ *
+ * ボタンの表示は canvas の `aria-label` の監視で切り替わる（SPEC-CS-12）。
+ * 銘柄の切り替えや、銘柄の無い画面への移動は、`setChartLabelAsync` で属性を書き換えて演じる
+ */
+test.describe('TradingView: 「株Link」ボタンの表示', () => {
+  // A-8
+  test('銘柄が取れない値に変わるとボタンが隠れ、銘柄に戻ると出る（属性が外れたときも同じ）',
+    async ({ page, serveFixture }) => {
+      await openChartPageAsync(page, serveFixture)
+      const button = page.locator(KABU_LINK_BUTTON)
+      await expect(button).toBeVisible()
+
+      for (const label of [NOT_A_SYMBOL, null]) {
+        await setChartLabelAsync(page, label)
+        await expect(button, `aria-label: ${label}`).toBeHidden()
+        await setChartLabelAsync(page, chartLabel(`TSE:${CHART_CODE}`))
+        await expect(button).toBeVisible()
+      }
+    })
+
+  // A-12。ボタンと canvas の監視は同じ再試行の単位で設置する（SPEC-CS-22 / ADR-0008 の 4）。
+  // 分けると「遅れて出たボタンが、銘柄を切り替えても隠れない」状態が作れてしまう（FR-13 判定基準6）
+  test('ツールバーが遅れて出ても、再試行で足したボタンは1つで、銘柄の切り替えに追随して隠れる',
+    async ({ page, context, extensionId, serviceWorker, serveFixture, externalRequests }) => {
+      await setEnableLinkKeysAsync(context, extensionId, { [ONLY_SITE_KEY]: 0 })
+      await stubTabsCreateAsync(serviceWorker)
+      const expected = await serviceWorker.evaluate((key) =>
+        makeUrl(externalUrlsMap[key].url3, 'AAPL'), ONLY_SITE_KEY)
+
+      const world = await watchContentScriptAsync(context, page, extensionId, { countIntervals: true })
+      await serveFixture(page, TRADINGVIEW_URL, tradingViewPageHtml({ toolbar: false }))
+      await world.created
+      const button = page.locator(KABU_LINK_BUTTON)
+
+      // 初回（読み込みの 500ms 後）はツールバーが無く空振りし、再試行が回っている
+      await expect.poll(() => world.activeIntervalsAsync()).toBe(1)
+      await expect(button).toHaveCount(0)
+
+      // ツールバーが現れると、再試行で足されて再試行は止まる
+      await insertToolbarAsync(page)
+      await expect(button).toHaveCount(1)
+      await expect.poll(() => world.activeIntervalsAsync()).toBe(0)
+
+      // 銘柄を切り替えると、ボタンのメニューは切り替えた後の銘柄を開く
+      await setChartLabelAsync(page, chartLabel('NASDAQ:AAPL'))
+      await button.click()
+      await expect(page.locator(BUTTON_MENU_ITEMS)).toHaveCount(1)
+      await page.locator(BUTTON_MENU_ITEMS).click()
+      await expect.poll(() => serviceWorker.evaluate(() => self.__openedUrls)).toEqual([expected])
+
+      // 銘柄が取れない画面へ移ると隠れる（canvas の監視も再試行の側で張られている）
+      await setChartLabelAsync(page, NOT_A_SYMBOL)
+      await expect(button).toBeHidden()
+      await expect(button).toHaveCount(1)
+    })
+})
+
+/**
+ * 「株Link」ボタンのメニューの中身（FR-26 の段階4 の一部。手動確認 A-7b / B-1）。
+ * 項目は `<a>` を持たず、押すと Service Worker がタブを開く（SPEC-CS-12）。
+ * どのテストも `chrome.tabs.create` を差し替え、実サイトへの要求を `externalRequests` で検査する
+ */
+test.describe('TradingView: 「株Link」ボタンのメニュー', () => {
+  // A-7b の最終行。米国株で url3 を持たない遷移先だけが有効で、証券会社のタブも無いと遷移先が0件になる。
+  // 背景を先に敷く実装に戻ると、透明な全画面の層が残ってページのクリックを吸う（NFR-14）
+  test('米国株で遷移先が0件なら、押してもメニューも背景も出ず、ページのクリックがそのまま届く',
+    async ({ page, context, extensionId, serviceWorker, serveFixture, externalRequests }) => {
+      // 日本経済新聞・四季報はどちらも url3 を持たない
+      await setEnableLinkKeysAsync(context, extensionId,
+        { 'www.nikkei.com/company': 0, 'shikiho.toyokeizai.net/stocks': 1 })
+      await stubBrokerTabsAsync(serviceWorker, { loggedIn: false })
+      await openChartPageAsync(page, serveFixture)
+      const button = page.locator(KABU_LINK_BUTTON)
+
+      await setChartLabelAsync(page, chartLabel('NASDAQ:AAPL'))
+      await recordAddedNodesAsync(page)
+      await button.click()
+      // Service Worker への問い合わせを待ってから背景を敷くので、その分を待つ
+      await page.waitForTimeout(500)
+
+      await expect(page.locator('div.ktt-tv-menuBack')).toHaveCount(0)
+      expect(await addedNodesAsync(page)).toEqual([])
+      expect(await clickReceiverAsync(page, page.locator(`[${CHART_MARK}] canvas`))).toBe('canvas')
+
+      // 対照: 同じ設定でも国内株なら2件のメニューが出る（0件以外の経路は生きている）
+      await setChartLabelAsync(page, chartLabel(`TSE:${CHART_CODE}`))
+      await button.click()
+      await expect(page.locator(BUTTON_MENU_ITEMS)).toHaveCount(2)
+    })
+
+  // B-1（と B-2 の対照）。楽天証券のタブは実際に開く（フィクスチャで差し替える）。
+  // `chrome.tabs.query` は差し替えないので、Service Worker が実際のタブを数える（SPEC-MSG-06）
+  test('楽天証券のログイン済みタブが無ければ「楽天証券を開く」を出さず、開くと出し、閉じると消す',
+    async ({ page, context, serviceWorker, serveFixture, externalRequests }) => {
+      await stubTabsCreateAsync(serviceWorker)
+      await openChartPageAsync(page, serveFixture)
+
+      /** ボタンのメニューの項目名を読んで、メニューを閉じる */
+      const buttonMenuLabelsAsync = async () => {
+        await page.locator(KABU_LINK_BUTTON).click()
+        const items = page.locator(BUTTON_MENU_ITEMS)
+        await expect(items).not.toHaveCount(0)
+        const labels = (await items.allTextContents()).map((label) => label.trim())
+        // キーを押すとメニューが閉じる（SPEC-CS-12）
+        await page.keyboard.press('Escape')
+        await expect(page.locator('div.ktt-tv-menuBack')).toHaveCount(0)
+        return labels
+      }
+
+      expect(await buttonMenuLabelsAsync()).not.toContain('楽天証券を開く')
+
+      const rakuten = await context.newPage()
+      await serveFixture(rakuten,
+        `https://member.rakuten-sec.co.jp/app/home.do;BV_SessionID=${BROKER_SECRET}?eventType=init`,
+        '<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8"><title>楽天証券</title></head><body></body></html>')
+      await page.bringToFront()
+      const withTab = await buttonMenuLabelsAsync()
+      expect(withTab[0]).toBe('楽天証券を開く')
+      // タブの URL（セッション ID）はページに出ない（SPEC-MSG-06）
+      expect(await page.content()).not.toContain(BROKER_SECRET)
+
+      await rakuten.close()
+      expect(await buttonMenuLabelsAsync()).not.toContain('楽天証券を開く')
     })
 })

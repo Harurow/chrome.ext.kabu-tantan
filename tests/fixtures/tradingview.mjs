@@ -61,16 +61,25 @@ const MENU_TEST_STYLE = `
     [${MENU_BOX_MARK}] tr[data-role="menuitem"] { height: 28px; }
     [${MENU_BOX_MARK}] td[data-icon-cell="true"] { width: 28px; }`
 
+/**
+ * canvas の `aria-label`（SPEC-TC-07 の形）
+ * @param {string} symbol `EXCHANGE:CODE`
+ */
+export const chartLabel = (symbol) => `${symbol} の 1 日 チャート`
+
 /** 契約1: チャート領域の中に canvas があり、`aria-label` が `EXCHANGE:CODE …` の形 */
 const chartHtml = () => domFromSelector(selectorOf('chart-canvas'), {
   rootAttrs: { [CHART_MARK]: '' },
   rootStyle: 'position: fixed; left: 0; top: 40px; right: 280px; bottom: 0;',
-  leafAttrs: { 'aria-label': `TSE:${CHART_CODE} の 1 日 チャート` },
+  leafAttrs: { 'aria-label': chartLabel(`TSE:${CHART_CODE}`) },
   leafStyle: 'display: block; width: 100%; height: 100%;'
 })
 
-/** 契約2: ツールバーに挿入先の要素がある（空の器） */
-const toolbarHtml = () => domFromSelector(selectorOf('toolbar-container'), {
+/**
+ * 契約2: ツールバーに挿入先の要素がある（空の器）。
+ * ページに最初から置かず、後から足すこともできる（`insertToolbarAsync`）
+ */
+export const toolbarHtml = () => domFromSelector(selectorOf('toolbar-container'), {
   rootStyle: 'position: fixed; left: 0; top: 0; width: 240px; height: 36px; z-index: 2;'
 })
 
@@ -131,8 +140,12 @@ export const contextMenuHtml = ({ left, top, height, marginTop } = {}) => {
  * ページ本体。**オーバーレイ層は含めない。**
  * `attach()` は `body` の `childList` を監視して層の**生成**を待つので、
  * 最初から置くと監視が発火せず、以降どの右クリックでもメニューが拡張されない
+ *
+ * @param {object} [options]
+ * @param {boolean} [options.toolbar] 偽ならツールバー（ボタンの挿入先）を置かない。
+ *   起動時（読み込みの 500ms 後）にはまだツールバーが無く、遅れて現れるページを作る（SPEC-CS-22。手動確認 A-12 / G-6）
  */
-export const tradingViewPageHtml = () => `<!DOCTYPE html>
+export const tradingViewPageHtml = ({ toolbar = true } = {}) => `<!DOCTYPE html>
 <html lang="ja">
 <head>
   <meta charset="utf-8">
@@ -142,7 +155,7 @@ export const tradingViewPageHtml = () => `<!DOCTYPE html>
   </style>
 </head>
 <body>
-  ${toolbarHtml()}
+  ${toolbar ? toolbarHtml() : ''}
   ${chartHtml()}
   ${watchlistHtml()}
   <script>
@@ -157,3 +170,27 @@ export const tradingViewPageHtml = () => `<!DOCTYPE html>
   </script>
 </body>
 </html>`
+
+/**
+ * サイト側の役割その3: ツールバーを後から出す（読み込みが遅いときの再現。手動確認 A-12 / G-6）。
+ * `tradingViewPageHtml({ toolbar: false })` と組で使う
+ * @param {import('@playwright/test').Page} page
+ */
+export const insertToolbarAsync = (page) =>
+  page.evaluate((html) => document.body.insertAdjacentHTML('afterbegin', html), toolbarHtml())
+
+/**
+ * サイト側の役割その4: チャートの銘柄を切り替える（canvas の `aria-label` を書き換える。SPEC-TC-07）。
+ * 実サイトでも銘柄の切り替えや、銘柄の無い画面（スクリーナー等）への移動でこの属性が変わる**前提**で演じている。
+ * 前提そのものは確かめていない（手動確認 A-8 で見る）。`null` を渡すと属性ごと外す
+ * @param {import('@playwright/test').Page} page
+ * @param {string | null} label `chartLabel('NASDAQ:AAPL')` のような値、または銘柄でない値
+ */
+export const setChartLabelAsync = (page, label) => page.evaluate(([mark, value]) => {
+  const canvas = document.querySelector(`[${mark}] canvas`)
+  if (value == null) {
+    canvas.removeAttribute('aria-label')
+  } else {
+    canvas.setAttribute('aria-label', value)
+  }
+}, [CHART_MARK, label])

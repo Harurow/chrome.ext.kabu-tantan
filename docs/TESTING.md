@@ -35,7 +35,7 @@ EXTENSION_PATH=/tmp/kt-pkg npm test
 
 | 層 | 対象 | 手段 | 実行 |
 | --- | --- | --- | --- |
-| **自動** | ロジック / オプションページ / 楽天・SBI・スクリーナー2種の注入 / メニュー項目のクリック範囲 / 注入の再試行 / セレクタ定義の整合性 / 中断時の後始末 / **TradingView で拡張が自分で作った DOM の振る舞い** | Playwright（件数は [TEST-CATALOG.md](TEST-CATALOG.md)） | `npm test`（約1分20秒） |
+| **自動** | ロジック / オプションページ / 楽天・SBI・スクリーナー2種の注入 / メニュー項目のクリック範囲 / 注入の再試行 / **切断状態（拡張機能の再読み込み後の古いタブ）** / セレクタ定義の整合性 / 中断時の後始末 / **TradingView で拡張が自分で作った DOM の振る舞い** | Playwright（件数は [TEST-CATALOG.md](TEST-CATALOG.md)） | `npm test`（約3分。2026-10-12 に 187件で 3.1〜3.2分。切断状態などの17件を足す前は 170件で 2.2分） |
 | **半自動** | 実サイトのセレクタ健全性 | 利用者がログイン → 自動で検証 | `npm run check:selectors` |
 | **手動** | **サイト側の** DOM・見た目・挙動（TradingView の挿入先・模倣した見た目・サイト側メニュー）／ 証券会社セッション連携 | チェックリスト | [MANUAL-CHECKLIST.md](MANUAL-CHECKLIST.md) |
 
@@ -58,9 +58,9 @@ EXTENSION_PATH=/tmp/kt-pkg npm test
 | ファイル | 行数 | 読み込むテスト |
 | --- | --- | --- |
 | `service_worker.js` | 586 | `service-worker.spec.mjs`（Service Worker 上で直接呼ぶ） |
-| `urls.js` | 388 | `service-worker.spec.mjs`（`importScripts` 経由）／ `options.spec.mjs`（`options.html` が読み込む）／ Content Script を動かす全テスト |
-| `tradingview-cs.js` | 1101 | `tradingview.spec.mjs`（フィクスチャ上で実行）／ `content-script.spec.mjs`（`node:vm` で `isSymbolShaped` / `parseExchangeSymbol` を取り出す）／ `selector-defs.spec.mjs`（`menuSelectors`）／ `service-worker.spec.mjs`（ソースを文字列として読み、正規表現リテラルを照合する。実行はしない） |
-| `rakuten-cs.js` | 225 | `content-script.spec.mjs`（フィクスチャ上で実行）／ `selector-defs.spec.mjs` |
+| `urls.js` | 388 | `service-worker.spec.mjs`（`importScripts` 経由）／ `options.spec.mjs`（`options.html` が読み込む）／ Content Script を動かす全テスト（`disconnected.spec.mjs` は `isExtensionAlive()` と `retrySetup()` の切断時の経路を通す） |
+| `tradingview-cs.js` | 1101 | `tradingview.spec.mjs` / `disconnected.spec.mjs`（フィクスチャ上で実行）／ `content-script.spec.mjs`（`node:vm` で `isSymbolShaped` / `parseExchangeSymbol` を取り出す）／ `selector-defs.spec.mjs`（`menuSelectors`）／ `service-worker.spec.mjs`（ソースを文字列として読み、正規表現リテラルを照合する。実行はしない） |
+| `rakuten-cs.js` | 225 | `content-script.spec.mjs` / `disconnected.spec.mjs`（フィクスチャ上で実行）／ `selector-defs.spec.mjs` |
 | `rakuten-scr-cs.js` | 149 | 同上 |
 | `sbi-cs.js` | 123 | 同上 |
 | `sbi-scr-cs.js` | 147 | 同上 |
@@ -73,7 +73,8 @@ EXTENSION_PATH=/tmp/kt-pkg npm test
 縦位置の補正・証券会社の項目が URL を DOM に出さないこと）をフィクスチャで見るようになった（`FR-26` の段階1・2。SPEC-CS-27）。
 **サイト側の DOM・見た目・挙動**（挿入先が実在するか・模倣した見た目・サイト側メニュー）は上表の「半自動」「手動」条件に該当し、
 `npm run check:selectors` と [MANUAL-CHECKLIST.md](MANUAL-CHECKLIST.md) の A が見る。
-**拡張側の振る舞いでも未着手のもの**（起点の判定・項目の集合と順序など。`FR-26` の段階3〜5）は、まだ A の手動確認に残っている。
+2026-10-12 に、「株Link」ボタンの表示の切り替え（A-8 の拡張側・A-12）とボタンメニューの 0 件・証券会社のタブの有無（A-7b の最終行・B-1）も加わった（`FR-26` の段階4・5 の一部）。
+**拡張側の振る舞いでも未着手のもの**（起点の判定・項目の集合と順序など。`FR-26` の段階3〜5 の残り）は、まだ A の手動確認に残っている。
 **`tradingview.spec.mjs` が緑でも実サイトが壊れていない根拠にはならない**（`CON-08`）。
 
 > 2026-10-11 まではこう書いていた: 「`src/` の JS 2701行中 1652行（61%）を対象にしている。
@@ -259,10 +260,24 @@ chromium.launchPersistentContext('', {
   channel: 'chromium',        // 拡張機能はこのチャネルの new headless で動作する
   args: [
     `--disable-extensions-except=${extensionPath}`,
-    `--load-extension=${extensionPath}`
+    `--load-extension=${extensionPath}`,
+    '--host-resolver-rules=MAP * ~NOTFOUND',  // 名前解決をすべて失敗させる（下記）
+    '--no-proxy-server'                        // OS のプロキシ経由ですり抜けさせない（下記）
   ]
 })
 ```
+
+### 全テストに効く前提（`tests/fixtures/extension.mjs`。2026-10-12〜）
+
+| 前提 | 内容 |
+| --- | --- |
+| **名前解決を塞ぐ** | `--host-resolver-rules=MAP * ~NOTFOUND`。テストは実サイトへ出ていかない前提（外部リクエストゼロ。NFR-03 / CON-10）。差し替え（`context.route`）は名前解決より前に応えるので影響しない。**Service Worker の `chrome.tabs.create` で開いたタブの最初の遷移は、`context.route` にも `request` イベントにも現れずに出ていく**（2026-10-12 実測）。それでも外へ出られないようにするための備え |
+| **プロキシを使わない** | `--no-proxy-server`。OS 側にプロキシが設定されていると、名前解決をプロキシに任せるため `--host-resolver-rules` をすり抜けうる。それを防ぐ |
+| **初回インストールのオプションページを待つ** | 拡張は初回インストールでオプションページを開き、そのとき空のタブがあれば上書きする（起動の約100ms後）。待たずにテストがタブを作ると、そのタブを奪われることがあった。`context` fixture は、オプションページが開くまで（最長5秒）待ってから渡す |
+| **外部への要求を検査する**（fixture `externalRequests`） | 受け取ったテストは、終わったときに次を検査される。(1) 差し替えていない http(s) の要求（`request` イベント。差し替えの無いものは中断させる）、(2) タブの遷移先（ページができたときの URL とメインフレームの遷移）が http(s) かエラーページ。`routeHtml` / `serveFixture` で応えた URL は数えない。(2) を見るのは、上の `chrome.tabs.create` のタブが `request` に出ないため（名前解決を塞いでいるのでエラーページとして見える）。使っているのは `tests/disconnected.spec.mjs` の13件と、`tests/tradingview.spec.mjs` の A-12・A-7b の0件・B-1 の3件 |
+
+> **拡張がタブを開きうるテストでは、これとは別に Service Worker の `chrome.tabs.create` を差し替える。** 名前解決を塞いでも、
+> 遷移そのものは起きる（エラーページになるだけ）。
 
 ### 1. Service Worker のロジック検証
 
@@ -326,6 +341,37 @@ const page = await opened
 - Esc で閉じるテストは `keyboard.down` を使う。`press` は keydown で小窓が閉じた後の keyup で落ちることがある（SPEC-NT-06 の 8）
 - クリック処理の分岐（タブを開く／小窓を開く／何もしない）は `tests/service-worker.spec.mjs` の describe `service_worker: 開けない項目を押したときの小窓` が見る（SPEC-SW-05）
 
+### 5. 切断状態（NFR-14 / SPEC-CS-19。2026-10-12〜）
+
+`tests/disconnected.spec.mjs`。**拡張機能を再読み込みして、古いタブの Content Script を本当に切断状態にする。**
+
+- **再読み込み:** `reloadExtension` fixture（`tests/fixtures/extension.mjs`）。`chrome://extensions` を開き、
+  `chrome.developerPrivate.updateProfileConfiguration({ inDeveloperMode: true })` で開発者モードを有効にしてから
+  `chrome.developerPrivate.reload(id, { failQuietly: true })` を呼び、新しい Service Worker を待つ。
+  古いタブの Content Script は直後から `isExtensionAlive()` が偽になる（`chrome.runtime` が `undefined`）。ヘッドレスでも同じ（2026-10-12 実測）
+- **開発者モードは必須。** 無いと `chrome.runtime.reload()` で古いタブは切断されるが、拡張が戻ってこない
+  （新しい Service Worker が立たず、新しいタブにも注入されない。`chrome://extensions` を開くだけでも足りない。SPEC-SW-02 の実測表）
+- **再読み込みの後は `serviceWorker` fixture が古い。** `chrome.tabs.create` などの差し替えは新しい Service Worker にかけ直す
+- **「一瞬も現れない」**は、操作の前にページ側へ MutationObserver を仕込み、拡張の要素（`data-kabu-tantan` / `ktt-tv-` / `x-kabu-`）が
+  足された記録が空であることで見る（`tests/fixtures/probes.mjs`）。数を数えるだけでは、足してすぐ消す経路（NFR-14 判定基準2 が禁じるもの）を見逃す
+- **例外**は `pageerror` と `console` の error で見る。Content Script（isolated world）の例外・未処理の拒否・`console.error` は、**切断後も**ここに届く（2026-10-12 実測）
+- **起動直後 500ms の窓**（SPEC-CS-19「起動時の門」）は、CDP の `Runtime.executionContextCreated`（`auxData.type === 'isolated'`・origin が拡張）で
+  Content Script の注入を捕まえ、直後に再読み込みする。注入から再読み込みの完了まで 30ms 前後で、窓に十分収まる。
+  **窓を踏んだことは、切断の直前と直後に isolated world で `isExtensionAlive()` とボタンの数を読み、
+  `{ alive: true, buttons: 0 }` から `{ alive: false, buttons: 0 }` になったことで確かめる**
+- **再試行が止まったこと**（FR-13 判定基準4）は、同じ CDP の手段で isolated world の `setInterval` / `clearInterval` を数え、
+  動いているタイマーが 0 になったことで見る（`watchContentScriptAsync` の `countIntervals`。`tests/fixtures/probes.mjs`）。
+  G-6 の3件と A-12 は、同じ数え方で**再試行が回っている（1）ことを確かめてから**操作する
+- **時間の窓が要る手順を作らない。** 後から現れる行・ツールバーは、切断の**後に**テストが足す
+- **各テストに対照を置く。** 切断の前（または別のタブ・再読み込み後のタブ）で同じ操作が効くことを示す。対照が無いと、操作そのものが効いていなくても緑になる
+- **限界: テストが終わった後に出る例外は見えない。** 2500ms 後に例外を投げる変異は、どのテストでも落ちなかった（2026-10-12 実測）
+- **単独では落とせない門がある**（多重防御）。どの門が単独で判別でき、どれができないかは SPEC-CS-19「単独では判別できない門」
+
+> **SW の `chrome.tabs.create` で開いたタブの最初の遷移は、`context.route` で差し替えられない**（2026-10-12 実測。同じタブでの2回目の遷移と、
+> ページ発の `<a target="_blank">` / `window.open` は差し替えられる）。拡張がタブを開くテストは、必ず SW の `chrome.tabs.create` を差し替えて URL を記録する。
+> 差し替えずに試したスパイクでは、実在しないセッション ID で楽天証券へ実リクエストが1回出た。
+> 2026-10-12 から全テストで名前解決を塞ぎ、fixture `externalRequests` でタブの遷移先も検査している（上の「全テストに効く前提」）。
+>
 > テストの**一覧**は [TEST-CATALOG.md](TEST-CATALOG.md)（`npm run docs:tests` で自動生成）。
 > このファイルには方針と手法だけを書く。
 
@@ -341,7 +387,8 @@ const page = await opened
 | オプションページ | 一覧表示・初期値・グリッドレイアウト・トグル保存・ドラッグ並び替え・リンク属性・外部リクエストゼロ・アイコンフォント |
 | 開けないときの小窓（FR-29） | クリック処理の分岐（開ける場合は従来どおり・米国株のページが無い／銘柄コードと読み取れないときは小窓）・小窓は1つまで・位置・文言・閉じ方・外部リクエストゼロ・収まり（近似）・権限が増えていないこと（`manifest: 権限`） |
 | Content Script | 楽天証券とSBI証券へのメニュー注入、URL生成、ホバー開閉、対象外ページで注入しないこと、設定の反映 |
-| TradingView（**拡張の持ち物だけ**） | 項目のクリックできる範囲・`delegating`（Esc は1回）・メニューの縦位置補正・除去時の後始末。**サイト側の実在・見た目は見ていない**（SPEC-CS-27 / FR-26） |
+| TradingView（**拡張の持ち物だけ**） | 項目のクリックできる範囲・`delegating`（Esc は1回）・メニューの縦位置補正・除去時の後始末・証券会社の項目が URL を DOM に出さないこと・「株Link」ボタンの表示の切り替え（銘柄が取れないと隠れる・再試行で足したボタンも追随する）・ボタンメニューが 0 件なら何も出さないこと・楽天証券のタブの有無で証券会社の項目を出し分けること。**サイト側の実在・見た目は見ていない**（SPEC-CS-27 / FR-26） |
+| 切断状態（NFR-14） | 拡張機能を再読み込みした後の古いタブで、TradingView・楽天証券・SBI証券・スクリーナー2種が要素を一切足さない（足してすぐ消す、も含む）・例外を出さない・再試行と監視を止める・タブを再読み込みすると戻ること（`tests/disconnected.spec.mjs`。SPEC-CS-19 / SPEC-CS-22） |
 | セレクタ定義 | `menuSelectors` の読み出し・構造・`targets.mjs` との1対1対応（半自動検証の前提。NFR-13） |
 | 検証ツール | 中断（SIGINT / SIGTERM / SIGHUP / 端末の Ctrl+C）で一時プロファイルが残らないこと（NFR-12） |
 | 手がかり | ⚠️/❌ の切り分け情報の整形（プレフィックス追跡・要素の記述子・題名の不記録判定・出力書式。NFR-12 / SPEC-SC-20〜23） |
@@ -363,14 +410,22 @@ const page = await opened
   > **ただし、それが緑でも「実サイトが壊れていない」根拠にはならない。**
   > 見ているのは**自分たちのコードの退行だけ**で、サイト改修を見る目は1つも増えていない。
   > **手動確認が短くなったことを「TradingView は安全になった」と読み替えないこと**（FR-26 判定基準7）。
-- **楽天証券・内藤証券のセッション連携**
-  ログイン状態のタブが前提のため自動化していない。
-- **楽天スーパースクリーナー / SBI銘柄スクリーニング**
-  `MutationObserver` + iframe 前提で、フィクスチャでの再現コストが見合わない。
-- **切断状態（Extension context invalidated）の振る舞い（NFR-14 / SPEC-CS-19）**
-  拡張機能の再読み込みは Playwright から再現できず、切断は Chrome の内部状態のため。
-  手動確認 [MANUAL-CHECKLIST.md](MANUAL-CHECKLIST.md) **セクション G** で見る。
-  **正常時に退行していないこと**は既存の注入テストが担保する。
+- **TradingView が銘柄の切り替え・画面の移動で canvas の属性を書き換えること**（「株Link」ボタンの表示の切り替えの前提）
+  フィクスチャではテストが属性を書き換えるので、拡張側の振る舞いしか見ない。実サイトが canvas を作り直す実装になると
+  ボタンの表示が更新されなくなるが、自動テストも今の `npm run check:selectors` も緑のまま。手動確認 A-8 の2行で見る
+  （**フィクスチャの自動テストでは見えないことは 2026-10-12 に確かめた**。`npm run check:selectors` での半自動化は CON-10 の上では可能だが、まだ試していない（CON-10 は TradingView の銘柄の切り替えを許しており、`scripts/selector-check/check.mjs` はすでに実サイトで銘柄を切り替えている。同じタブで切り替えたときに canvas が同じ要素か・ボタンが隠れるかは見ていない）。SPEC-CS-22「canvas 監視の切断時の停止」）。
+- **楽天証券・内藤証券のセッション連携のうち、実際にログインした状態で開いたページが正しいか**
+  ログイン状態のタブが前提のため自動化していない（手動確認 B-2〜B-4）。
+  タブの有無で項目を出し分けること・URL を DOM に出さないこと・Service Worker が組み立てた URL で開くことは、
+  フィクスチャのタブと Service Worker の差し替えで自動テストが見る（SPEC-CS-12 / SPEC-CS-28）。
+- **楽天スーパースクリーナー / SBI銘柄スクリーニングの見た目と実 DOM**
+  注入・ページ送りへの追随・切断状態は自動テストが見る（1.13.0〜 / 2026-10-12〜）。実 DOM との乖離は
+  `npm run check:selectors` と手動確認 C-2 / C-4 で見る。
+
+> 2026-10-12 まではここに「切断状態（Extension context invalidated）の振る舞い。拡張機能の再読み込みは Playwright から再現できず、
+> 切断は Chrome の内部状態のため。手動確認セクション G で見る」と書いていた。**誤りだった**（上の「5. 切断状態」）。
+> 同じ日まで「スクリーナー2種は `MutationObserver` + iframe 前提で、フィクスチャでの再現コストが見合わない」とも書いていたが、
+> こちらは 1.13.0 で注入を自動テストへ移した時点で失効していた。
 
 ## 手動確認
 
