@@ -29,6 +29,9 @@ EXTENSION_PATH=/tmp/kt-pkg npm test
 
 リリース前にはこれを実行すること（zip の詰め忘れ・パス間違いを検出できる）。
 
+`EXTENSION_PATH` を指定して `npm run check` を流しても、作業ツリーの `src/` を試していないので、
+全件のチェックが通った記録（`.claude/check-passed.json`。[WORKFLOW.md](WORKFLOW.md)「全件のチェックを同じ作業ツリーで2回流さない」）は残さない。
+
 ## 何をどう検証するか（3層の切り分け）
 
 **すべてを自動化しようとしない。** 壊れやすさ・静かに壊れるか・自動化コストで層を分ける。

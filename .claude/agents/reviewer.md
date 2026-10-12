@@ -39,6 +39,8 @@ npm run check           # lint:all + validate + test
 ```
 
 `npm run check` が落ちている場合は、**それを最優先で報告する**。
+通ると作業ツリーが `.claude/check-passed.json` に記録され、そのまま `npm run approve` すると流し直さない
+（`docs/WORKFLOW.md`「全件のチェックを同じ作業ツリーで2回流さない」）。記録を書くのはスクリプトで、あなたが書くファイルではない。
 
 ## 観点（優先順）
 

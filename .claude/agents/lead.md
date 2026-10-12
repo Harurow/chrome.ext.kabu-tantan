@@ -116,7 +116,7 @@ flowchart TD
 3. `npm run approve` を実行して承認を記録する
 
 ```bash
-npm run approve     # npm run check を実行し、通れば承認を記録する
+npm run approve     # npm run check を実行し（同じ作業ツリーで通った記録があれば流し直さない）、通れば承認を記録する
 git commit -m "..." # approve とは別の Bash 呼び出しで実行する
 git push
 ```

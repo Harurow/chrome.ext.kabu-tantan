@@ -60,6 +60,12 @@ const FILE_INFO = {
     detail: 'ブラウザを起動せず、src/*-cs.js の menuSelectors と scripts/selector-check/targets.mjs の対応、および検証ツールの中断時の後始末を検証する。' +
       'セレクタ文字列の二重管理を機械的に禁じる（NFR-13）。',
     specs: 'SPEC-SC, SPEC-CS'
+  },
+  'check-record.spec.mjs': {
+    title: 'コミットゲート（全件のチェックの記録）',
+    detail: 'ブラウザを起動せず、一時の git リポジトリで、npm run check が通った作業ツリーを記録する条件と、' +
+      'npm run approve が同じ作業ツリーならチェックを流し直さずに承認する条件を検証する。全件のチェックは差し替えた関数で演じる。',
+    specs: 'docs/WORKFLOW.md「コミットゲート」'
   }
 }
 

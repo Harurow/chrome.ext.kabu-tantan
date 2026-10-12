@@ -24,13 +24,15 @@ npm run lint:all      # 両方
 npm run fix           # 自動修正
 npm run validate      # manifest.json の構造・参照先・バージョン整合を検証
 npm test              # Playwright による UI テスト
-npm run check         # lint:all + validate + test
+npm run check         # lint:all + validate + test。通ると作業ツリーを記録する
 npm run package       # dist/kabu-tantan-<version>.zip を作成
 npm run docs:tests    # docs/TEST-CATALOG.md を再生成
 npm run approve       # レビュー承認を記録する（コミットに必須）
 ```
 
 > `npm run check` は lint + validate + テスト + **テストカタログの陳腐化検査**を行う。
+> 通ると作業ツリーを `.claude/check-passed.json` に記録し、同じ作業ツリーなら `npm run approve` は流し直さない
+> （[docs/WORKFLOW.md](docs/WORKFLOW.md)「全件のチェックを同じ作業ツリーで2回流さない」）。
 >
 > **コミットは、テスト全件が通り、かつ reviewer のレビューが通るまでできない。**
 > `.claude/hooks/commit-gate.sh` が機械的にブロックする。詳細は [docs/WORKFLOW.md](docs/WORKFLOW.md)。
@@ -261,6 +263,7 @@ Playwright で拡張機能を実際に Chromium へロードして検証する�
 | `tests/disconnected.spec.mjs` | 拡張機能を再読み込みした後に残った古いタブ（切断状態）。TradingView・スクリーナー・楽天証券・SBI証券で、注入しない・例外を出さない・タブを再読み込みすれば戻ること（NFR-14 / 手動確認だった G 節） |
 | `tests/notice.spec.mjs` | 右クリックの項目で開けないときの小窓（文言・設定順の並び・選択文字列を出さないこと・HTML として解釈しないこと・閉じ方・外部リクエストゼロ・大きさへの収まり） |
 | `tests/selector-defs.spec.mjs` | `menuSelectors` の定義・`check:selectors` の中断処理・手がかりの消毒と書式 |
+| `tests/check-record.spec.mjs` | コミットゲート: `npm run check` が通った作業ツリーの記録と、`npm run approve` がそれを使い回す条件（一時の git リポジトリで。ブラウザは起動しない） |
 
 テストの一覧は [docs/TEST-CATALOG.md](docs/TEST-CATALOG.md)（`npm run docs:tests` で自動生成）。
 **テストを増減したらこれを再生成すること。**
@@ -372,10 +375,12 @@ push の前に利用者へ確認しない（2026-10-11 利用者指示）。
 1. 修正し、テストを書き足す・直して流す。途中は変えた所に関係するテストだけでよい
    （`npx playwright test tests/<file>.spec.mjs` / `-g "<テスト名>"`）。
    全件（`npm run check`。2026-10-12 時点で約3分）を流すのは区切りだけにする:
-   developer の完了報告の前・reviewer のレビュー・手順3の `npm run approve`
+   developer の完了報告の前・reviewer のレビュー・手順3の `npm run approve`。
+   approve は、同じ作業ツリーで通った記録（reviewer のレビューで流した分など）があれば流し直さない
 2. reviewer のレビューを通す。OK が出なければ直して（関係するテストを流し直して）、もう一度レビューを通す
 3. レビューが OK なら `npm run approve` でテストする。`npm run check` を全件流し、通れば承認を記録する
-   （コミットゲート。`docs/WORKFLOW.md`）。通らなければ承認されないので、直して手順2からやり直す
+   （コミットゲート。`docs/WORKFLOW.md`）。同じ作業ツリーで通った記録があれば、流し直さずに承認する。
+   通らなければ承認されないので、直して手順2からやり直す
 4. 変更を**すべて**コミットする（一部だけ `git add` すると、テストしていない組み合わせが履歴に入りうる）。
    承認後にファイルを1文字でも変えるとゲートがコミットを止めるので、
    **コミットされた中身は手順3でテストが通ったものと同じ**になる。

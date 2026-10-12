@@ -14,5 +14,6 @@ src.zip
 /blob-report
 /playwright/.cache
 
-# レビュー承認の記録（コミットゲート用。共有しない）
+# レビュー承認の記録と、全件のチェックが通った記録（コミットゲート用。共有しない）
 /.claude/review-approved.json
+/.claude/check-passed.json
