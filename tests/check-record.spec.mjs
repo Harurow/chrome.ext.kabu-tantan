@@ -173,7 +173,7 @@ test.describe('コミットゲート: npm run approve がチェックを使い�
     expect(await existsAsync(APPROVAL_FILE)).toBe(false)
   })
 
-  test('チェックの途中で変わってから通ったときは、チェックが通った状態で承認する', async () => {
+  test('approve が作業ツリーを読んでからチェックが始まるまでに変わったときは、チェックが通った状態で承認する', async () => {
     const before = await computeChangeHash(root)
     const check = passingCheck()
 

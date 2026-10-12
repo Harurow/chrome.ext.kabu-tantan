@@ -263,7 +263,7 @@ Playwright で拡張機能を実際に Chromium へロードして検証する�
 | `tests/disconnected.spec.mjs` | 拡張機能を再読み込みした後に残った古いタブ（切断状態）。TradingView・スクリーナー・楽天証券・SBI証券で、注入しない・例外を出さない・タブを再読み込みすれば戻ること（NFR-14 / 手動確認だった G 節） |
 | `tests/notice.spec.mjs` | 右クリックの項目で開けないときの小窓（文言・設定順の並び・選択文字列を出さないこと・HTML として解釈しないこと・閉じ方・外部リクエストゼロ・大きさへの収まり） |
 | `tests/selector-defs.spec.mjs` | `menuSelectors` の定義・`check:selectors` の中断処理・手がかりの消毒と書式 |
-| `tests/check-record.spec.mjs` | コミットゲート: `npm run check` が通った作業ツリーの記録と、`npm run approve` がそれを使い回す条件（一時の git リポジトリで。ブラウザは起動しない） |
+| `tests/check-record.spec.mjs` | コミットゲート: `npm run check` が通った作業ツリーの記録と、`npm run approve` がそれを使い回す条件、作業ツリーのハッシュ（日本語の名前の未追跡ファイル・名前の変更）（一時の git リポジトリで。ブラウザは起動しない） |
 
 テストの一覧は [docs/TEST-CATALOG.md](docs/TEST-CATALOG.md)（`npm run docs:tests` で自動生成）。
 **テストを増減したらこれを再生成すること。**

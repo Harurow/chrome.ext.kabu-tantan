@@ -49,6 +49,7 @@ https://graph.sbisec.co.jp/sbiscreener/*
 
 チャート上の右クリックメニューと、ツールバーの「株Link」ボタンから各サイトへ遷移できます。
 
+* チャート画面のウォッチリストで銘柄の行を右クリックした場合は、その行の銘柄で遷移できます
 * 楽天証券にログイン中のタブがある場合は「楽天証券で開く」が追加されます
 * 内藤証券で国内株マーケットの個別銘柄を開いている場合は「内藤証券で開く」が追加されます
 * 米国株（英字1〜5文字）は米国株URLを持つサイトのみ表示されます
@@ -65,6 +66,7 @@ https://jp.tradingview.com/*
 
 文字列を選択したときのコンテキストメニューに各サイトへの項目を追加します。
 選択範囲の先頭が銘柄コード（国内4桁 / 米国英字1〜5文字）と解釈できる場合のみ画面が開きます。
+銘柄コードとして解釈できない場合や、米国株のページが無いサイトを選んだ場合は、開けない理由を小さなウィンドウで知らせます。
 
 ![コンテキストメニュー](docs/images/screen-5.png)
 
@@ -103,10 +105,11 @@ https://jp.tradingview.com/*
 ## プライバシー
 
 * 収集・送信する個人情報はありません
-* 外部リソースを実行時に取得しません（フォント・アイコンはすべて同梱）
+* 動作中に外部のサーバーからファイルを読み込みません（アイコン用のフォント Material Icons は同梱しています。
+  文字は、オプション画面などでは OS のフォント、サイトに追加するメニューではそのサイトのフォントで表示します）
 * 楽天証券・内藤証券への遷移は、**ユーザーが既に開いているログイン済みタブの URL** から
   セッション情報を読み取って組み立てます。そのため `tabs` 権限を使用します。
-  ログインしていない場合はメニュー自体が表示されません
+  ログインしていない場合は「楽天証券で開く」「内藤証券で開く」の項目が表示されません
 
 ## 開発
 
@@ -114,7 +117,7 @@ https://jp.tradingview.com/*
 npm install
 npx playwright install chromium   # 初回のみ
 
-npm run lint:all    # ESLint + Stylelint
+npm run lint:all    # ESLint + Stylelint + markdownlint
 npm run validate    # manifest.json の検証
 npm test            # Playwright による UI テスト
 npm run check       # 上記すべて
@@ -128,7 +131,8 @@ npm run approve     # レビュー承認を記録する（コミットに必須�
 
 ### 開発フロー
 
-要件定義 → 設計 → 実装 → レビュー の順に、担当を分けたエージェント（`.claude/agents/`）で進めます。
+要件定義 → 設計 → 実装 → レビュー → コミット → push の順に進めます。
+工程ごとの担当エージェント（`.claude/agents/`）があり、どれに渡すかは [docs/WORKFLOW.md](docs/WORKFLOW.md) の基準で決めます（レビューは必ず `reviewer` に渡します）。
 **すべてのテストが通り、かつレビューが通るまでコミットできません**（`.claude/hooks/commit-gate.sh` が強制）。
 
 詳細は [docs/WORKFLOW.md](docs/WORKFLOW.md)。
@@ -149,10 +153,10 @@ npm run approve     # レビュー承認を記録する（コミットに必須�
 
 ### テスト
 
-拡張機能を実際に Chromium へロードして検証する Playwright テストが **47件**あります。
+Playwright で拡張機能を実際に Chromium へ読み込んで検証します。
 証券会社へのログインは不要です（`context.route()` で対象オリジンにフィクスチャを返すため）。
 
-内訳と、それぞれが何を守っているかは [docs/TEST-CATALOG.md](docs/TEST-CATALOG.md) を参照してください。
+件数と内訳、それぞれが何を守っているかは [docs/TEST-CATALOG.md](docs/TEST-CATALOG.md) を参照してください（自動生成なので、件数がずれません）。
 
 ## ライセンス
 
