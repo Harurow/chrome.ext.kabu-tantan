@@ -1,7 +1,7 @@
 # 開発フロー
 
-要件定義 → 設計 → 実装 → レビュー → コミット の順に、担当を分けたエージェントで進める。
-定義は `.claude/agents/` にある。
+要件定義 → 設計 → 実装 → レビュー → コミット → push の順に進める。
+工程ごとの担当エージェントの定義は `.claude/agents/` にある（どれを使うかは「[サブエージェントに渡す基準](#サブエージェントに渡す基準)」）。
 
 ## 全体の流れ
 
@@ -14,15 +14,17 @@ flowchart TD
     REVIEWER["reviewer<br/>レビュー"]
     GATE{"npm run check<br/>+ レビュー承認"}
     COMMIT(["コミット"])
+    PUSH(["push"])
 
     USER -->|"やりたいこと"| ANALYST
     ANALYST <-->|"対話で要件を詰める"| USER
     ANALYST -->|"要件<br/>docs/requirements/"| ARCHITECT
     ARCHITECT -->|"仕様<br/>docs/specs/"| DEVELOPER
-    DEVELOPER -->|"実装<br/>src/ tests/"| REVIEWER
+    DEVELOPER -->|"実装<br/>src/ tests/<br/>npm run check が通ったもの"| REVIEWER
     REVIEWER -->|"🔴 Critical あり"| DEVELOPER
     REVIEWER -->|"問題なし"| GATE
     GATE -->|"npm run approve"| COMMIT
+    COMMIT -->|"確認なしで続けて行う"| PUSH
 
     ARCHITECT -.->|"要件が曖昧なら差し戻す"| ANALYST
     DEVELOPER -.->|"仕様に矛盾があれば差し戻す"| ARCHITECT
@@ -34,6 +36,26 @@ flowchart TD
     LEAD -.-> REVIEWER
 ```
 
+担当に渡すかどうかは、変更の大きさではなく下の「サブエージェントに渡す基準」で決める。
+渡さずにメインセッションが自分で書くときも、要件・仕様・ADR・テストの文書は、担当が書くときと同じように更新する。
+**レビュー（`reviewer`）とコミットゲートは省かない。**
+
+## サブエージェントに渡す基準
+
+メインセッション（利用者と直接やり取りしている AI）は、担当を指定せずに起動したなら、担当の書き換え範囲に縛られない
+（`src/third-party/` を編集しないなど、ほかの規則には従う）。
+`claude --agent <担当>` で起動したときは、その担当の定義に従う。
+サブエージェントに渡すのは、次のどれかに当たるときだけにする（利用者の全プロジェクト共通の指示 `~/.claude/CLAUDE.md` に合わせた）。
+
+| 渡すとき | 例 |
+| --- | --- |
+| 独立した確認になる | レビュー。**`reviewer` には必ず渡す** |
+| 互いに独立した作業を並行させて、時間を縮められる | 仕様の整理と、別の箇所の実装を同時に進める |
+| 利用者が工程を回すと決めた | 利用者が `claude --agent lead` / `claude --agent analyst` で起動した |
+
+渡すときは、目的・許可範囲・書き換えてよい場所・完了の条件・読むべき資料（ファイルと ID）・分かっている阻害を伝える。
+返ってきた結果はそのまま信じず、自分で確かめて（差分を読む・テストの結果を見る）から取り込む。
+
 ## エージェント
 
 | エージェント | 役割 | model | 書き換えてよい場所 |
@@ -44,7 +66,11 @@ flowchart TD
 | `developer` | 仕様に従って実装する | opus | `src/`, `tests/`, `scripts/`, ルート設定 |
 | `reviewer` | 実装と文書を突き合わせて検証する | opus | **なし（読み取り専用）** |
 
-`reviewer` は `tools` に `Write` / `Edit` を持たない。**書き換えられないことがツールレベルで保証されている。**
+- **サブエージェントは役割をまたいで変えない。** developer は仕様書を書かない。architect は実装しない
+- `reviewer` は `tools` に `Write` / `Edit` を持たない。ただし `Bash` は持つので、書き換えないことは定義の指示で禁じている（道具の側の保証ではない）
+- `AGENTS.md`・`docs/README.md`・`docs/WORKFLOW.md`・`docs/TESTING.md`・`docs/MANUAL-CHECKLIST.md`・`.claude/` は、どの担当の書き換え範囲にも入れない。
+  書くのはメインセッション。サブエージェントは、書くべきことに気づいたら報告に書いて渡す
+- `docs/TEST-CATALOG.md` は生成物。テストを増減したら（developer か、自分で書いたメインセッションが）`npm run docs:tests` で作り直す
 
 ### モデルの選定理由
 
@@ -71,34 +97,31 @@ flowchart TD
 | 起動方法 | 対話 | 使いどころ |
 | --- | --- | --- |
 | `claude --agent analyst` | **できる** | 腰を据えて要件を詰めるとき。**推奨** |
-| `lead` などから呼び出す | できない | 要件ドラフトと確認事項リストを返させる |
+| `lead` から呼ぶ（メインセッションが並行作業として呼ぶときも同じ） | できない | 要件ドラフトと確認事項リストを返させる |
 
 サブエージェントとして呼んだ場合、`analyst` は要件を確定させず、
 **確認事項を列挙して返す**。それを `lead`（またはメインセッション）が利用者に聞いて返す。
 
 ## 使い方
 
-### 腰を据えて要件から決める
-
 ```bash
-claude --agent analyst
+claude --agent analyst   # 要件を決める（書き終えたら、レビューからコミット・push まで行う）
+claude --agent lead      # 工程をまとめて回す
 ```
 
-対話で要件を確定させたあと、通常セッションに戻って `lead` に渡す。
-
-### 工程をまとめて回す
-
-```bash
-claude --agent lead
-```
-
-または通常セッションから `lead` エージェントを呼ぶ。
-
-### 単発で使う
+利用者が `claude --agent` で単発に起動してもよい:
 
 - 仕様だけ整理したい → `architect`
 - 仕様が決まっている実装 → `developer`
 - 既存コードの点検 → `reviewer`
+
+`architect` と `developer` はコミットしない（定義に従う）。レビューからコミット・push までは、
+担当を指定しないメインセッションか `lead` で行う（`analyst` は自分で行う）。
+
+`analyst` と `lead` の `tools` にある `Agent(...)` の種類の制限は、`claude --agent` でメインとして動かしたときだけ効く。
+サブエージェントとして呼ばれたときは括弧の中が無視され、どの種類のエージェントも呼べる（深さの上限は既定で3層。
+2026-10-12 に[公式ドキュメント](https://code.claude.com/docs/en/sub-agents)で確認）。
+サブエージェントとして呼ばれた `analyst` が `Agent` を使わないのは、定義の指示で止めている。
 
 ## コミットゲート
 
@@ -117,13 +140,20 @@ flowchart LR
 ### 手順
 
 ```bash
+# 0. 修正し、テストを書き足して流す（途中は関係するテストだけでよい）
 # 1. reviewer のレビューを通す（🔴 Critical が無いこと）
 # 2. 承認を記録する（npm run check も自動で実行される）
 npm run approve "レビュー通過。SPEC-CS-09 の修正"
 
-# 3. コミット
+# 3. 変更をすべてコミットする（2 とは別の Bash 呼び出しで）
 git commit -m "..."
+
+# 4. push する（利用者への確認は不要。テストは 2 で済んでいるので流し直さない）
+git push
 ```
+
+`npm run approve && git commit …` のように1回の呼び出しにまとめると、フックが承認前の状態で判定して止める。
+手順の詳細と経緯は [AGENTS.md](../AGENTS.md)「修正したら、テスト → レビュー → テスト → コミット → push までをセットで行う」。
 
 ### 承認は変更内容に紐づく
 
@@ -142,7 +172,7 @@ git commit -m "..."
 | ❌ 保証しない | **`reviewer` に実際に見せたかどうか** |
 
 `npm run approve` は「テストが通ったこと」しか機械的に確認できない。
-**レビューを通したかは `lead` と利用者の責任。** 工程を飛ばして `approve` しないこと。
+**レビューを通したかは、コミットするセッション（メインセッション・`lead`・`analyst`）と利用者の責任。** 工程を飛ばして `approve` しないこと。
 
 ### 検出するコマンド
 

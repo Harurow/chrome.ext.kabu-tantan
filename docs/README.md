@@ -83,6 +83,9 @@ docs/
 | `developer` | 実装 | `src/`, `tests/`, `scripts/`, ルートの設定ファイル |
 | `reviewer` | レビュー | **なし（読み取り専用）** |
 
+`AGENTS.md`・この README・`WORKFLOW.md`・`TESTING.md`・`MANUAL-CHECKLIST.md`・`.claude/` は、どの担当の範囲にも入れず、メインセッションが書く。
+担当に渡すかどうかの基準は [WORKFLOW.md](WORKFLOW.md)「サブエージェントに渡す基準」。
+
 > **コミットは、テスト全件が通り、かつ reviewer のレビューが通るまでできない。**
 > `.claude/hooks/commit-gate.sh` が機械的にブロックする。
 
