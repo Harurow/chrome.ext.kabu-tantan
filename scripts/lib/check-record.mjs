@@ -10,6 +10,7 @@
 import { readFile, writeFile, mkdir, rm } from 'node:fs/promises'
 import path from 'node:path'
 import { computeChangeHash } from './change-hash.mjs'
+import { isDocsOnlyChangeAsync } from './docs-only.mjs'
 
 export const CHECK_RECORD = '.claude/check-passed.json'
 export const APPROVAL_FILE = '.claude/review-approved.json'
@@ -62,18 +63,29 @@ export const runRecordedCheckAsync = async ({ root, runStepsAsync, env = process
  * 流したあとの記録が今の作業ツリーと一致したときだけ承認する（途中で変わったときは承認しない）。
  * 承認の hash は、チェックが通った作業ツリーのもの。
  *
- * @param {{ root: string, note?: string, runCheckAsync: () => Promise<number> }} options
- * @returns {Promise<{ ok: boolean, reused?: boolean, reason?: 'no-changes' | 'failed' | 'not-recorded', approval?: object }>}
+ * 変更が文書だけ（docs-only.mjs）なら、全件ではなく runDocsCheckAsync（lint:md とテストカタログの陳腐化検査）だけを流す。
+ * 流す前と後で作業ツリーが同じときだけ承認する。文書だけの検査では全件の記録は書かない
+ * （記録は「全件が通った」を表すため）。
+ *
+ * @param {{ root: string, note?: string, runCheckAsync: () => Promise<number>, runDocsCheckAsync: () => Promise<number> }} options
+ * @returns {Promise<{ ok: boolean, reused?: boolean, docsOnly?: boolean, reason?: 'no-changes' | 'failed' | 'not-recorded' | 'docs-failed' | 'docs-changed', approval?: object }>}
  */
-export const approveAsync = async ({ root, note = '', runCheckAsync }) => {
+export const approveAsync = async ({ root, note = '', runCheckAsync, runDocsCheckAsync }) => {
   const recordFile = path.join(root, CHECK_RECORD)
   const current = await computeChangeHash(root)
   if (current.files.length === 0) return { ok: false, reason: 'no-changes' }
 
   const reused = sameTree(await readJsonAsync(recordFile), current)
+  const docsOnly = !reused && await isDocsOnlyChangeAsync(root)
   let checked = current
 
-  if (!reused) {
+  if (docsOnly) {
+    const code = await runDocsCheckAsync()
+    if (code !== 0) return { ok: false, reason: 'docs-failed' }
+
+    checked = await computeChangeHash(root)
+    if (!sameTree(current, checked)) return { ok: false, reason: 'docs-changed' }
+  } else if (!reused) {
     const code = await runCheckAsync()
     if (code !== 0) return { ok: false, reason: 'failed' }
 
@@ -87,8 +99,9 @@ export const approveAsync = async ({ root, note = '', runCheckAsync }) => {
     approvedAt: new Date().toISOString(),
     note: note || null,
     reusedCheck: reused,
+    docsOnly,
     files: checked.files
   }
   await writeJsonAsync(path.join(root, APPROVAL_FILE), approval)
-  return { ok: true, reused, approval }
+  return { ok: true, reused, docsOnly, approval }
 }

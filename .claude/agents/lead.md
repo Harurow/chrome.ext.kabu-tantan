@@ -111,12 +111,12 @@ flowchart TD
 
 **コミットは以下がすべて揃うまでできない。** これは hook で機械的に強制されている。
 
-1. `npm run check` が通る（lint + validate + テスト全件）
+1. `npm run check` が通る（lint + validate + テスト全件。変更が文書だけなら `npm run check:docs`。`docs/WORKFLOW.md`「文書だけの変更は文書の検査だけで承認する」）
 2. `reviewer` のチェックが通る（🔴 Critical が無い）
 3. `npm run approve` を実行して承認を記録する
 
 ```bash
-npm run approve     # npm run check を実行し（同じ作業ツリーで通った記録があれば流し直さない）、通れば承認を記録する
+npm run approve     # npm run check を実行し（同じ作業ツリーで通った記録があれば流し直さない。文書だけの変更なら check:docs だけ）、通れば承認を記録する
 git commit -m "..." # approve とは別の Bash 呼び出しで実行する
 git push
 ```

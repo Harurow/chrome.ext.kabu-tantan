@@ -142,7 +142,8 @@ flowchart LR
 ```bash
 # 0. 修正し、テストを書き足して流す（途中は関係するテストだけでよい）
 # 1. reviewer のレビューを通す（🔴 Critical が無いこと）
-# 2. 承認を記録する（同じ作業ツリーで npm run check が通った記録が無ければ、ここで流す）
+# 2. 承認を記録する（同じ作業ツリーで npm run check が通った記録が無ければ、ここで流す。
+#    変更が文書だけなら npm run check:docs だけを流す）
 npm run approve "レビュー通過。SPEC-CS-09 の修正"
 
 # 3. 変更をすべてコミットする（2 とは別の Bash 呼び出しで）
@@ -178,11 +179,33 @@ git push
   `.gitignore` で無視されるもの（`node_modules/` など）の違いは見ない（承認のハッシュと同じ）
 - 判定は `scripts/lib/check-record.mjs`、テストは `tests/check-record.spec.mjs`
 
+### 文書だけの変更は文書の検査だけで承認する
+
+変更が文書だけなら、`npm run approve` はテスト全件を流さず、`npm run check:docs`（`lint:md` とテストカタログの陳腐化検査。数秒）だけを流して承認する
+（2026-10-14 利用者判断。`src/` も `tests/` も変えていない要件の文書の記録で、全件（約3分）を流していた）。
+
+文書だけとみなすのは、HEAD からの変更（ステージ済み・未ステージ・削除・未追跡。名前の変更は元と先の両方）がすべて次を満たすとき:
+
+- Markdown（`.md`）である
+- `src/`・`tests/`・`scripts/` の外にある
+- `tests/` と `scripts/` のどのファイルにも、その名前が書かれていない。
+  テストが読む文書（`tests/selector-defs.spec.mjs` は `docs/MANUAL-CHECKLIST.md` を読む）を変えると、テストの結果が変わりうるため。
+  コメントで触れているだけのものも全件に倒す（例: `MANUAL-CHECKLIST.md`・`WORKFLOW.md`。どれが当たるかは `tests/` と `scripts/` の中身で決まる）。
+  ステージ済みの変更も見る（ステージしてから作業ツリーだけ戻したコードの変更を漏らさないため）
+
+ひとつでも外れれば、今までどおり全件を流す（同じ作業ツリーの記録があれば使い回す）。
+
+- 文書の検査の前と後で作業ツリーが変わっていたら、通っても承認しない
+- 文書の検査では全件の記録（`.claude/check-passed.json`）を書かない（記録は「全件が通った」を表すため）
+- 承認のファイル（`.claude/review-approved.json`）に `docsOnly: true` を残す
+- reviewer も、文書だけの変更では全件ではなく `npm run check:docs` を流す
+- 判定は `scripts/lib/docs-only.mjs` と `scripts/lib/check-record.mjs`、テストは `tests/check-record.spec.mjs`
+
 ### このゲートが保証すること / しないこと
 
 | | |
 | --- | --- |
-| ✅ 保証する | 承認した作業ツリーで `npm run check`（lint + validate + テスト全件）が通っていること（approve で流したか、同じ作業ツリーで通った記録による） |
+| ✅ 保証する | 承認した作業ツリーで `npm run check`（lint + validate + テスト全件）が通っていること（approve で流したか、同じ作業ツリーで通った記録による）。**文書だけの変更では、`npm run check:docs` が通っていることだけ**（テストの結果を変えうる変更が無いことは、上の判定に任せる） |
 | ✅ 保証する | 承認後にコードが変更されていないこと |
 | ❌ 保証しない | **`reviewer` に実際に見せたかどうか** |
 
@@ -215,5 +238,5 @@ git push
 
 - エージェント定義: `.claude/agents/`
 - フック: `.claude/hooks/commit-gate.sh`（高速パス）, `.claude/hooks/commit-gate.mjs`（解析）, `.claude/settings.json`
-- 承認スクリプト: `scripts/approve.mjs`, `scripts/check.mjs`, `scripts/lib/check-record.mjs`, `scripts/lib/change-hash.mjs`
+- 承認スクリプト: `scripts/approve.mjs`, `scripts/check.mjs`, `scripts/lib/check-record.mjs`, `scripts/lib/change-hash.mjs`, `scripts/lib/docs-only.mjs`
 - ドキュメント索引: [README.md](README.md)

@@ -202,3 +202,142 @@ test.describe('コミットゲート: npm run approve がチェックを使い�
     expect(check.calls).toBe(0)
   })
 })
+
+test.describe('コミットゲート: 文書だけの変更は文書の検査だけで承認する', () => {
+  // 呼ばれた回数を数える、通る文書の検査
+  const docsCheck = () => {
+    const check = async () => {
+      check.calls++
+      return 0
+    }
+    check.calls = 0
+    return check
+  }
+
+  const commitAsync = async (file, content) => {
+    await mkdir(path.join(root, path.dirname(file)), { recursive: true })
+    await writeFile(path.join(root, file), content)
+    await gitAsync('add', file)
+    await gitAsync('commit', '-q', '-m', `add ${file}`)
+  }
+
+  test.beforeEach(async () => {
+    // 外側の beforeEach が変えた a.txt（Markdown でない）を戻す
+    await gitAsync('checkout', '--', 'a.txt')
+  })
+
+  test('変更が src/ の外の Markdown だけなら、全件を流さず文書の検査だけで承認する（全件の記録は書かない）', async () => {
+    // 名前は実在しないものにする（このファイルに書いた名前の文書は、本物のリポジトリで全件扱いになるため）
+    await commitAsync('GUIDE-BASE.md', 'base\n')
+    await writeFile(path.join(root, 'GUIDE-BASE.md'), 'changed\n')
+    await mkdir(path.join(root, 'docs'), { recursive: true })
+    await writeFile(path.join(root, 'docs', '要件.md'), 'new\n')
+    const check = passingCheck()
+    const docs = docsCheck()
+
+    const result = await approveAsync({ root, runCheckAsync: check, runDocsCheckAsync: docs })
+
+    expect(result.ok).toBe(true)
+    expect(result.docsOnly).toBe(true)
+    expect(check.calls).toBe(0)
+    expect(docs.calls).toBe(1)
+    const approval = await readJsonAsync(APPROVAL_FILE)
+    expect(approval.hash).toBe((await computeChangeHash(root)).hash)
+    expect(approval.docsOnly).toBe(true)
+    expect(await existsAsync(CHECK_RECORD)).toBe(false)
+  })
+
+  test('src/ に置いた Markdown は文書扱いにせず、全件を流す', async () => {
+    await mkdir(path.join(root, 'src'), { recursive: true })
+    await writeFile(path.join(root, 'src', 'notes.md'), 'new\n')
+    const check = passingCheck()
+    const docs = docsCheck()
+
+    const result = await approveAsync({ root, runCheckAsync: check, runDocsCheckAsync: docs })
+
+    expect(result.ok).toBe(true)
+    expect(result.docsOnly).toBe(false)
+    expect(check.calls).toBe(1)
+    expect(docs.calls).toBe(0)
+  })
+
+  test('Markdown とそれ以外の変更が混ざっていれば、全件を流す', async () => {
+    await writeFile(path.join(root, 'a.txt'), 'changed\n')
+    await writeFile(path.join(root, 'NOTE.md'), 'new\n')
+    const check = passingCheck()
+    const docs = docsCheck()
+
+    await approveAsync({ root, runCheckAsync: check, runDocsCheckAsync: docs })
+
+    expect(check.calls).toBe(1)
+    expect(docs.calls).toBe(0)
+  })
+
+  test('テストやスクリプトが名前に触れている Markdown（テストが読む文書）は、全件を流す', async () => {
+    // tests/selector-defs.spec.mjs が docs/MANUAL-CHECKLIST.md を読むのと同じ形
+    await commitAsync('tests/read-doc.spec.mjs', "readFileSync(path.join(root, 'docs', 'CHECKLIST.md'))\n")
+    await mkdir(path.join(root, 'docs'), { recursive: true })
+    await writeFile(path.join(root, 'docs', 'CHECKLIST.md'), 'new\n')
+    const check = passingCheck()
+    const docs = docsCheck()
+
+    await approveAsync({ root, runCheckAsync: check, runDocsCheckAsync: docs })
+
+    expect(check.calls).toBe(1)
+    expect(docs.calls).toBe(0)
+  })
+
+  test('src/ から名前を変えて出した Markdown は、元の場所も見て全件を流す', async () => {
+    await commitAsync('src/a.md', 'base\n')
+    await mkdir(path.join(root, 'docs'), { recursive: true })
+    await gitAsync('mv', 'src/a.md', 'docs/a.md')
+    const check = passingCheck()
+    const docs = docsCheck()
+
+    await approveAsync({ root, runCheckAsync: check, runDocsCheckAsync: docs })
+
+    expect(check.calls).toBe(1)
+    expect(docs.calls).toBe(0)
+  })
+
+  test('ステージしてから作業ツリーだけ戻したコードの変更があれば、全件を流す', async () => {
+    // git diff HEAD は作業ツリーとしか比べないので、ステージ済みの中身も見ないと漏れる
+    await commitAsync('src/x.js', 'base\n')
+    await writeFile(path.join(root, 'src', 'x.js'), 'staged\n')
+    await gitAsync('add', 'src/x.js')
+    await writeFile(path.join(root, 'src', 'x.js'), 'base\n')
+    await writeFile(path.join(root, 'NOTE.md'), 'new\n')
+    const check = passingCheck()
+    const docs = docsCheck()
+
+    await approveAsync({ root, runCheckAsync: check, runDocsCheckAsync: docs })
+
+    expect(check.calls).toBe(1)
+    expect(docs.calls).toBe(0)
+  })
+
+  test('文書の検査が落ちたら承認しない', async () => {
+    await writeFile(path.join(root, 'NOTE.md'), 'new\n')
+
+    const result = await approveAsync({ root, runCheckAsync: passingCheck(), runDocsCheckAsync: async () => 1 })
+
+    expect(result).toEqual({ ok: false, reason: 'docs-failed' })
+    expect(await existsAsync(APPROVAL_FILE)).toBe(false)
+  })
+
+  test('文書の検査の途中で作業ツリーが変わったら、通っても承認しない', async () => {
+    await writeFile(path.join(root, 'NOTE.md'), 'new\n')
+
+    const result = await approveAsync({
+      root,
+      runCheckAsync: passingCheck(),
+      runDocsCheckAsync: async () => {
+        await writeFile(path.join(root, 'NOTE.md'), 'changed during check\n')
+        return 0
+      }
+    })
+
+    expect(result).toEqual({ ok: false, reason: 'docs-changed' })
+    expect(await existsAsync(APPROVAL_FILE)).toBe(false)
+  })
+})
