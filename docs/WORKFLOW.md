@@ -130,12 +130,20 @@ claude --agent lead      # 工程をまとめて回す
 
 ```mermaid
 flowchart LR
-    A["git commit"] --> B{"承認記録が<br/>あるか"}
+    A["コミットを作る<br/>コマンド"] --> K{"git commit か<br/>merge などの --continue か"}
+    K -->|"ほか"| X0["🚫 ブロック<br/>承認があっても止める"]
+    K -->|"そう"| S{"形が確かめられるか<br/>（1回だけ・場所・パス・前のコマンド）"}
+    S -->|"いいえ"| X5["🚫 ブロック"]
+    S -->|"はい"| B{"承認記録が<br/>あるか"}
     B -->|"無い"| X1["🚫 ブロック"]
     B -->|"ある"| C{"承認時のhashと<br/>現在のhashが一致するか"}
     C -->|"不一致"| X2["🚫 ブロック<br/>承認後に変更された"]
-    C -->|"一致"| D{"コミットされる中身（index）が<br/>承認した中身と同じか"}
-    D -->|"違う"| X3["🚫 ブロック<br/>一部だけのコミット・ステージのずれ"]
+    C -->|"一致"| H{"承認したときの<br/>HEAD のままか"}
+    H -->|"動いた"| X3["🚫 ブロック<br/>承認は1回のコミットで使い切る"]
+    H -->|"そのまま"| R{"--continue なら<br/>後に手順が残っていないか"}
+    R -->|"残っている"| X6["🚫 ブロック"]
+    R -->|"無い・commit"| D{"コミットされる中身（index）が<br/>承認した中身と同じか"}
+    D -->|"違う"| X4["🚫 ブロック<br/>一部だけのコミット・ステージのずれ"]
     D -->|"同じ"| OK["✅ コミット実行"]
 ```
 
@@ -168,24 +176,35 @@ git push
 レビューをやり直して再度 `npm run approve` を実行する必要がある。
 
 承認は HEAD にも結びつく（承認のファイルの `head`）。ハッシュは作業ツリーの中身なので、コミットしても変わらない。
-HEAD も比べることで、**承認は1回のコミットで使い切られ**、そのあとの revert・merge・cherry-pick・2回目のコミットは、承認をやり直すまで止まる。
+HEAD も比べることで、**承認は1回のコミットで使い切られ**、そのあとの2回目のコミットは、承認をやり直すまで止まる。
 
 ### コミットされる中身を確かめる
 
 `git commit` のときは、作業ツリーに加えて、**実際にコミットされる中身（index）**も承認した中身と比べる（2026-10-14 利用者判断）。
 作業ツリーだけを比べていたときは、一部だけステージした・ステージしてから作業ツリーを戻した・パスを指定した、
 といったコミットで、テストしていない中身が履歴に入りえた。確かめ方は chrome.ext.love-g-rss-reader のコミットゲートと同じ。
+2026-10-15 に、フックとテストを chrome.ext.silent-tab の 89912be と同じ形にした（2つのフックを別々の形に分けない）。
 
 - コミットされる中身は、本物の index の写しで求める（本物の index は触らない）。同じ呼び出しで前に `git add -A` があればそれを足し、
   `git commit -a` なら追跡しているファイルの変更を足す（`-a` は未追跡のファイルを入れないので、未追跡のファイルがあれば止まる）
 - パスを指定したコミットや、一部だけのコミット（`-o` / `-i` / `-p` / `--pathspec-from-file`）は止める
 - `git commit` の前に置けるのは `git add -A` と、読むだけのコマンド（`git status` / `diff` / `log` / `show` / `rev-parse`、`cd`・`echo`・`cat`・`grep` など）だけ。
   ファイルへ書き出すリダイレクトがあるものも止める（フックは実行の前に判定するので、前で作業ツリーが変わると判定がずれる）
+- `set` と、`GIT_` で始まる変数への代入（`GIT_INDEX_FILE=…` など）も、`git commit` の前には置けない（`set -a` のあとの代入は、続く `git commit` の環境に入り、別の index でコミットさせうる。2026-10-15〜）
 - 1回の呼び出しで `git commit` を2回以上行うもの、シェル（`bash -c`）やラッパー（`xargs` など。足すパスが見えない）を介した `git commit`、
   `git -C` / `--git-dir` / `--work-tree` / `-c core.worktree=` / `GIT_DIR=` などで場所を変えた `git commit` は止める
 - ヒアドキュメントの中身（コミットメッセージ）はコマンドとして読まない。ただし取り除くのは、引用符の外の `<<` で始まり、
   区切りの直後が行末・空白・演算子で（`<<E"O"F` のような一部だけの引用は読まない）、
   終わりの行が見つかったものだけ（取り除き過ぎると、承認の無い `git commit` を隠して通してしまう）。引用符の中の `<` `>` はリダイレクトとして読まない
+- **`git commit` 以外でコミットを作るコマンド（`merge`・`cherry-pick`・`revert`・`rebase`・`am`、その `--skip`、`npm version`）は、承認があっても止める**（2026-10-15 利用者判断）。
+  作る中身を前もって承認した中身と比べられないため（承認した変更を含まないマージコミットが作れた）。`--skip` も、残りの手順を続けてコミットを作る
+- 途中で止まった `merge` などを続ける `--continue` だけは、`git commit` と同じく index の中身を承認した中身と比べて通す（引数は `--continue` だけ。`GIT_EDITOR=true` の前置きは置ける）。
+  ただし、今のものの後に手順が残っていれば止める（同じ呼び出しの中で、確かめていないコミットが続けて作られるため）。
+  残りは、cherry-pick / revert は `sequencer/todo`、rebase は `rebase-merge/git-rebase-todo`、am と rebase の apply は `rebase-apply/next`・`last` から数える（git 2.54 で確かめた）
+- `git pull` はマージやリベースのコミットを作りうるので止める。`--ff-only`（早送りだけ。`--ff` / `--no-ff` とは後に書いた方が勝つ）と `--dry-run` だけ通す。
+  置けるオプションは値を取らない決まったもの（`--ff-only`・`--no-rebase`・`-q`・`--prune` など）だけで、ほかがあれば止める
+  （`--rebase` / `-r` や、値を取るオプションの値に置いた `--ff-only`（`git pull -o --ff-only`）を通さないため）。`--ff-only` は設定の `pull.rebase` より優先される（git 2.54 で確かめた）
+- 形の判定（上の止めるもの）は、承認の有無より先に行う（承認があっても止める形は、その理由を出す）
 - 判定は `.claude/hooks/commit-gate.mjs` と `scripts/lib/change-hash.mjs`、テストは `tests/commit-gate.spec.mjs`
 
 コミットは `git add -A && git commit -F - <<'EOF' … EOF` の形で行う（`npm run approve` とは別の呼び出し）。
@@ -233,7 +252,7 @@ HEAD も比べることで、**承認は1回のコミットで使い切られ**�
 | --- | --- |
 | ✅ 保証する | 承認した作業ツリーで `npm run check`（lint + validate + テスト全件）が通っていること（approve で流したか、同じ作業ツリーで通った記録による）。**文書だけの変更では、`npm run check:docs` が通っていることだけ**（テストの結果を変えうる変更が無いことは、上の判定に任せる） |
 | ✅ 保証する | 承認後にコードが変更されていないこと |
-| ✅ 保証する | `git commit` でコミットされる中身（index）が、承認した作業ツリーの中身と同じこと（一部だけのコミット・ステージのずれを止める。上の「コミットされる中身を確かめる」） |
+| ✅ 保証する | `git commit` と `--continue` でコミットされる中身（index）が、承認した作業ツリーの中身と同じこと（一部だけのコミット・ステージのずれを止める。ほかのコミットを作るコマンドは止める。上の「コミットされる中身を確かめる」） |
 | ❌ 保証しない | **`reviewer` に実際に見せたかどうか** |
 
 `npm run approve` は「テストが通ったこと」しか機械的に確認できない。
@@ -247,12 +266,14 @@ HEAD も比べることで、**承認は1回のコミットで使い切られ**�
 | --- | --- |
 | `git commit` / `revert` / `merge` / `cherry-pick` / `rebase` / `am` | `git log --grep="git commit"` |
 | `FOO=bar git commit`（環境変数プレフィックス） | `git commit --dry-run` |
-| `git -c user.name=x commit`（グローバルオプション） | `git merge --abort` / `rebase --abort` / `--skip` |
+| `git -c user.name=x commit`（グローバルオプション） | `git merge --abort` / `rebase --abort` / `--quit` |
+| `rebase --skip` / `cherry-pick --skip` / `am --skip`（残りの手順を続ける） | `git pull --ff-only` / `git pull --dry-run` |
+| `git pull`（`--ff-only` か `--dry-run` 以外。マージやリベースのコミットを作りうる） | `git fetch` |
 | `cd /tmp && git commit` | `git status` / `git diff` / `git show` |
 | `bash -c 'git commit'` / `sh -c "git revert"` | `echo "run git commit later"` |
 | `npm version patch`（内部で commit する） | `grep -r commit src/` |
 
-`git commit` は、検出したうえで「コミットされる中身を確かめる」の条件も見る（シェルを介したものは、承認があっても止める）。
+検出したものは「コミットされる中身を確かめる」の条件で判定する。通しうるのは `git commit` と `--continue` だけで、ほかは承認があっても止める。
 
 `.claude/hooks/commit-gate.sh`（高速パス）→ `.claude/hooks/commit-gate.mjs`（解析）の2段構成。
 判定できない場合（node が無い、JSON が壊れている、ハッシュ計算に失敗）は
@@ -260,8 +281,17 @@ HEAD も比べることで、**承認は1回のコミットで使い切られ**�
 
 ### 制限
 
-- シェルエイリアス（`gc` など）経由のコミットは検出できない
-- Bash ツールを経由しない方法（GUI クライアント等）も検出できない
+このゲートの目的は、AI がうっかりテストしていない中身をコミットするのを防ぐこと。わざと回り道をするものまでは止めない
+（止めようとすると、ふつうのコマンドまで止まる。2026-10-15 利用者判断）。次のものは検出しない。
+
+- シェルのエイリアス（`gc` など）経由のコミット
+- git のエイリアス（`git -c alias.ci=commit ci -am x`、`git config alias.*` で作ったもの）
+- git の下位のコマンド（plumbing）でコミットを作るもの（`git commit-tree` と `git update-ref`）
+- スクリプトのファイルに書いて流すもの（`bash <ファイル>`。ファイルの中身は読まない）
+- 環境変数や `--config-env` で git の設定を差し込むもの（`GIT_CONFIG_*` など）
+- `git commit` などの、値を取るオプションの値に安全なフラグを置くもの（`git commit --trailer --dry-run -m x` は、`--dry-run` を値と読まずにコミットを作る）
+- `git commit` の出力を、追跡しているファイルへ書き出すもの（`git commit -am x > c` は、シェルが c を空にしてから `-a` でコミットする）
+- Bash ツールを通らない方法（GUI クライアントなど）
 
 ## 参照
 

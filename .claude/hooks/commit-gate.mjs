@@ -11,15 +11,16 @@
  */
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
-import { computeChangeHash, committedTreeAsync } from '../../scripts/lib/change-hash.mjs'
+import { computeChangeHash, committedTreeAsync, remainingStepsAsync } from '../../scripts/lib/change-hash.mjs'
 
-/** コミットを新しく作りうる git サブコマンド */
+/** コミットを新しく作りうる git サブコマンド（pull はマージやリベースのコミットを作りうる） */
 const COMMIT_SUBCOMMANDS = new Set([
-  'commit', 'revert', 'merge', 'cherry-pick', 'rebase', 'am'
+  'commit', 'revert', 'merge', 'cherry-pick', 'rebase', 'am', 'pull'
 ])
 
-/** 履歴を作らない形。これらが付いていれば通す */
-const SAFE_FLAGS = new Set(['--dry-run', '--abort', '--quit', '--skip'])
+/** 履歴を作らない形。これらが付いていれば通す
+ *  （--skip は入れない。rebase / cherry-pick / am の --skip は、残りの手順を続けてコミットを作る） */
+const SAFE_FLAGS = new Set(['--dry-run', '--abort', '--quit'])
 
 /** 次のトークンを値として取るサブコマンドオプション。
  *  値の中身が SAFE_FLAGS と一致しても安全扱いしないために必要
@@ -42,6 +43,23 @@ const hasSafeFlag = (args) => {
 }
 
 /**
+ * git pull に置いてよいオプション（どれも値を取らない）。ほかのオプションがあれば止める
+ * （値を取るオプションの値に --ff-only を置く形 git pull -o --ff-only や、--rebase / -r を通さないため）
+ */
+const PULL_SAFE_OPTIONS = new Set(['--ff-only', '--ff', '--no-ff', '--dry-run', '--no-rebase', '-q', '--quiet', '-v', '--verbose', '--no-edit', '--prune', '--tags'])
+
+/**
+ * git pull がコミットを作らないか。--dry-run か、早送りだけ（--ff-only。--ff / --no-ff とは後に書いた方が勝ち、
+ * --ff-only --no-ff はマージコミットを作る）。--ff-only は設定の pull.rebase より優先される（git 2.54 で確かめた）
+ */
+const isSafePull = (args) =>
+  args.every((t) => !t.startsWith('-') || PULL_SAFE_OPTIONS.has(t)) &&
+  (args.includes('--dry-run') || lastWins(args, ['--ff-only'], ['--ff', '--no-ff']))
+
+/** 履歴を作らない呼び出しか（git pull は isSafePull、ほかは安全なフラグ） */
+const isSafeInvocation = (sub, args) => sub === 'pull' ? isSafePull(args) : hasSafeFlag(args)
+
+/**
  * トークン列の任意の位置から `git <コミットを作るサブコマンド>` を探す。
  *
  * ラッパーコマンド（sudo / nice / stdbuf / script / parallel ...）は種類が多く、
@@ -62,7 +80,7 @@ const findGitCommitAnywhere = (tokens) => {
       break
     }
     const sub = tokens[i]
-    if (sub && COMMIT_SUBCOMMANDS.has(sub) && !hasSafeFlag(tokens.slice(i + 1))) {
+    if (sub && COMMIT_SUBCOMMANDS.has(sub) && !isSafeInvocation(sub, tokens.slice(i + 1))) {
       return `git ${sub}`
     }
   }
@@ -258,7 +276,7 @@ const createsCommit = (rawTokens, depth = 0) => {
     }
     const sub = tokens[i]
     if (!sub || !COMMIT_SUBCOMMANDS.has(sub)) return null
-    if (hasSafeFlag(tokens.slice(i + 1))) return null
+    if (isSafeInvocation(sub, tokens.slice(i + 1))) return null
     return `git ${sub}`
   }
 
@@ -279,7 +297,11 @@ const createsCommit = (rawTokens, depth = 0) => {
 const READ_ONLY_GIT = new Set(['status', 'diff', 'log', 'show', 'rev-parse'])
 
 /** コミットより前に置いてよいコマンド（作業ツリーを変えない） */
-const READ_ONLY_COMMANDS = new Set(['cd', 'echo', 'printf', 'pwd', 'true', 'cat', 'head', 'tail', 'grep', 'wc', 'ls', 'date', 'set'])
+// set は入れない（set -a のあとの代入は、続く git commit の環境に入る）
+const READ_ONLY_COMMANDS = new Set(['cd', 'echo', 'printf', 'pwd', 'true', 'cat', 'head', 'tail', 'grep', 'wc', 'ls', 'date'])
+
+/** --continue で続きを1回のコミットとして確かめられるサブコマンド（git commit と同じく index の中身をコミットする） */
+const CONTINUABLE = new Set(['merge', 'cherry-pick', 'revert', 'rebase', 'am'])
 
 /**
  * git commit の値を取るオプション。値をパスと取り違えないために使う（例: git commit -am "msg"）
@@ -430,9 +452,10 @@ const lastWins = (flags, on, off) => {
 }
 
 /**
- * セグメントが（シェルやラッパーを介さない）git commit なら、その読み取りを返す
- * @returns {{ relocates: boolean, all: boolean, partial: boolean } | null}
- *   all: -a（追跡しているファイルの変更を足す） / partial: パスの指定や -o / -i / -p など、一部だけのコミット
+ * セグメントが（シェルやラッパーを介さない）git commit か、merge などの --continue なら、その読み取りを返す
+ * @returns {{ relocates: boolean, all: boolean, partial: boolean, continues: string | null } | null}
+ *   all: -a（追跡しているファイルの変更を足す） / partial: パスの指定や -o / -i / -p など、一部だけのコミット /
+ *   continues: --continue したサブコマンド（git commit なら null）
  */
 const plainGitCommit = (rawTokens) => {
   const tokens = stripPrefixes(rawTokens)
@@ -440,14 +463,19 @@ const plainGitCommit = (rawTokens) => {
   // xargs は引数（パス）を足すので、何がコミットされるか読めない。ラッパーを介したコミットとして扱う
   if (rawTokens.slice(0, rawTokens.length - tokens.length).some((t) => basename(t) === 'xargs')) return null
   const sub = subcommandIndex(tokens)
-  if (tokens[sub] !== 'commit' || hasSafeFlag(tokens.slice(sub + 1))) return null
   const { args } = stripRedirects(tokens.slice(sub + 1), quotedOf(rawTokens, tokens).slice(sub + 1))
+  // --continue は、git commit と同じく index の中身をコミットする。ほかの引数を添えたものは読まない
+  if (CONTINUABLE.has(tokens[sub]) && args.length === 1 && args[0] === '--continue') {
+    return { relocates: relocatesGit(rawTokens, tokens, sub), all: false, partial: false, continues: tokens[sub] }
+  }
+  if (tokens[sub] !== 'commit' || hasSafeFlag(tokens.slice(sub + 1))) return null
   const { flags, operands } = parseCommitArgs(args)
   const has = (...names) => names.some((n) => flags.some((f) => f === n || (f.startsWith('--') && f.length >= 4 && n.startsWith(f))))
   return {
     relocates: relocatesGit(rawTokens, tokens, sub),
     all: lastWins(flags, ['-a', '--all'], ['--no-all']),
-    partial: operands.length > 0 || has('-o', '--only', '-i', '--include', '-p', '--patch', '--interactive', '--pathspec-from-file')
+    partial: operands.length > 0 || has('-o', '--only', '-i', '--include', '-p', '--patch', '--interactive', '--pathspec-from-file'),
+    continues: null
   }
 }
 
@@ -465,6 +493,8 @@ const isGitAddAll = (rawTokens) => {
 /** 作業ツリーを変えないコマンド（コミットより前に置いてよいもの）か */
 const isReadOnly = (rawTokens) => {
   const tokens = stripPrefixes(rawTokens)
+  // GIT_INDEX_FILE= などの代入は、続く git commit の index や場所を変えうる（set -a のあとや、もとから export されている変数）
+  if (rawTokens.slice(0, rawTokens.length - tokens.length).some((t) => /^GIT_[A-Za-z0-9_]*=/.test(t))) return false
   if (tokens.length === 0) return true
   if (stripRedirects(tokens, quotedOf(rawTokens, tokens)).writes) return false
   const cmd = basename(tokens[0])
@@ -494,6 +524,47 @@ if (hits.length === 0) process.exit(0)
 const what = [...new Set(hits)].join(', ')
 const projectDir = process.env.CLAUDE_PROJECT_DIR ||
   path.resolve(path.dirname(new URL(import.meta.url).pathname), '../..')
+
+// まず形を見る（承認があっても通さない形は、承認より先に理由を出す）。docs/WORKFLOW.md「コミットされる中身を確かめる」
+// 中身を確かめられるのは、git commit と、merge などの --continue（どちらも index の中身をコミットする）だけ。
+// ほかのコミットを作るコマンドは、作る中身を前もって比べられないので、承認があっても止める
+const found = segments.map((seg, at) => ({ at, hit: createsCommit(seg), commit: plainGitCommit(seg) })).filter((c) => c.hit)
+const unchecked = found.find((c) => !c.commit)
+if (unchecked?.hit === 'git commit') {
+  deny(`コミットがブロックされました（検出: ${what}）: シェルやラッパーを介した git commit は、コミットされる中身を判定できません。
+git commit を直接実行してください。`)
+}
+if (unchecked?.hit === 'git pull') {
+  deny(`コミットがブロックされました（検出: ${what}）: git pull はマージやリベースのコミットを作りうるので、承認があっても止めます。
+取り込むだけなら git pull --ff-only で実行してください（早送りできなければ止まり、コミットを作りません）。`)
+}
+if (unchecked) {
+  deny(`コミットがブロックされました（検出: ${what}）: git commit 以外でコミットを作るコマンド（merge・cherry-pick・revert・rebase・am と、その --skip、npm version など）は、
+作る中身を前もって承認した中身と比べられないので、承認があっても止めます。
+途中で止まった merge などを続けるなら、git add -A && git merge --continue のように --continue だけを付けて実行してください（git commit と同じく確かめます）。
+それ以外が要るときは、利用者に相談してください。`)
+}
+if (found.length > 1) {
+  deny(`コミットがブロックされました（検出: ${what}）: 1回の Bash の呼び出しで git commit を2回以上行わないでください。
+ゲートは実行の前に判定するため、2回目は1回目のあとの中身で判定できません。別々に実行してください。`)
+}
+
+const [{ at, commit }] = found
+if (commit.relocates) {
+  deny(`コミットがブロックされました（検出: ${what}）: git -C / --git-dir / --work-tree や GIT_DIR などで git の場所を変えたコミットは判定できません。`)
+}
+if (commit.partial) {
+  deny(`コミットがブロックされました（検出: ${what}）: パスを指定したコミットや、一部だけのコミット（-o / -i / -p など）は通しません。
+変更はすべてコミットします（一部だけだと、テストしていない組み合わせが履歴に入りうる）。git add -A && git commit で実行してください。`)
+}
+
+const before = segments.slice(0, at)
+const changer = before.find((seg) => !isReadOnly(seg) && !isGitAddAll(seg))
+if (changer) {
+  deny(`コミットがブロックされました（検出: ${what}）: git commit の前に、作業ツリーや環境を変えうるコマンド（${changer.join(' ').slice(0, 80)}）があります。
+ゲートは実行の前に判定するため、判定した中身とコミットされる中身がずれます。前に置けるのは git add -A と、読むだけのコマンド（git status / diff / log、cd、grep など）だけです
+（set や、GIT_ で始まる変数への代入も置けません）。別々に実行してください。`)
+}
 
 let approval
 try {
@@ -530,44 +601,29 @@ if (current !== approval.hash) {
 }
 
 // 承認は HEAD にも結びつける。ハッシュは作業ツリーの中身（tree）なので、コミットしても変わらない。
-// HEAD を比べないと承認がコミットで使い切られず、そのあとの revert / merge / cherry-pick が承認なしで通る
+// HEAD を比べないと承認がコミットで使い切られず、そのあとの2回目のコミットが承認なしで通る
 if (head !== approval.head) {
   deny(`コミットがブロックされました（検出: ${what}）: 承認したあとに HEAD が動いています（承認した中身をコミットした・ブランチを切り替えた、など）。
 承認は1回のコミットで使い切られます。続けてコミットするなら、reviewer のレビューを通してから、再度 'npm run approve' を実行してください。`)
 }
 
-// git commit は、実際にコミットされる中身（index）まで承認した中身と比べる（docs/WORKFLOW.md「コミットされる中身を確かめる」）。
-// 作業ツリーだけを比べると、一部だけステージした・ステージしてから作業ツリーを戻した・パスを指定した、といったコミットで、
-// テストしていない中身が履歴に入る。確かめ方は chrome.ext.love-g-rss-reader のコミットゲートと同じ
-const commits = segments.map((seg, at) => ({ at, commit: plainGitCommit(seg) })).filter((c) => c.commit)
-if (commits.length === 0) {
-  if (hits.includes('git commit')) {
-    deny(`コミットがブロックされました（検出: ${what}）: シェルやラッパーを介した git commit は、コミットされる中身を判定できません。
-git commit を直接実行してください。`)
+// --continue のあとに手順が残っていると、同じ呼び出しの中で、確かめていないコミットが続けて作られる
+if (commit.continues) {
+  let left
+  try {
+    left = await remainingStepsAsync(projectDir, commit.continues)
+  } catch (e) {
+    deny(`コミットゲートが ${commit.continues} の途中の状態を読めませんでした（安全側に倒してブロックします）: ${e.message}`)
   }
-  process.exit(0)
-}
-if (commits.length > 1) {
-  deny(`コミットがブロックされました（検出: ${what}）: 1回の Bash の呼び出しで git commit を2回以上行わないでください。
-ゲートは実行の前に判定するため、2回目は1回目のあとの中身で判定できません。別々に実行してください。`)
-}
-
-const [{ at, commit }] = commits
-if (commit.relocates) {
-  deny(`コミットがブロックされました（検出: ${what}）: git -C / --git-dir / --work-tree や GIT_DIR などで git の場所を変えたコミットは判定できません。`)
-}
-if (commit.partial) {
-  deny(`コミットがブロックされました（検出: ${what}）: パスを指定したコミットや、一部だけのコミット（-o / -i / -p など）は通しません。
-変更はすべてコミットします（一部だけだと、テストしていない組み合わせが履歴に入りうる）。git add -A && git commit で実行してください。`)
+  if (left > 0) {
+    deny(`コミットがブロックされました（検出: ${what}）: ${commit.continues} の手順が、今のものの後に ${left} 個残っています。
+--continue すると、残りの手順のコミットも同じ呼び出しの中で作られ、承認した中身と比べられません。利用者に相談してください。`)
+  }
 }
 
-const before = segments.slice(0, at)
-const changer = before.find((seg) => !isReadOnly(seg) && !isGitAddAll(seg))
-if (changer) {
-  deny(`コミットがブロックされました（検出: ${what}）: git commit の前に、作業ツリーを変えうるコマンド（${changer.join(' ').slice(0, 80)}）があります。
-ゲートは実行の前に判定するため、判定した中身とコミットされる中身がずれます。前に置けるのは git add -A と、読むだけのコマンド（git status / diff / log、cd、grep など）だけです。別々に実行してください。`)
-}
-
+// コミットされる中身（index）まで承認した中身と比べる。作業ツリーだけを比べると、一部だけステージした・
+// ステージしてから作業ツリーを戻した、といったコミットで、テストしていない中身が履歴に入る。
+// 確かめ方は chrome.ext.silent-tab・chrome.ext.love-g-rss-reader のコミットゲートと同じ
 let committed
 try {
   committed = await committedTreeAsync(projectDir, { addAll: before.some(isGitAddAll), addTracked: commit.all })
