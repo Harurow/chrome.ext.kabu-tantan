@@ -28,7 +28,9 @@ import {
   setChartLabelAsync,
   setWatchlistRowsAsync,
   addChartElementWithRowAttrsAsync,
-  CHART_ATTR_MARK
+  CHART_ATTR_MARK,
+  TOOLBAR_MARK,
+  WATCHLIST_MARK
 } from './fixtures/tradingview.mjs'
 import { STALE_KEYS } from './fixtures/storage.mjs'
 import {
@@ -1442,5 +1444,179 @@ test.describe('TradingView: 入れ子メニューの開閉と位置（FR-18）',
       await expect(page.locator(`[${MENU_BOX_MARK}]`)).toHaveCount(1)
       await expect(page.locator(`[${MENU_BOX_MARK}]`)).not.toContainText('を開く')
       await expect(page.locator(`[${MENU_BOX_MARK}] tr`)).toHaveCount(0)
+    })
+})
+
+/**
+ * 段階5: 残り（SPEC-CS-11 / SPEC-CS-12。手動確認 A-2 の1行目・A-3・A-4・A-5 の1・2行目・A-6 の3行）。
+ * A-2 の1行目（ボタンを押すと、有効にしたサイトが TradingView 自身を除いて並ぶ）は、段階4 の 4-3 が見ている
+ */
+test.describe('TradingView: 残りの手動確認（FR-26 の段階5）', () => {
+  const MENU = () => `[${MENU_BOX_MARK}]`
+
+  /** 右クリックのあとにメニューを足し、拡張が足すかどうかが決まるまで進める（段階3 と同じ。SPEC-CS-11） */
+  const insertContextMenuAndSettleAsync = async (page) => {
+    await page.evaluate(([mark, html]) => {
+      document.querySelector(`[${mark}]`).insertAdjacentHTML('beforeend', html)
+    }, [OVERLAP_MARK, contextMenuHtml()])
+    await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 0)))
+  }
+
+  /** サイトの役割で Esc を押してメニューを閉じる */
+  const closeContextMenuAsync = async (page) => {
+    await page.keyboard.press('Escape')
+    await expect(page.locator(MENU())).toHaveCount(0)
+  }
+
+  test.beforeEach(async ({ serviceWorker }) => {
+    await stubBrokerTabsAsync(serviceWorker, { loggedIn: false })
+  })
+
+  // 5-3: A-3（SPEC-CS-12「閉じる契機」）
+  test('「株Link」ボタンのメニューは、背景を押しても、何かキーを押しても閉じる',
+    async ({ page, serveFixture }) => {
+      await openChartPageAsync(page, serveFixture)
+      const back = page.locator('div.ktt-tv-menuBack')
+
+      // 背景（メニューの外）を押す
+      await page.locator(KABU_LINK_BUTTON).click()
+      await expect(page.locator(BUTTON_MENU_ITEMS)).not.toHaveCount(0)
+      const { width, height } = page.viewportSize()
+      await page.mouse.click(width - 20, height - 20)
+      await expect(back).toHaveCount(0)
+
+      // Esc 以外のキーを押す
+      await page.locator(KABU_LINK_BUTTON).click()
+      await expect(page.locator(BUTTON_MENU_ITEMS)).not.toHaveCount(0)
+      await page.keyboard.press('x')
+      await expect(back).toHaveCount(0)
+    })
+
+  // 5-4: A-4（SPEC-CS-12。項目は `<a>` を持たず、押すと Service Worker がタブを開く）
+  test('「株Link」ボタンのメニューの項目を押すと、チャートの銘柄のページを新しいタブで開く',
+    async ({ page, context, extensionId, serviceWorker, serveFixture }) => {
+      await setEnableLinkKeysAsync(context, extensionId, { [ONLY_SITE_KEY]: 0 })
+      const expected = await serviceWorker.evaluate(([key, code]) =>
+        makeUrl(externalUrlsMap[key].url1, code), [ONLY_SITE_KEY, CHART_CODE])
+      await stubTabsCreateAsync(serviceWorker)
+
+      await openChartPageAsync(page, serveFixture)
+      await page.locator(KABU_LINK_BUTTON).click()
+      await page.locator(BUTTON_MENU_ITEMS).first().locator('span[data-label="true"]').click()
+
+      await expect.poll(() => serviceWorker.evaluate(() => self.__openedUrls)).toEqual([expected])
+    })
+
+  // 5-5: A-5 の1行目（FR-18 判定基準1 / SPEC-CS-11）
+  test('右クリックで足すのは区切り線と「<コード> を開く」の1行だけで、行の右端に入れ子の矢印が出る（サイトごとの行を直下に並べない）',
+    async ({ page, serviceWorker, serveFixture }) => {
+      const titles = await serviceWorker.evaluate(() => externalUrls.map((entry) => entry.title))
+      await openChartPageAsync(page, serveFixture)
+      await rightClickAsync(page, `[${CHART_MARK}]`)
+      await openContextMenuAsync(page)
+
+      const rows = page.locator(`${MENU()} tr[data-role="menuitem"]`)
+      await expect(rows).toHaveCount(1)
+      await expect(rows.first()).toHaveText(new RegExp(`^\\s*${CHART_CODE} を開く\\s*$`))
+      await expect(rows.first().locator('[data-submenu-arrow="true"]')).toHaveCount(1)
+      // 区切り線は1本（二重追加の目印を持つ行）
+      await expect(page.locator(`${MENU()} tr[data-kabu-tantan]`)).toHaveCount(1)
+      for (const title of titles) {
+        await expect(page.locator(MENU()), title).not.toContainText(`${CHART_CODE} を${title}`)
+      }
+    })
+
+  // 5-6: A-5 の2行目（SPEC-CS-11「入れ子の項目」）
+  test('「<コード> を開く」にマウスを乗せると入れ子が開き、項目はサイト名だけで、ツールチップに銘柄コードが出る',
+    async ({ page, serviceWorker, serveFixture }) => {
+      const titles = await serviceWorker.evaluate(() => externalUrls
+        .filter((entry) => entry.key.indexOf('tradingview.com') !== 0)
+        .map((entry) => entry.title))
+      await openChartPageAsync(page, serveFixture)
+      await rightClickAsync(page, `[${CHART_MARK}]`)
+      await openContextMenuAsync(page)
+      await openSubmenuAsync(page)
+
+      const items = await page.locator('div.ktt-tv-subMenu tr[data-role="menuitem"] a').evaluateAll(
+        (anchors) => anchors.map((a) => ({ text: a.textContent.trim(), title: a.getAttribute('title') })))
+      expect(items.map((item) => item.text)).toEqual(titles.map((title) => `${title}で開く`))
+      for (const item of items) {
+        expect(item.text, item.text).not.toContain(CHART_CODE)
+        expect(item.title, item.text).toBe(`${CHART_CODE} を${item.text}`)
+      }
+    })
+
+  // 5-7: A-6 の1行目（SPEC-CS-11「二重追加の防止」）
+  test('右クリック → 閉じる → 右クリックを繰り返しても、毎回「<コード> を開く」と区切り線が1つずつだけ出る',
+    async ({ page, serveFixture }) => {
+      await openChartPageAsync(page, serveFixture)
+
+      for (let round = 1; round <= 3; round++) {
+        await rightClickAsync(page, `[${CHART_MARK}]`)
+        await openContextMenuAsync(page)
+        await expect(page.locator(`${MENU()} tr[data-role="menuitem"]`), `${round} 回目`).toHaveCount(1)
+        await expect(page.locator('tr[data-kabu-tantan]'), `${round} 回目`).toHaveCount(1)
+        await expect(page.locator(MENU()), `${round} 回目`).toContainText(`${CHART_CODE} を開く`)
+        await closeContextMenuAsync(page)
+      }
+    })
+
+  // 5-8: A-6 の2行目（SPEC-CS-11「二重追加の防止」。入れ子の行に目印が残らない）
+  test('入れ子を開いたままメニューを閉じ、もう一度右クリックしても、2回目も「<コード> を開く」が出る',
+    async ({ page, serveFixture }) => {
+      await openChartPageAsync(page, serveFixture)
+      await rightClickAsync(page, `[${CHART_MARK}]`)
+      await openContextMenuAsync(page)
+      await openSubmenuAsync(page)
+      await closeContextMenuAsync(page)
+
+      await rightClickAsync(page, `[${CHART_MARK}]`)
+      await openContextMenuAsync(page)
+
+      await expect(page.locator(MENU())).toContainText(`${CHART_CODE} を開く`)
+    })
+
+  // 5-10: SPEC-CS-11 条件3（二重追加の防止）。手動には無い（SPEC-CS-27 の「今後」の 6）
+  test('メニューが出ている間にオーバーレイ層がもう一度変わっても、3行を二重に足さない',
+    async ({ page, serveFixture }) => {
+      await openChartPageAsync(page, serveFixture)
+      await rightClickAsync(page, `[${CHART_MARK}]`)
+      await openContextMenuAsync(page)
+
+      // サイトがオーバーレイ層に別の要素を足す（拡張の監視がもう一度動く）
+      await page.evaluate((mark) => {
+        document.querySelector(`[${mark}]`).insertAdjacentHTML('beforeend', '<div data-test-other-overlay></div>')
+      }, OVERLAP_MARK)
+      await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 0)))
+
+      await expect(page.locator('tr[data-kabu-tantan]')).toHaveCount(1)
+      await expect(page.locator(`${MENU()} tr[data-role="menuitem"]`)).toHaveCount(1)
+    })
+
+  // 5-9: A-6 の3行目（SPEC-CS-23「起点の判定」。行もチャートも特定できない場所）
+  test('ツールバーと、ウォッチリストの銘柄行が無い余白を右クリックしても、項目を出さない',
+    async ({ page, serveFixture }) => {
+      await openChartPageAsync(page, serveFixture)
+      const watchlist = await page.locator(`[${WATCHLIST_MARK}]`).boundingBox()
+
+      const places = [
+        { name: 'ツールバー', click: () => rightClickAsync(page, `[${TOOLBAR_MARK}]`) },
+        {
+          name: 'ウォッチリストの余白',
+          click: () => page.mouse.click(watchlist.x + watchlist.width / 2, watchlist.y + watchlist.height - 20, { button: 'right' })
+        }
+      ]
+      for (const { name, click } of places) {
+        await click()
+        await insertContextMenuAndSettleAsync(page)
+        await expect(page.locator(MENU()), name).toHaveCount(1)
+        await expect(page.locator('tr[data-kabu-tantan]'), name).toHaveCount(0)
+        await closeContextMenuAsync(page)
+      }
+
+      // 空振りでないことの担保: 同じページで、チャートなら出る
+      await rightClickAsync(page, `[${CHART_MARK}]`)
+      await openContextMenuAsync(page)
+      await expect(page.locator(MENU())).toContainText(`${CHART_CODE} を開く`)
     })
 })

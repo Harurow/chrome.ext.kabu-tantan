@@ -44,6 +44,8 @@ export const ROW_MARK = 'data-test-watchlist-row'
 /** ウォッチリストの器。行を差し替えるときの手がかり（`setWatchlistRowsAsync`） */
 export const WATCHLIST_MARK = 'data-test-watchlist'
 export const OVERLAP_MARK = 'data-test-overlap-root'
+/** ツールバーの器（右クリックしても項目が出ないことを見る。手動確認 A-6 の3行目） */
+export const TOOLBAR_MARK = 'data-test-toolbar'
 export const MENU_BOX_MARK = 'data-test-menu-box'
 
 /**
@@ -83,6 +85,7 @@ const chartHtml = () => domFromSelector(selectorOf('chart-canvas'), {
  * ページに最初から置かず、後から足すこともできる（`insertToolbarAsync`）
  */
 export const toolbarHtml = () => domFromSelector(selectorOf('toolbar-container'), {
+  rootAttrs: { [TOOLBAR_MARK]: '' },
   rootStyle: 'position: fixed; left: 0; top: 0; width: 240px; height: 36px; z-index: 2;'
 })
 
