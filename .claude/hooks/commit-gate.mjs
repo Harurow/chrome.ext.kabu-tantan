@@ -11,7 +11,7 @@
  */
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
-import { computeChangeHash } from '../../scripts/lib/change-hash.mjs'
+import { computeChangeHash, committedTreeAsync } from '../../scripts/lib/change-hash.mjs'
 
 /** コミットを新しく作りうる git サブコマンド */
 const COMMIT_SUBCOMMANDS = new Set([
@@ -96,21 +96,24 @@ const deny = (reason) => {
 /**
  * コマンド文字列を、区切り文字ごとのトークン列に割る。
  * 引用符の中身は1トークンとして保持する（勝手に分解しない）。
+ * 各セグメントの配列には、トークンが引用符で始まったかを quoted に添える（"<b>" をリダイレクトと取り違えないため）。
  * @returns {string[][]} セグメントごとのトークン配列
  */
 const tokenize = (command) => {
   const segments = []
   let tokens = []
+  let quoted = []
   let token = ''
   let hasToken = false
+  let startsQuoted = false
   let quote = null
 
   const endToken = () => {
-    if (hasToken) { tokens.push(token); token = ''; hasToken = false }
+    if (hasToken) { tokens.push(token); quoted.push(startsQuoted); token = ''; hasToken = false; startsQuoted = false }
   }
   const endSegment = () => {
     endToken()
-    if (tokens.length) { segments.push(tokens); tokens = [] }
+    if (tokens.length) { tokens.quoted = quoted; segments.push(tokens); tokens = []; quoted = [] }
   }
 
   for (let i = 0; i < command.length; i++) {
@@ -122,8 +125,11 @@ const tokenize = (command) => {
       continue
     }
 
-    if (ch === '"' || ch === "'") { quote = ch; hasToken = true; continue }
+    if (ch === '"' || ch === "'") { startsQuoted ||= !hasToken; quote = ch; hasToken = true; continue }
     if (ch === '\\' && i + 1 < command.length) { token += command[++i]; hasToken = true; continue }
+
+    // 2>&1 / >&2 / &>file の & は区切りではなくリダイレクトの一部
+    if (ch === '&' && (/[<>]$/.test(token) || command[i + 1] === '>')) { token += ch; hasToken = true; continue }
 
     if (ch === ';' || ch === '&' || ch === '|' || ch === '\n' || ch === '(' || ch === ')' || ch === '`') {
       endSegment(); continue
@@ -269,6 +275,206 @@ const createsCommit = (rawTokens, depth = 0) => {
   return findGitCommitAnywhere(tokens)
 }
 
+/** コミットより前に置いてよい git のサブコマンド（作業ツリーを変えない） */
+const READ_ONLY_GIT = new Set(['status', 'diff', 'log', 'show', 'rev-parse'])
+
+/** コミットより前に置いてよいコマンド（作業ツリーを変えない） */
+const READ_ONLY_COMMANDS = new Set(['cd', 'echo', 'printf', 'pwd', 'true', 'cat', 'head', 'tail', 'grep', 'wc', 'ls', 'date', 'set'])
+
+/**
+ * git commit の値を取るオプション。値をパスと取り違えないために使う（例: git commit -am "msg"）
+ * 短いものは文字（-m msg と -mmsg の両方の書き方がある）。--name=value は1つのトークン
+ */
+const COMMIT_VALUE_SHORT = 'mFCct'
+const COMMIT_VALUE_LONG = ['--message', '--file', '--reuse-message', '--reedit-message', '--author', '--date', '--fixup', '--squash', '--template', '--trailer', '--cleanup', '--pathspec-from-file']
+
+/**
+ * ヒアドキュメントの始まり（<< の後ろ）。区切りは 'EOF' / "EOF" / \EOF / EOF（空白や ;&|<>() の手前まで）
+ * 区切りの直後が行末・空白・演算子でないもの（<<E"O"F のように一部だけ引用したもの。bash の区切りは EOF）は読まない
+ */
+const HEREDOC = /^(-?)[ \t]*(?:'([^'\n]*)'|"([^"\n]*)"|\\?([^\s;&|<>()'"]+))(?=$|[\s;&|<>()])/
+
+/**
+ * ヒアドキュメントの中身（<<'EOF' … EOF）を取り除く。中身はコマンドではないので、判定に使わない
+ * （取り除かないと、コミットメッセージに書いた「git commit」をコマンドと取り違える）
+ *
+ * 取り除き過ぎると、承認の無い git commit を隠して通してしまう（fail-open）。そのため
+ *   - 引用符の外の << だけを読む（echo "<<EOF" はヒアドキュメントではない）。引用符は行をまたいで追う
+ *   - 終わりの行が見つかったときだけ取り除く。見つからなければ残す（$((a<<b)) のシフトや、閉じていないもの）
+ */
+const stripHeredocs = (command) => {
+  const lines = command.split('\n')
+  const out = []
+  let quote = null
+  for (let k = 0; k < lines.length; k++) {
+    const line = lines[k]
+    out.push(line)
+    const pending = []
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i]
+      if (quote) {
+        if (ch === '\\' && quote === '"') i++
+        else if (ch === quote) quote = null
+        continue
+      }
+      if (ch === '\\') { i++; continue }
+      if (ch === "'" || ch === '"') { quote = ch; continue }
+      if (ch === '<' && line[i + 1] === '<' && line[i - 1] !== '<' && line[i + 2] !== '<') {
+        const m = HEREDOC.exec(line.slice(i + 2))
+        if (m) {
+          pending.push({ dash: m[1] === '-', delim: m[2] ?? m[3] ?? m[4] })
+          i += 1 + m[0].length
+        }
+      }
+    }
+    for (const { dash, delim } of pending) {
+      let end = k + 1
+      while (end < lines.length && (dash ? lines[end].replace(/^\t+/, '') : lines[end]) !== delim) end++
+      if (end >= lines.length) break
+      k = end
+    }
+  }
+  return out.join('\n')
+}
+
+/** git のグローバルオプションを読み飛ばし、サブコマンドの位置を返す（tokens[0] が git） */
+const subcommandIndex = (tokens) => {
+  let i = 1
+  while (i < tokens.length) {
+    const t = tokens[i]
+    if (GIT_OPTS_WITH_VALUE.has(t)) { i += 2; continue }
+    if (t.startsWith('-')) { i++; continue }
+    break
+  }
+  return i
+}
+
+/** git の場所を変える指定があるか（判定したリポジトリと、コミットするリポジトリ・index がずれる） */
+const relocatesGit = (rawTokens, tokens, sub) =>
+  rawTokens.some((t) => /^GIT_(DIR|WORK_TREE|INDEX_FILE|OBJECT_DIRECTORY|COMMON_DIR|NAMESPACE)=/.test(t)) ||
+  tokens.slice(1, sub).some((t, n, global) => t === '-C' || /^--(git-dir|work-tree)(=|$)/.test(t) || (t === '-c' && /^core\.worktree=/i.test(global[n + 1] ?? '')))
+
+/** リダイレクトの形（2>&1、>file、<<'EOF' など）。演算子の後ろが空なら、次のトークンが対象 */
+const REDIRECT = /^(\d*|&)(>>|>\||>&|>|<<<|<<-?|<>|<&|<)(.*)$/
+
+/** stripPrefixes で前を削ったトークン列に対応する、引用符で始まったかの印 */
+const quotedOf = (rawTokens, tokens) => (rawTokens.quoted ?? []).slice(rawTokens.length - tokens.length)
+
+/**
+ * リダイレクトを取り除き、/dev/null 以外のファイルに書き出すものがあるかを返す
+ * 取り除かないと、git commit -m x >/dev/null の /dev/null や <<'EOF' をパスと取り違える。引用符で始まったトークンは見ない
+ * @returns {{ args: string[], writes: boolean }}
+ */
+const stripRedirects = (tokens, quoted = []) => {
+  const args = []
+  let writes = false
+  for (let i = 0; i < tokens.length; i++) {
+    const m = quoted[i] ? null : tokens[i].match(REDIRECT)
+    if (!m) {
+      // a>b のように語の後ろに付いた書き出しも、書き出しとみなす
+      writes ||= !quoted[i] && tokens[i].includes('>')
+      args.push(tokens[i])
+      continue
+    }
+    const target = m[3] !== '' ? m[3] : tokens[++i] ?? ''
+    const duplicate = (m[2] === '>&' || m[2] === '<&') && /^(\d+-?|-)$/.test(target)
+    writes ||= m[2].includes('>') && !duplicate && target !== '/dev/null'
+  }
+  return { args, writes }
+}
+
+/**
+ * git commit の引数を、フラグ（書かれた順）とオプションでない引数（パス）に分ける
+ * 短いオプションの束（-am）はばらす。--name=value は --name にする
+ */
+const parseCommitArgs = (args) => {
+  const flags = []
+  const operands = []
+  for (let i = 0; i < args.length; i++) {
+    const t = args[i]
+    if (t === '--') {
+      operands.push(...args.slice(i + 1))
+      break
+    }
+    if (t.startsWith('--')) {
+      const name = t.split('=')[0]
+      flags.push(name)
+      if (!t.includes('=') && COMMIT_VALUE_LONG.includes(name)) i++
+    } else if (t.startsWith('-') && t.length > 1) {
+      for (let k = 1; k < t.length; k++) {
+        flags.push(`-${t[k]}`)
+        if (COMMIT_VALUE_SHORT.includes(t[k])) {
+          // 値を取る短いオプション。残りの文字が値で、無ければ次のトークンが値
+          if (k === t.length - 1) i++
+          break
+        }
+      }
+    } else {
+      operands.push(t)
+    }
+  }
+  return { flags, operands }
+}
+
+/** フラグが有効か。後に書いた方が勝つ（-a --no-all なら無効）。長いオプションは一意な省略も同じものとみなす */
+const lastWins = (flags, on, off) => {
+  const known = [...on, ...off]
+  let state = false
+  for (const f of flags) {
+    const hits = f.startsWith('--') ? known.filter((k) => k.startsWith('--') && k.startsWith(f) && f.length >= 4) : known.filter((k) => k === f)
+    const name = hits.includes(f) ? f : (hits.length === 1 ? hits[0] : null)
+    if (name && on.includes(name)) state = true
+    else if (name && off.includes(name)) state = false
+  }
+  return state
+}
+
+/**
+ * セグメントが（シェルやラッパーを介さない）git commit なら、その読み取りを返す
+ * @returns {{ relocates: boolean, all: boolean, partial: boolean } | null}
+ *   all: -a（追跡しているファイルの変更を足す） / partial: パスの指定や -o / -i / -p など、一部だけのコミット
+ */
+const plainGitCommit = (rawTokens) => {
+  const tokens = stripPrefixes(rawTokens)
+  if (basename(tokens[0] ?? '') !== 'git') return null
+  // xargs は引数（パス）を足すので、何がコミットされるか読めない。ラッパーを介したコミットとして扱う
+  if (rawTokens.slice(0, rawTokens.length - tokens.length).some((t) => basename(t) === 'xargs')) return null
+  const sub = subcommandIndex(tokens)
+  if (tokens[sub] !== 'commit' || hasSafeFlag(tokens.slice(sub + 1))) return null
+  const { args } = stripRedirects(tokens.slice(sub + 1), quotedOf(rawTokens, tokens).slice(sub + 1))
+  const { flags, operands } = parseCommitArgs(args)
+  const has = (...names) => names.some((n) => flags.some((f) => f === n || (f.startsWith('--') && f.length >= 4 && n.startsWith(f))))
+  return {
+    relocates: relocatesGit(rawTokens, tokens, sub),
+    all: lastWins(flags, ['-a', '--all'], ['--no-all']),
+    partial: operands.length > 0 || has('-o', '--only', '-i', '--include', '-p', '--patch', '--interactive', '--pathspec-from-file')
+  }
+}
+
+/** git add -A（すべての変更を index に入れる）か。場所を変える指定や書き出しがあるものは含めない */
+const isGitAddAll = (rawTokens) => {
+  const tokens = stripPrefixes(rawTokens)
+  if (basename(tokens[0] ?? '') !== 'git') return false
+  const sub = subcommandIndex(tokens)
+  if (tokens[sub] !== 'add' || relocatesGit(rawTokens, tokens, sub)) return false
+  const { args, writes } = stripRedirects(tokens.slice(sub + 1), quotedOf(rawTokens, tokens).slice(sub + 1))
+  if (writes) return false
+  return args.some((t) => t === '-A' || t === '--all') && args.every((t) => ['-A', '--all', '-v', '--verbose'].includes(t))
+}
+
+/** 作業ツリーを変えないコマンド（コミットより前に置いてよいもの）か */
+const isReadOnly = (rawTokens) => {
+  const tokens = stripPrefixes(rawTokens)
+  if (tokens.length === 0) return true
+  if (stripRedirects(tokens, quotedOf(rawTokens, tokens)).writes) return false
+  const cmd = basename(tokens[0])
+  if (cmd === 'git') {
+    const sub = subcommandIndex(tokens)
+    return READ_ONLY_GIT.has(tokens[sub]) && !tokens.slice(sub + 1).some((t) => t.startsWith('--output') || t.startsWith('--ext-diff'))
+  }
+  return READ_ONLY_COMMANDS.has(cmd)
+}
+
 // ---- 本体 ----
 
 let payload
@@ -281,7 +487,8 @@ try {
 const command = payload?.tool_input?.command ?? ''
 if (!command) process.exit(0)
 
-const hits = tokenize(command).map((seg) => createsCommit(seg)).filter(Boolean)
+const segments = tokenize(stripHeredocs(command))
+const hits = segments.map((seg) => createsCommit(seg)).filter(Boolean)
 if (hits.length === 0) process.exit(0)
 
 const what = [...new Set(hits)].join(', ')
@@ -295,7 +502,7 @@ try {
   deny(`コミットがブロックされました（検出: ${what}）: レビュー未承認です。
 
 このプロジェクトでは、以下がすべて揃うまでコミットできません。
-  1. npm run check が通る（lint + validate + テスト全件）
+  1. npm run check が通る（lint + validate + テスト全件。文書だけの変更は npm run check:docs）
   2. reviewer のレビューで 🔴 Critical が無い
   3. npm run approve で承認を記録する
 
@@ -304,8 +511,9 @@ reviewer のレビューを通してから 'npm run approve' を実行してく�
 }
 
 let current
+let head
 try {
-  current = (await computeChangeHash(projectDir)).hash
+  ({ hash: current, head } = await computeChangeHash(projectDir))
 } catch (e) {
   deny(`コミットゲートが変更内容のハッシュを計算できませんでした（安全側に倒してブロックします）: ${e.message}`)
 }
@@ -319,6 +527,57 @@ if (current !== approval.hash) {
 
 承認は変更内容に紐づいています。変更したなら reviewer のレビューをやり直し、
 再度 'npm run approve' を実行してください。`)
+}
+
+// 承認は HEAD にも結びつける。ハッシュは作業ツリーの中身（tree）なので、コミットしても変わらない。
+// HEAD を比べないと承認がコミットで使い切られず、そのあとの revert / merge / cherry-pick が承認なしで通る
+if (head !== approval.head) {
+  deny(`コミットがブロックされました（検出: ${what}）: 承認したあとに HEAD が動いています（承認した中身をコミットした・ブランチを切り替えた、など）。
+承認は1回のコミットで使い切られます。続けてコミットするなら、reviewer のレビューを通してから、再度 'npm run approve' を実行してください。`)
+}
+
+// git commit は、実際にコミットされる中身（index）まで承認した中身と比べる（docs/WORKFLOW.md「コミットされる中身を確かめる」）。
+// 作業ツリーだけを比べると、一部だけステージした・ステージしてから作業ツリーを戻した・パスを指定した、といったコミットで、
+// テストしていない中身が履歴に入る。確かめ方は chrome.ext.love-g-rss-reader のコミットゲートと同じ
+const commits = segments.map((seg, at) => ({ at, commit: plainGitCommit(seg) })).filter((c) => c.commit)
+if (commits.length === 0) {
+  if (hits.includes('git commit')) {
+    deny(`コミットがブロックされました（検出: ${what}）: シェルやラッパーを介した git commit は、コミットされる中身を判定できません。
+git commit を直接実行してください。`)
+  }
+  process.exit(0)
+}
+if (commits.length > 1) {
+  deny(`コミットがブロックされました（検出: ${what}）: 1回の Bash の呼び出しで git commit を2回以上行わないでください。
+ゲートは実行の前に判定するため、2回目は1回目のあとの中身で判定できません。別々に実行してください。`)
+}
+
+const [{ at, commit }] = commits
+if (commit.relocates) {
+  deny(`コミットがブロックされました（検出: ${what}）: git -C / --git-dir / --work-tree や GIT_DIR などで git の場所を変えたコミットは判定できません。`)
+}
+if (commit.partial) {
+  deny(`コミットがブロックされました（検出: ${what}）: パスを指定したコミットや、一部だけのコミット（-o / -i / -p など）は通しません。
+変更はすべてコミットします（一部だけだと、テストしていない組み合わせが履歴に入りうる）。git add -A && git commit で実行してください。`)
+}
+
+const before = segments.slice(0, at)
+const changer = before.find((seg) => !isReadOnly(seg) && !isGitAddAll(seg))
+if (changer) {
+  deny(`コミットがブロックされました（検出: ${what}）: git commit の前に、作業ツリーを変えうるコマンド（${changer.join(' ').slice(0, 80)}）があります。
+ゲートは実行の前に判定するため、判定した中身とコミットされる中身がずれます。前に置けるのは git add -A と、読むだけのコマンド（git status / diff / log、cd、grep など）だけです。別々に実行してください。`)
+}
+
+let committed
+try {
+  committed = await committedTreeAsync(projectDir, { addAll: before.some(isGitAddAll), addTracked: commit.all })
+} catch (e) {
+  deny(`コミットゲートがコミットされる中身を求められませんでした（安全側に倒してブロックします）: ${e.message}`)
+}
+if (committed !== current) {
+  deny(`コミットがブロックされました（検出: ${what}）: コミットされる中身（ステージ済みの中身）が、テストして承認した作業ツリーの中身と違います。
+一部だけ git add した・git add していない・ステージしてから作業ツリーを戻した、などが考えられます。
+変更はすべてコミットします。git add -A && git commit で実行してください。`)
 }
 
 process.exit(0)
