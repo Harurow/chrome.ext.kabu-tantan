@@ -41,6 +41,8 @@ export const ROW_CODE = '8253'
  */
 export const CHART_MARK = 'data-test-chart'
 export const ROW_MARK = 'data-test-watchlist-row'
+/** ウォッチリストの器。行を差し替えるときの手がかり（`setWatchlistRowsAsync`） */
+export const WATCHLIST_MARK = 'data-test-watchlist'
 export const OVERLAP_MARK = 'data-test-overlap-root'
 export const MENU_BOX_MARK = 'data-test-menu-box'
 
@@ -86,17 +88,51 @@ export const toolbarHtml = () => domFromSelector(selectorOf('toolbar-container')
 /**
  * 契約5: ウォッチリストの行が `EXCHANGE:CODE` 形式の属性を持つ。
  * 属性名は `watchlistSymbolAttrs` から読む。先頭の候補に `EXCHANGE:CODE`、
- * 残りにコード単独を入れる（SPEC-CS-23 の表）
+ * 残りにコード単独を入れる（SPEC-CS-23 の表）。
+ * 行の目印（`ROW_MARK`）の値はその行の `EXCHANGE:CODE` で、テストが行を選ぶのに使う
+ * @param {string} symbol `EXCHANGE:CODE`（例 `TSE:8253` / `NASDAQ:AAPL` / `SP:SPX`）
  */
-const watchlistHtml = () => {
+const watchlistRowHtml = (symbol) => {
+  const code = symbol.slice(symbol.indexOf(':') + 1)
   const attrs = watchlistSymbolAttrs
-    .map((attr, index) => `${attr}="${index === 0 ? `TSE:${ROW_CODE}` : ROW_CODE}"`)
+    .map((attr, index) => `${attr}="${index === 0 ? symbol : code}"`)
     .join(' ')
 
-  return `<div style="position: fixed; right: 0; top: 40px; width: 260px; bottom: 0; z-index: 2;">
-    <div ${ROW_MARK} ${attrs} style="height: 32px;"><span>${ROW_CODE}</span></div>
-  </div>`
+  return `<div ${ROW_MARK}="${symbol}" ${attrs} style="height: 32px;"><span>${code}</span></div>`
 }
+
+const watchlistHtml = () =>
+  `<div ${WATCHLIST_MARK} style="position: fixed; right: 0; top: 40px; width: 260px; bottom: 0; z-index: 2;">
+    ${watchlistRowHtml(`TSE:${ROW_CODE}`)}
+  </div>`
+
+/**
+ * サイト側の役割その5: ウォッチリストの行を差し替える。
+ * 実サイトのウォッチリストは、スクロールで画面外の行を作り直し、別のリストへ切り替えると行ごと入れ替わる（FR-19 判定基準8）。
+ * どちらも「右クリックしたときに DOM にある行」が変わることなので、器の中身を丸ごと差し替えて演じる
+ * @param {import('@playwright/test').Page} page
+ * @param {string[]} symbols 上から並べる行の `EXCHANGE:CODE`
+ */
+export const setWatchlistRowsAsync = (page, symbols) => page.evaluate(([mark, html]) => {
+  document.querySelector(`[${mark}]`).innerHTML = html
+}, [WATCHLIST_MARK, symbols.map(watchlistRowHtml).join('')])
+
+/** チャートの中に置く、候補属性を持つ要素の目印（`addChartElementWithRowAttrsAsync`） */
+export const CHART_ATTR_MARK = 'data-test-chart-attr'
+
+/**
+ * サイト側の役割その6: チャートの中の要素が、ウォッチリストの行と同じ名前の属性を、**形でない値**で持つ。
+ * 実サイトのチャート内の要素が `data-symbol-*` を `main` や `7203` のような値で持つ場合を演じる（SPEC-CS-23「残る差分」）。
+ * 拡張は値が `EXCHANGE:CODE` の形のときだけ行と見なすので、ここを右クリックしてもチャートの起点になる
+ * @param {import('@playwright/test').Page} page
+ * @param {string[]} values `watchlistSymbolAttrs` の順に入れる値（例 `['main', '7203']`）
+ */
+export const addChartElementWithRowAttrsAsync = (page, values) => page.evaluate(([chartMark, mark, html]) => {
+  document.querySelector(`[${chartMark}]`).insertAdjacentHTML('beforeend', html)
+  return mark
+}, [CHART_MARK, CHART_ATTR_MARK, `<div ${CHART_ATTR_MARK} ${watchlistSymbolAttrs
+  .map((attr, index) => `${attr}="${values[index] ?? ''}"`)
+  .join(' ')} style="position: absolute; left: 40px; top: 40px; width: 120px; height: 40px;"></div>`])
 
 /** 契約3: オーバーレイ層 `#overlap-manager-root`（`body` 直下） */
 export const overlapRootHtml = () => domFromSelector(selectorOf('overlap-root'), {

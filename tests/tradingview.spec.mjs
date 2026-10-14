@@ -25,7 +25,10 @@ import {
   overlapRootHtml,
   contextMenuHtml,
   insertToolbarAsync,
-  setChartLabelAsync
+  setChartLabelAsync,
+  setWatchlistRowsAsync,
+  addChartElementWithRowAttrsAsync,
+  CHART_ATTR_MARK
 } from './fixtures/tradingview.mjs'
 import { STALE_KEYS } from './fixtures/storage.mjs'
 import {
@@ -893,5 +896,219 @@ test.describe('TradingView: 「株Link」ボタンのメニュー', () => {
 
       await rakuten.close()
       expect(await buttonMenuLabelsAsync()).not.toContain('楽天証券を開く')
+    })
+})
+
+/**
+ * 段階3: 起点の判定（FR-19 / SPEC-CS-23。手動確認 A-13〜A-17 の (a) の 11 行）。
+ *
+ * ウォッチリストの行を起点にするかは、行の属性の**値の形**（`EXCHANGE:CODE`）で決まる。
+ * 指数・FX などの行は形を満たすが解釈できないので、起点を捨てて何も出さない（チャートへ落とさない）。
+ * 行の差し替え（スクロール・別のリストへの切り替え）は `setWatchlistRowsAsync` で演じる。
+ * サイト側の実 DOM（行の属性名が実在するか・ほかのウィジェットで出ないか）は見ない（CON-08。A-17 の2行目に残る）
+ */
+test.describe('TradingView: ウォッチリストの行を起点にする（FR-19）', () => {
+  /** 行の目印の値（`EXCHANGE:CODE`）で行を選ぶ */
+  const rowOf = (symbol) => `[${ROW_MARK}="${symbol}"]`
+
+  /**
+   * 右クリックのあとにメニューを足し、拡張が足すかどうかが決まるまで進める。
+   * 拡張はメニューの出現の監視（MutationObserver）の中で、3行を同期的に足すか、何もせずに抜ける
+   * （SPEC-CS-11 / SPEC-CS-23）。ページの中で1回 `setTimeout` を回せば、その判断は済んでいる。
+   * **`addTickerMenuAsync()` が3行を `await` の前に足すことに依存している。** 足す処理が `await` の後ろへ移ると、
+   * 「何も出ない」を見るテストは、出るべきものが遅れて出る退行を見逃す（同じテストの最後の「国内株の行なら出る」が空振りを防ぐのは、出ない側だけ）
+   */
+  const insertContextMenuAndSettleAsync = async (page) => {
+    await page.evaluate(([mark, html]) => {
+      document.querySelector(`[${mark}]`).insertAdjacentHTML('beforeend', html)
+    }, [OVERLAP_MARK, contextMenuHtml()])
+    await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 0)))
+  }
+
+  /** サイトの役割で Esc を押してメニューを閉じる（拡張の3行もメニューごと消える） */
+  const closeContextMenuAsync = async (page) => {
+    await page.keyboard.press('Escape')
+    await expect(page.locator(`[${MENU_BOX_MARK}]`)).toHaveCount(0)
+  }
+
+  /** 入れ子の項目の文言と href */
+  const submenuItemsAsync = (page) => page.locator('div.ktt-tv-subMenu tr[data-role="menuitem"] a').evaluateAll(
+    (anchors) => anchors.map((a) => ({ text: a.textContent.trim(), href: a.getAttribute('href') })))
+
+  test.beforeEach(async ({ serviceWorker }) => {
+    // 証券会社の項目を出さない（入れ子を情報サイトの項目だけにする）
+    await stubBrokerTabsAsync(serviceWorker, { loggedIn: false })
+  })
+
+  // 3-1: A-13 の1行目（FR-19 判定基準 1・2）
+  test('国内株の行を右クリックすると、チャートの銘柄ではなく行の銘柄で「<コード> を開く」が出る',
+    async ({ page, serveFixture }) => {
+      await openChartPageAsync(page, serveFixture)
+      await rightClickAsync(page, rowOf(`TSE:${ROW_CODE}`))
+      await openContextMenuAsync(page)
+
+      const menu = page.locator(`[${MENU_BOX_MARK}]`)
+      await expect(menu).toContainText(`${ROW_CODE} を開く`)
+      await expect(menu).not.toContainText(`${CHART_CODE} を開く`)
+    })
+
+  // 3-2: A-13 の2行目
+  test('国内株の行から入れ子の項目を押すと、行の銘柄のページが新しいタブで開く',
+    async ({ page, context, extensionId, serviceWorker, serveFixture }) => {
+      await setEnableLinkKeysAsync(context, extensionId, { [ONLY_SITE_KEY]: 0 })
+      const expected = await serviceWorker.evaluate(([key, code]) =>
+        makeUrl(externalUrlsMap[key].url1, code), [ONLY_SITE_KEY, ROW_CODE])
+      await stubTargetAsync(context, expected)
+
+      await openChartPageAsync(page, serveFixture)
+      await rightClickAsync(page, rowOf(`TSE:${ROW_CODE}`))
+      await openContextMenuAsync(page)
+      const item = await openSubmenuAsync(page)
+      const opened = await waitForStubPageAsync(context, () => item.locator('a').click())
+
+      expect(opened.url()).toBe(new URL(expected).href)
+    })
+
+  // 3-3: A-14 の1行目（FR-19 判定基準 6 / FR-07）
+  test('米国株の行では「<ティッカー> を開く」になり、入れ子には米国株に対応した遷移先だけが設定順に並ぶ',
+    async ({ page, context, extensionId, serviceWorker, serveFixture }) => {
+      // 全サイトを定義の逆順で有効にする（定義順と区別して「設定順」を見る）。
+      // TradingView の上では TradingView 自身を出さない（FR-07）
+      const keys = await serviceWorker.evaluate(() => externalUrls.map((entry) => entry.key).reverse())
+      await setEnableLinkKeysAsync(context, extensionId, Object.fromEntries(keys.map((key, index) => [key, index])))
+      const expected = await serviceWorker.evaluate(([order, ticker]) => order
+        .map((key) => externalUrlsMap[key])
+        .filter((entry) => entry.key.indexOf('tradingview.com') !== 0 && entry.url3)
+        .map((entry) => ({ text: `${entry.title}で開く`, href: makeUrl(entry.url3, ticker) })), [keys, 'AAPL'])
+      expect(expected.length).toBeGreaterThan(1)
+
+      await openChartPageAsync(page, serveFixture)
+      await setWatchlistRowsAsync(page, [`TSE:${ROW_CODE}`, 'NASDAQ:AAPL'])
+      await rightClickAsync(page, rowOf('NASDAQ:AAPL'))
+      await openContextMenuAsync(page)
+      await expect(page.locator(`[${MENU_BOX_MARK}]`)).toContainText('AAPL を開く')
+      await openSubmenuAsync(page)
+
+      expect(await submenuItemsAsync(page)).toEqual(expected)
+    })
+
+  // 3-4: A-14 の2行目
+  test('米国株の行から入れ子の項目を押すと、そのティッカーのページが新しいタブで開く',
+    async ({ page, context, extensionId, serviceWorker, serveFixture }) => {
+      await setEnableLinkKeysAsync(context, extensionId, { [ONLY_SITE_KEY]: 0 })
+      const expected = await serviceWorker.evaluate(([key, ticker]) =>
+        makeUrl(externalUrlsMap[key].url3, ticker), [ONLY_SITE_KEY, 'AAPL'])
+      await stubTargetAsync(context, expected)
+
+      await openChartPageAsync(page, serveFixture)
+      await setWatchlistRowsAsync(page, ['NASDAQ:AAPL'])
+      await rightClickAsync(page, rowOf('NASDAQ:AAPL'))
+      await openContextMenuAsync(page)
+      const item = await openSubmenuAsync(page)
+      const opened = await waitForStubPageAsync(context, () => item.locator('a').click())
+
+      expect(opened.url()).toBe(new URL(expected).href)
+    })
+
+  // 3-5〜3-8: A-15 の4行（FR-19 判定基準 7 / FR-08）
+  test('指数・FX・暗号資産・クラス株の行では、拡張の項目を1つも出さず、チャートの銘柄も出さない',
+    async ({ page, serveFixture }) => {
+      const excluded = ['SP:SPX', 'TVC:NI225', 'FX:USDJPY', 'BINANCE:BTCUSDT', 'NYSE:BRK.B', 'NYSE:BRK-B']
+
+      await openChartPageAsync(page, serveFixture)
+      await setWatchlistRowsAsync(page, [...excluded, `TSE:${ROW_CODE}`])
+      const menu = page.locator(`[${MENU_BOX_MARK}]`)
+
+      for (const symbol of excluded) {
+        await rightClickAsync(page, rowOf(symbol))
+        await insertContextMenuAndSettleAsync(page)
+
+        // サイト自身のメニューはそのまま出ている
+        await expect(menu, symbol).toHaveCount(1)
+        await expect(page.locator('tr[data-kabu-tantan]'), symbol).toHaveCount(0)
+        await expect(menu, symbol).not.toContainText('を開く')
+
+        await closeContextMenuAsync(page)
+      }
+
+      // 空振りでないことの担保: 同じページで、国内株の行なら出る
+      await rightClickAsync(page, rowOf(`TSE:${ROW_CODE}`))
+      await openContextMenuAsync(page)
+      await expect(menu).toContainText(`${ROW_CODE} を開く`)
+    })
+
+  // 3-9: A-16 の1行目（FR-19 判定基準 8）
+  test('スクロールで行が作り直されたあとも、右クリックした行の銘柄が出る',
+    async ({ page, serveFixture }) => {
+      await openChartPageAsync(page, serveFixture)
+      await setWatchlistRowsAsync(page, [`TSE:${ROW_CODE}`, 'TSE:6758'])
+      const menu = page.locator(`[${MENU_BOX_MARK}]`)
+
+      await rightClickAsync(page, rowOf(`TSE:${ROW_CODE}`))
+      await openContextMenuAsync(page)
+      await expect(menu).toContainText(`${ROW_CODE} を開く`)
+      await closeContextMenuAsync(page)
+
+      // スクロールで上の行が消え、見えていなかった行が作られる
+      await setWatchlistRowsAsync(page, ['TSE:6758', 'TSE:9984'])
+      await rightClickAsync(page, rowOf('TSE:9984'))
+      await openContextMenuAsync(page)
+
+      await expect(menu).toContainText('9984 を開く')
+      await expect(menu).not.toContainText(`${ROW_CODE} を開く`)
+    })
+
+  // 3-10: A-16 の2行目（FR-19 判定基準 8）
+  test('別のウォッチリストへ切り替えたあとも、切り替え先の行の銘柄が出る（切り替え前の銘柄は出ない）',
+    async ({ page, serveFixture }) => {
+      await openChartPageAsync(page, serveFixture)
+      const menu = page.locator(`[${MENU_BOX_MARK}]`)
+
+      await rightClickAsync(page, rowOf(`TSE:${ROW_CODE}`))
+      await openContextMenuAsync(page)
+      await expect(menu).toContainText(`${ROW_CODE} を開く`)
+      await closeContextMenuAsync(page)
+
+      await setWatchlistRowsAsync(page, ['TSE:4063', 'NASDAQ:MSFT'])
+      await rightClickAsync(page, rowOf('TSE:4063'))
+      await openContextMenuAsync(page)
+
+      await expect(menu).toContainText('4063 を開く')
+      await expect(menu).not.toContainText(`${ROW_CODE} を開く`)
+    })
+
+  // 3-12: SPEC-CS-23「チャート起点を構造的に守る」（行と見なすのは値が EXCHANGE:CODE の形のときだけ）
+  test('チャートの中の要素が行と同じ名前の属性を形でない値で持っていても、チャートの銘柄を出す',
+    async ({ page, serveFixture }) => {
+      await openChartPageAsync(page, serveFixture)
+      const menu = page.locator(`[${MENU_BOX_MARK}]`)
+
+      for (const values of [['main', CHART_CODE], ['nyse:aapl', 'AAPL']]) {
+        await page.evaluate((mark) => document.querySelectorAll(`[${mark}]`).forEach((element) => element.remove()), CHART_ATTR_MARK)
+        await addChartElementWithRowAttrsAsync(page, values)
+
+        await rightClickAsync(page, `[${CHART_ATTR_MARK}]`)
+        await openContextMenuAsync(page)
+
+        await expect(menu, values.join(' / ')).toContainText(`${CHART_CODE} を開く`)
+        await closeContextMenuAsync(page)
+      }
+    })
+
+  // 3-11: A-17 の1行目（FR-04 の非退行）
+  test('ウォッチリストの行を使ったあとでも、チャートの右クリックはチャートの銘柄を出す',
+    async ({ page, serveFixture }) => {
+      await openChartPageAsync(page, serveFixture)
+      const menu = page.locator(`[${MENU_BOX_MARK}]`)
+
+      await rightClickAsync(page, rowOf(`TSE:${ROW_CODE}`))
+      await openContextMenuAsync(page)
+      await closeContextMenuAsync(page)
+
+      await rightClickAsync(page, `[${CHART_MARK}]`)
+      await openContextMenuAsync(page)
+
+      await expect(menu).toContainText(`${CHART_CODE} を開く`)
+      await expect(menu).not.toContainText(`${ROW_CODE} を開く`)
     })
 })

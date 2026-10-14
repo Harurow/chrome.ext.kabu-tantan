@@ -260,7 +260,7 @@ Playwright で拡張機能を実際に Chromium へロードして検証する�
 | `tests/service-worker.spec.mjs` | `getTickerCode` / `compareVersion` / `makeUrl` / `externalUrls` の整合性 |
 | `tests/options.spec.mjs` | オプションページの表示・保存・並び替え・外部リクエスト有無 |
 | `tests/content-script.spec.mjs` | 楽天・SBI へのメニュー注入（フィクスチャ HTML を実オリジンで差し替え） |
-| `tests/tradingview.spec.mjs` | TradingView で拡張が作った DOM（入れ子メニューのクリック範囲・縦位置補正・証券会社の項目が URL を DOM に出さないこと・未知キーの読み飛ばし・「株Link」ボタンの表示と隠れ方・遅れて出たボタンの追随・項目0件のとき・証券会社のタブの有無）と、セレクタからフィクスチャを組み立てる規則。サイト側の実 DOM は見ない（CON-08） |
+| `tests/tradingview.spec.mjs` | TradingView で拡張が作った DOM（ウォッチリストの行の起点（国内株・米国株・対象外の行・行の差し替え後・チャートの非退行）・入れ子メニューのクリック範囲・縦位置補正・証券会社の項目が URL を DOM に出さないこと・未知キーの読み飛ばし・「株Link」ボタンの表示と隠れ方・遅れて出たボタンの追随・項目0件のとき・証券会社のタブの有無）と、セレクタからフィクスチャを組み立てる規則。サイト側の実 DOM は見ない（CON-08） |
 | `tests/disconnected.spec.mjs` | 拡張機能を再読み込みした後に残った古いタブ（切断状態）。TradingView・スクリーナー・楽天証券・SBI証券で、注入しない・例外を出さない・タブを再読み込みすれば戻ること（NFR-14 / 手動確認だった G 節） |
 | `tests/notice.spec.mjs` | 右クリックの項目で開けないときの小窓（文言・設定順の並び・選択文字列を出さないこと・HTML として解釈しないこと・閉じ方・外部リクエストゼロ・大きさへの収まり） |
 | `tests/selector-defs.spec.mjs` | `menuSelectors` の定義・`check:selectors` の中断処理・手がかりの消毒と書式 |
@@ -366,6 +366,9 @@ Service Worker の `chrome.tabs.create` で開いたタブは、**最初の遷�
 
 - **初回インストールのオプションページが、テストのタブを奪うことがある。** オプションページは起動の約 100ms 後に、空のタブを上書きして開く。
   テストのページが先にできていると、そちらが遷移させられる（2026-10-12 に B-1 を25回流して2回落ちて見つかった）。`context` fixture で開き終わるのを待っている
+- **TradingView のフィクスチャのチャートは、ウォッチリストの行の候補属性（`watchlistSymbolAttrs`）を持たない。** そのため、チャート起点を守る分岐
+  （候補属性はあるが値が `EXCHANGE:CODE` の形でない → 行ではない → チャート起点）は、チャートの中に候補属性を足したテストでしか通らない
+  （`addChartElementWithRowAttrsAsync`。2026-10-15 のレビューで、分岐を壊しても 40 件すべて通ることを変異で確かめて見つかった）
 - **ガードを外すと落ちることの確かめは、`src/` を書き換えずに行う。** `src/` の複製に変異を当て、環境変数 `EXTENSION_PATH` でその複製を読み込ませる。
   `src/` を戻し忘れる心配がない
 
