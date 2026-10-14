@@ -86,6 +86,21 @@ test.describe('コミットゲート: 全件のチェックの記録', () => {
     expect(await existsAsync(CHECK_RECORD)).toBe(false)
   })
 
+  test('途中で HEAD だけが動いたら、作業ツリーの中身が同じでも記録しない', async () => {
+    const result = await runRecordedCheckAsync({
+      root,
+      runStepsAsync: async () => {
+        // 中身を変えずに HEAD だけを動かす（ほかのセッションのコミットなど）
+        await gitAsync('commit', '-q', '--allow-empty', '-m', 'during check')
+        return 0
+      },
+      env: {}
+    })
+
+    expect(result).toEqual({ code: 1, recorded: false, reason: 'changed' })
+    expect(await existsAsync(CHECK_RECORD)).toBe(false)
+  })
+
   test('EXTENSION_PATH を指定したときは、作業ツリーの src/ を試していないので記録しない', async () => {
     const result = await runRecordedCheckAsync({ root, runStepsAsync: async () => 0, env: { EXTENSION_PATH: '/tmp/unpacked' } })
 
@@ -190,6 +205,22 @@ test.describe('コミットゲート: npm run approve がチェックを使い�
     const after = await computeChangeHash(root)
     expect(approval.hash).toBe(after.hash)
     expect(approval.hash).not.toBe(before.hash)
+  })
+
+  test('approve が流したチェックのあとで HEAD だけが動いたら、作業ツリーの中身が同じでも承認しない', async () => {
+    const check = passingCheck()
+
+    const result = await approveAsync({
+      root,
+      runCheckAsync: async () => {
+        const code = await check()
+        await gitAsync('commit', '-q', '--allow-empty', '-m', 'after check')
+        return code
+      }
+    })
+
+    expect(result).toEqual({ ok: false, reason: 'not-recorded' })
+    expect(await existsAsync(APPROVAL_FILE)).toBe(false)
   })
 
   test('変更が無ければ、チェックを流さずに止める', async () => {
@@ -322,6 +353,22 @@ test.describe('コミットゲート: 文書だけの変更は文書の検査だ
     const result = await approveAsync({ root, runCheckAsync: passingCheck(), runDocsCheckAsync: async () => 1 })
 
     expect(result).toEqual({ ok: false, reason: 'docs-failed' })
+    expect(await existsAsync(APPROVAL_FILE)).toBe(false)
+  })
+
+  test('文書の検査の途中で HEAD だけが動いたら、作業ツリーの中身が同じでも承認しない', async () => {
+    await writeFile(path.join(root, 'NOTE.md'), 'new\n')
+
+    const result = await approveAsync({
+      root,
+      runCheckAsync: passingCheck(),
+      runDocsCheckAsync: async () => {
+        await gitAsync('commit', '-q', '--allow-empty', '-m', 'during docs check')
+        return 0
+      }
+    })
+
+    expect(result).toEqual({ ok: false, reason: 'docs-changed' })
     expect(await existsAsync(APPROVAL_FILE)).toBe(false)
   })
 
