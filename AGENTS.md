@@ -260,7 +260,7 @@ Playwright で拡張機能を実際に Chromium へロードして検証する�
 | `tests/service-worker.spec.mjs` | `getTickerCode` / `compareVersion` / `makeUrl` / `externalUrls` の整合性 |
 | `tests/options.spec.mjs` | オプションページの表示・保存・並び替え・外部リクエスト有無 |
 | `tests/content-script.spec.mjs` | 楽天・SBI へのメニュー注入（フィクスチャ HTML を実オリジンで差し替え） |
-| `tests/tradingview.spec.mjs` | TradingView で拡張が作った DOM（ウォッチリストの行の起点（国内株・米国株・対象外の行・行の差し替え後・チャートの非退行）・入れ子メニューのクリック範囲・縦位置補正・証券会社の項目が URL を DOM に出さないこと・未知キーの読み飛ばし・「株Link」ボタンの表示と隠れ方・遅れて出たボタンの追随・項目0件のとき・証券会社のタブの有無）と、セレクタからフィクスチャを組み立てる規則。サイト側の実 DOM は見ない（CON-08） |
+| `tests/tradingview.spec.mjs` | TradingView で拡張が作った DOM（ウォッチリストの行の起点（国内株・米国株・対象外の行・行の差し替え後・チャートの非退行）・項目の集合と順序（入れ子とボタン・設定順）・入れ子の開閉と位置（猶予・Esc・外クリック・右端・高さ・キー・0件）・入れ子メニューのクリック範囲・縦位置補正・証券会社の項目が URL を DOM に出さないこと・未知キーの読み飛ばし・「株Link」ボタンの表示と隠れ方・遅れて出たボタンの追随・項目0件のとき・証券会社のタブの有無）と、セレクタからフィクスチャを組み立てる規則。サイト側の実 DOM は見ない（CON-08） |
 | `tests/disconnected.spec.mjs` | 拡張機能を再読み込みした後に残った古いタブ（切断状態）。TradingView・スクリーナー・楽天証券・SBI証券で、注入しない・例外を出さない・タブを再読み込みすれば戻ること（NFR-14 / 手動確認だった G 節） |
 | `tests/notice.spec.mjs` | 右クリックの項目で開けないときの小窓（文言・設定順の並び・選択文字列を出さないこと・HTML として解釈しないこと・閉じ方・外部リクエストゼロ・大きさへの収まり） |
 | `tests/selector-defs.spec.mjs` | `menuSelectors` の定義・`check:selectors` の中断処理・手がかりの消毒と書式 |

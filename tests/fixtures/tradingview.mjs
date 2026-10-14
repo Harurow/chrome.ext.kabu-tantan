@@ -53,11 +53,12 @@ export const MENU_BOX_MARK = 'data-test-menu-box'
  * アイコン列にも幅があるので「文字の外」を押せる。フィクスチャにはサイトの CSS が無く、
  * 素のままでは行が文字と同じ大きさになって**押す場所が作れない**。
  * 数値の妥当性は主張せず、`<a>` の外側に面積があるという条件だけを作る。
+ * 器はウォッチリスト（`z-index: 2`）より上に重ねる（実サイトのメニューもページの部品より上に出る。右端に寄せたメニューで要る）。
  * 当てる先は**拡張自身が付ける属性**（`data-role` / `data-icon-cell`。SPEC-CS-16）で、
  * ハッシュ付きクラス名は使わない
  */
 const MENU_TEST_STYLE = `
-    [${MENU_BOX_MARK}] { position: fixed; left: 24px; top: 80px; }
+    [${MENU_BOX_MARK}] { position: fixed; left: 24px; top: 80px; z-index: 10; }
     [${MENU_BOX_MARK}] table { width: 240px; table-layout: fixed; border-collapse: collapse; }
     [${MENU_BOX_MARK}] td { padding: 0; }
     [${MENU_BOX_MARK}] tr[data-role="menuitem"] { height: 28px; }
@@ -200,6 +201,14 @@ export const tradingViewPageHtml = ({ toolbar = true } = {}) => `<!DOCTYPE html>
        契約4 と同じで、テストはサイトの役割を最小限だけ演じる */
     document.addEventListener('keyup', (e) => {
       if (e.keyCode === 27) {
+        document.querySelectorAll('[${MENU_BOX_MARK}]').forEach((menu) => menu.remove())
+      }
+    })
+    /* サイト側の役割その7: メニューの外を左ボタンで押すとメニューを閉じる（手動確認 A-11 の外クリック）。
+       拡張の入れ子はメニューの DOM の中（受け皿行）に置かれるので、入れ子の上を押しても「外」にはならない。
+       右ボタンには反応させない（右クリックしてからメニューを足す既存のテストの流れを変えないため） */
+    document.addEventListener('mousedown', (e) => {
+      if (e.button === 0 && !e.target.closest('[${MENU_BOX_MARK}]')) {
         document.querySelectorAll('[${MENU_BOX_MARK}]').forEach((menu) => menu.remove())
       }
     })

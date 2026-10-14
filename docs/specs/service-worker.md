@@ -295,7 +295,7 @@ chrome.runtime.onInstalled.addListener((details) => {
 | --- | --- |
 | `auto` | `tests/service-worker.spec.mjs` の describe **`service_worker: 開けない項目を押したときの小窓`**（1.21.0 で追加。下の8件） |
 | `review` | `onClicked` のハンドラが `onContextMenuClickedAsync` そのものであること。手順の順序が上のとおりであること。**差分が `src/tradingview-cs.js` / `src/tradingview-cs.css` / `src/linkMenu.js` / `src/*-cs.js` / `src/urls.js` / `src/style.css` に入っていないこと**（FR-29 判定基準 8。TradingView のメニューと注入メニューの組み立てに触れない） |
-| `auto`（既存） | FR-29 判定基準 8 の退行検知として、既存の `tests/tradingview.spec.mjs` と `tests/content-script.spec.mjs` が全件通ること。**ただし FR-07 判定基準 1〜4（米国株でボタンメニューに出る項目の集合）を直接見るテストは無い**（FR-07 の「確認方法」。自動化は FR-26 の段階 4）。本件はそれらのファイルを変えないので、上の `review` と合わせて退行しないことの根拠にする |
+| `auto`（既存） | FR-29 判定基準 8 の退行検知として、既存の `tests/tradingview.spec.mjs` と `tests/content-script.spec.mjs` が全件通ること。**ただし FR-07 判定基準 1〜4（米国株でボタンメニューに出る項目の集合）を直接見るテストは無い**（FR-07 の「確認方法」。自動化は FR-26 の段階 4）。本件はそれらのファイルを変えないので、上の `review` と合わせて退行しないことの根拠にする。〔2026-10-15〕FR-26 の段階4 で、FR-07 判定基準 1〜4（ボタンと入れ子の項目の集合と順序）を直接見るテストが入った（SPEC-CS-27 の 4-2〜4-7） |
 | `manual` | SPEC-SW-10 の手動確認 M-1（Chrome の右クリックメニューを実際に押す。自動化できないことは 2026-10-11 に確かめた。同節） |
 
 **共通の前処理（`installOpenRecorderAsync(serviceWorker, { realWindows })`）:**

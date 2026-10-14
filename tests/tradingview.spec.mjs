@@ -1112,3 +1112,335 @@ test.describe('TradingView: ウォッチリストの行を起点にする（FR-1
       await expect(menu).not.toContainText(`${ROW_CODE} を開く`)
     })
 })
+
+/**
+ * 段階4: 項目の集合と順序（FR-07 / FR-18 / SPEC-CS-11 / SPEC-CS-12。手動確認 A-7 の1行目・A-7b の6行）。
+ *
+ * 右クリックの入れ子と「株Link」ボタンのメニューは、情報サイトの項目を同じ関数（`makeLinkItemsAsync`）で作る。
+ * 設定は**定義の逆順**で入れ、定義順と区別して「設定順」を見る。証券会社の項目は出さない（`stubBrokerTabsAsync`）
+ */
+test.describe('TradingView: 項目の集合と順序（FR-07 / FR-18）', () => {
+  /** 全サイトを定義の逆順で有効にし、その並びを返す */
+  const enableAllReversedAsync = async (context, extensionId, serviceWorker) => {
+    const keys = await serviceWorker.evaluate(() => externalUrls.map((entry) => entry.key).reverse())
+    await setEnableLinkKeysAsync(context, extensionId, Object.fromEntries(keys.map((key, index) => [key, index])))
+    return keys
+  }
+
+  /**
+   * 設定の並びから、期待する情報サイトの項目を作る（FR-07。TradingView の上では TradingView 自身を出さず、
+   * 米国株では url3 を持つサイトだけにする）
+   */
+  const expectedItemsAsync = (serviceWorker, keys, type, code) => serviceWorker.evaluate(([order, type, code]) => order
+    .map((key) => externalUrlsMap[key])
+    .filter((entry) => entry.key.indexOf('tradingview.com') !== 0 && (type !== 'us' || entry.url3))
+    .map((entry) => ({ text: `${entry.title}で開く`, url: makeUrl(type === 'us' ? entry.url3 : entry.url1, code) })),
+  [keys, type, code])
+
+  /** チャートを右クリックして入れ子を開き、情報サイトの項目（文言と href）を読んで、メニューを閉じる */
+  const readSubmenuFromChartAsync = async (page) => {
+    await rightClickAsync(page, `[${CHART_MARK}]`)
+    await openContextMenuAsync(page)
+    await openSubmenuAsync(page)
+    const items = await page.locator('div.ktt-tv-subMenu tr[data-role="menuitem"] a').evaluateAll(
+      (anchors) => anchors.map((a) => ({ text: a.textContent.trim(), url: a.getAttribute('href') })))
+    await page.keyboard.press('Escape')
+    await expect(page.locator(`[${MENU_BOX_MARK}]`)).toHaveCount(0)
+    return items
+  }
+
+  /** 「株Link」ボタンのメニューの項目名を読んで、メニューを閉じる（キーを押すと閉じる。SPEC-CS-12） */
+  const buttonMenuLabelsAsync = async (page) => {
+    await page.locator(KABU_LINK_BUTTON).click()
+    const items = page.locator(BUTTON_MENU_ITEMS)
+    await expect(items).not.toHaveCount(0)
+    const labels = (await items.allTextContents()).map((label) => label.trim())
+    await page.keyboard.press('Escape')
+    await expect(page.locator('div.ktt-tv-menuBack')).toHaveCount(0)
+    return labels
+  }
+
+  test.beforeEach(async ({ serviceWorker }) => {
+    await stubBrokerTabsAsync(serviceWorker, { loggedIn: false })
+  })
+
+  // 4-2: A-7 の1行目（FR-07 / SPEC-TC-07）
+  test('チャートが米国株なら「<ティッカー> を開く」になり、入れ子には米国株に対応した遷移先だけが設定順に並ぶ',
+    async ({ page, context, extensionId, serviceWorker, serveFixture }) => {
+      const keys = await enableAllReversedAsync(context, extensionId, serviceWorker)
+      const expected = await expectedItemsAsync(serviceWorker, keys, 'us', 'AAPL')
+      expect(expected.length).toBeGreaterThan(1)
+
+      await openChartPageAsync(page, serveFixture)
+      await setChartLabelAsync(page, chartLabel('BATS:AAPL'))
+      await rightClickAsync(page, `[${CHART_MARK}]`)
+      await openContextMenuAsync(page)
+      await expect(page.locator(`[${MENU_BOX_MARK}]`)).toContainText('AAPL を開く')
+      await openSubmenuAsync(page)
+
+      const actual = await page.locator('div.ktt-tv-subMenu tr[data-role="menuitem"] a').evaluateAll(
+        (anchors) => anchors.map((a) => ({ text: a.textContent.trim(), url: a.getAttribute('href') })))
+      expect(actual).toEqual(expected)
+    })
+
+  // 4-3: A-7b の1・2行目（SPEC-CS-12）
+  test('「株Link」ボタンのメニューは、有効にした遷移先をすべて設定順に並べる（国内株）',
+    async ({ page, context, extensionId, serviceWorker, serveFixture }) => {
+      const keys = await enableAllReversedAsync(context, extensionId, serviceWorker)
+      const expected = await expectedItemsAsync(serviceWorker, keys, 'jp', CHART_CODE)
+
+      await openChartPageAsync(page, serveFixture)
+
+      expect(await buttonMenuLabelsAsync(page)).toEqual(expected.map((item) => item.text))
+    })
+
+  // 4-4: A-7b の4行目（FR-07 / SPEC-CS-18）
+  test('「株Link」ボタンのメニューは、米国株では url3 を持つ遷移先だけを設定順に並べる',
+    async ({ page, context, extensionId, serviceWorker, serveFixture }) => {
+      const keys = await enableAllReversedAsync(context, extensionId, serviceWorker)
+      const expected = await expectedItemsAsync(serviceWorker, keys, 'us', 'AAPL')
+
+      await openChartPageAsync(page, serveFixture)
+      await setChartLabelAsync(page, chartLabel('NASDAQ:AAPL'))
+
+      expect(await buttonMenuLabelsAsync(page)).toEqual(expected.map((item) => item.text))
+    })
+
+  // 4-5: A-7b の5行目（FR-07「出るがクリックしても何も開かない項目が 0 件」）
+  test('米国株の「株Link」ボタンのメニューは、どの項目を押してもそのティッカーのページを開く',
+    async ({ page, context, extensionId, serviceWorker, serveFixture }) => {
+      const keys = await enableAllReversedAsync(context, extensionId, serviceWorker)
+      const expected = await expectedItemsAsync(serviceWorker, keys, 'us', 'AAPL')
+      await stubTabsCreateAsync(serviceWorker)
+
+      await openChartPageAsync(page, serveFixture)
+      await setChartLabelAsync(page, chartLabel('NASDAQ:AAPL'))
+
+      for (let index = 0; index < expected.length; index++) {
+        await page.locator(KABU_LINK_BUTTON).click()
+        await page.locator(BUTTON_MENU_ITEMS).nth(index).click()
+        // 項目を押すと背景のクリックとしてメニューが閉じる（SPEC-CS-12）
+        await expect(page.locator('div.ktt-tv-menuBack')).toHaveCount(0)
+        await expect.poll(() => serviceWorker.evaluate(() => self.__openedUrls.length)).toBe(index + 1)
+      }
+
+      expect(await serviceWorker.evaluate(() => self.__openedUrls)).toEqual(expected.map((item) => item.url))
+    })
+
+  // 4-6 / 4-7: A-7b の3・6行目（FR-07 判定基準4）
+  test('「株Link」ボタンのメニューと右クリックの入れ子の遷移先は、国内株でも米国株でも同じ集合・同じ順序',
+    async ({ page, context, extensionId, serviceWorker, serveFixture }) => {
+      await enableAllReversedAsync(context, extensionId, serviceWorker)
+      await openChartPageAsync(page, serveFixture)
+
+      for (const symbol of [`TSE:${CHART_CODE}`, 'NASDAQ:AAPL']) {
+        await setChartLabelAsync(page, chartLabel(symbol))
+        const button = await buttonMenuLabelsAsync(page)
+        const submenu = await readSubmenuFromChartAsync(page)
+
+        expect(button.length, symbol).toBeGreaterThan(1)
+        expect(button, symbol).toEqual(submenu.map((item) => item.text))
+      }
+    })
+})
+
+/**
+ * 段階4: 入れ子メニューの開閉と位置（FR-18 / SPEC-CS-17。手動確認 A-11 の7行）。
+ *
+ * 入れ子は受け皿行の中（メニューの DOM の中）に置かれ、位置だけ `position: fixed` で親メニューの横へ出す。
+ * Esc と外のクリックで閉じるのはサイト側の役割で、フィクスチャが演じる（拡張はリスナを足さない）
+ */
+test.describe('TradingView: 入れ子メニューの開閉と位置（FR-18）', () => {
+  const SUBMENU = 'div.ktt-tv-subMenu'
+
+  /** 入れ子と親行の矩形 */
+  const rectsAsync = (page) => page.evaluate(([submenuSelector, menuMark]) => {
+    const rect = (element) => {
+      const { left, right, top, bottom } = element.getBoundingClientRect()
+      return { left, right, top, bottom }
+    }
+    const menu = document.querySelector(`[${menuMark}]`)
+    return {
+      submenu: rect(document.querySelector(submenuSelector)),
+      menu: rect(menu),
+      parentRow: rect([...menu.querySelectorAll('tr[data-role="menuitem"]')].find((row) => row.textContent.includes('を開く'))),
+      innerWidth: window.innerWidth,
+      innerHeight: window.innerHeight
+    }
+  }, [SUBMENU, MENU_BOX_MARK])
+
+  test.beforeEach(async ({ context, extensionId, serviceWorker }) => {
+    await setEnableLinkKeysAsync(context, extensionId, { [ONLY_SITE_KEY]: 0 })
+    await stubBrokerTabsAsync(serviceWorker, { loggedIn: false })
+  })
+
+  // 4-8: A-11 の斜めの移動（SPEC-CS-17「開閉」。submenuCloseDelayMs の猶予）
+  test('親行から入れ子へ斜めに移る途中や、親行の下端を横切っても、猶予の間に戻れば入れ子は閉じず、両方から離れると閉じる',
+    async ({ page, context, extensionId, serveFixture }) => {
+      // 入れ子を3項目にして縦に伸ばす（入れ子の3つ目へ向かう経路が、入れ子の左端に届く前に親行の下へ出るようにする）
+      await setEnableLinkKeysAsync(context, extensionId,
+        { [ONLY_SITE_KEY]: 0, 'minkabu.jp/stock': 1, 'finance.yahoo.co.jp/': 2 })
+      await openChartPageAsync(page, serveFixture)
+      await rightClickAsync(page, `[${CHART_MARK}]`)
+      await openContextMenuAsync(page)
+      await openSubmenuAsync(page)
+      // 同じ入れ子のまま開いているか（閉じて開き直していないか）を見る印
+      await page.locator(SUBMENU).evaluate((element) => { element.dataset.testSame = 'yes' })
+      const rects = await rectsAsync(page)
+      const parentCenterY = (rects.parentRow.top + rects.parentRow.bottom) / 2
+      const third = await page.locator(`${SUBMENU} tr[data-role="menuitem"]`).nth(2).boundingBox()
+      const thirdCenter = { x: third.x + third.width / 2, y: third.y + third.height / 2 }
+      // 経路が親行の下へ出てから入れ子に入ること（斜めの移動になっていること）を、経路の上で確かめる
+      const startX = rects.parentRow.left + 40
+      const yAtSubmenuLeft = parentCenterY + (thirdCenter.y - parentCenterY) * (rects.submenu.left - startX) / (thirdCenter.x - startX)
+      expect(yAtSubmenuLeft).toBeGreaterThan(rects.parentRow.bottom)
+
+      // 親行の下端を横切って戻る（メニューの箱の外を通る）
+      await page.mouse.move(startX, rects.parentRow.bottom + 6, { steps: 3 })
+      await page.mouse.move(startX, parentCenterY, { steps: 3 })
+      // 親行から入れ子の3つ目へ斜めに移る（途中で親行の下へ出て、入れ子の左端から入る）
+      await page.mouse.move(thirdCenter.x, thirdCenter.y, { steps: 10 })
+
+      await expect(page.locator(`${SUBMENU}[data-test-same="yes"]`)).toHaveCount(1)
+
+      // 両方から離れると、猶予のあとで閉じる
+      await page.mouse.move(rects.innerWidth - 4, rects.innerHeight - 4, { steps: 2 })
+      await expect(page.locator(SUBMENU)).toHaveCount(0)
+      await expect(page.locator(`[${MENU_BOX_MARK}]`)).toHaveCount(1)
+    })
+
+  // 4-9: A-11 の Esc（SPEC-CS-17「閉じる契機」）
+  test('入れ子を開いた状態で Esc を押すと、入れ子と親メニューの両方が閉じる（入れ子だけ残らない）',
+    async ({ page, serveFixture }) => {
+      await openChartPageAsync(page, serveFixture)
+      await rightClickAsync(page, `[${CHART_MARK}]`)
+      await openContextMenuAsync(page)
+      await openSubmenuAsync(page)
+
+      await page.keyboard.press('Escape')
+
+      await expect(page.locator(`[${MENU_BOX_MARK}]`)).toHaveCount(0)
+      await expect(page.locator(SUBMENU)).toHaveCount(0)
+    })
+
+  // 4-10: A-11 の外クリック（SPEC-CS-17「閉じる契機」）
+  test('入れ子を開いた状態でメニューの外を押すと、入れ子と親メニューの両方が閉じる（入れ子だけ残らない）',
+    async ({ page, serveFixture }) => {
+      await openChartPageAsync(page, serveFixture)
+      await rightClickAsync(page, `[${CHART_MARK}]`)
+      await openContextMenuAsync(page)
+      await openSubmenuAsync(page)
+
+      // メニューの外（チャート）で mousedown を起こす。**マウスは動かさない。**
+      // マウスを外へ動かすと、拡張自身の「両方から離れたら閉じる」（submenuCloseDelayMs）が先に働き、
+      // 入れ子がメニューの外に置かれていても消えてしまって、ここで見たいこと（入れ子がメニューの DOM の中にあるので一緒に消える）を見られない
+      await page.locator(`[${CHART_MARK}] canvas`).dispatchEvent('mousedown', { button: 0, bubbles: true })
+
+      await expect(page.locator(`[${MENU_BOX_MARK}]`)).toHaveCount(0)
+      expect(await page.locator(SUBMENU).count()).toBe(0)
+    })
+
+  // 4-11: A-11 の右端（SPEC-CS-17「入れ子の位置」）
+  test('右に出すと画面からはみ出すときは、入れ子を親メニューの左側に開き、項目を押せる',
+    async ({ page, context, serviceWorker, serveFixture }) => {
+      const expected = await serviceWorker.evaluate(([key, code]) =>
+        makeUrl(externalUrlsMap[key].url1, code), [ONLY_SITE_KEY, CHART_CODE])
+      await stubTargetAsync(context, expected)
+
+      await openChartPageAsync(page, serveFixture)
+      const { width } = page.viewportSize()
+      await rightClickAsync(page, `[${CHART_MARK}]`)
+      // 親メニューを画面の右端に寄せる（右に入れ子を出す余地が無い）
+      await openContextMenuAsync(page, { left: width - 250, top: 80 })
+      const item = await openSubmenuAsync(page)
+      const rects = await rectsAsync(page)
+
+      expect(rects.submenu.right).toBeLessThanOrEqual(rects.menu.left + 1)
+      expect(rects.submenu.left).toBeGreaterThanOrEqual(0)
+
+      const opened = await waitForStubPageAsync(context, () => item.locator('a').click())
+      expect(opened.url()).toBe(new URL(expected).href)
+    })
+
+  // 4-12: A-11 の高さ（SPEC-CS-17「入れ子の位置」。画面より高い入れ子は scrollWrap でスクロールさせる）
+  test('画面より高い入れ子は画面内に収まり、中をスクロールすれば最後の項目まで届く',
+    async ({ page, context, extensionId, serveFixture }) => {
+      // 全サイトを有効にして項目を増やし、画面を低くする
+      await setEnableLinkKeysAsync(context, extensionId, null)
+      await page.setViewportSize({ width: 1280, height: 300 })
+
+      await openChartPageAsync(page, serveFixture)
+      await rightClickAsync(page, `[${CHART_MARK}]`)
+      await openContextMenuAsync(page)
+      await openSubmenuAsync(page)
+
+      const measured = await page.locator(SUBMENU).evaluate((submenu) => {
+        const scrollWrap = submenu.firstElementChild
+        const before = submenu.getBoundingClientRect()
+        const last = [...submenu.querySelectorAll('tr[data-role="menuitem"]')].at(-1)
+        scrollWrap.scrollTop = scrollWrap.scrollHeight
+        const { left, right, top, bottom } = last.getBoundingClientRect()
+        const hit = document.elementFromPoint((left + right) / 2, (top + bottom) / 2)
+        return {
+          top: before.top,
+          bottom: before.bottom,
+          innerHeight: window.innerHeight,
+          scrolls: scrollWrap.scrollHeight > scrollWrap.clientHeight,
+          lastReachable: hit !== null && last.contains(hit)
+        }
+      })
+
+      expect(measured.scrolls).toBe(true)
+      expect(measured.top).toBeGreaterThanOrEqual(0)
+      expect(measured.bottom).toBeLessThanOrEqual(measured.innerHeight + 1)
+      expect(measured.lastReachable).toBe(true)
+    })
+
+  // 4-13: A-11 の矢印キー・Enter（FR-18 のスコープ外。壊していないことだけを見る）
+  test('入れ子を開いた状態で矢印キーや Enter を押しても、例外を出さず、ページを開かず、メニューを壊さない',
+    async ({ page, context, serviceWorker, serveFixture }) => {
+      const errors = []
+      page.on('pageerror', (error) => errors.push(error.message))
+      // Service Worker 経由で開いても見えるようにする
+      await stubTabsCreateAsync(serviceWorker)
+      await openChartPageAsync(page, serveFixture)
+      await rightClickAsync(page, `[${CHART_MARK}]`)
+      await openContextMenuAsync(page)
+      await openSubmenuAsync(page)
+      const pagesBefore = context.pages().length
+
+      for (const key of ['ArrowDown', 'ArrowUp', 'ArrowRight', 'ArrowLeft', 'Enter']) {
+        await page.keyboard.press(key)
+      }
+      await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 0)))
+
+      expect(errors).toEqual([])
+      expect(context.pages().length).toBe(pagesBefore)
+      expect(await serviceWorker.evaluate(() => self.__openedUrls)).toEqual([])
+      await expect(page.locator('tr[data-kabu-tantan]')).toHaveCount(1)
+      await expect(page.locator(`[${MENU_BOX_MARK}]`)).toContainText(`${CHART_CODE} を開く`)
+    })
+
+  // 4-14: A-11 の全サイト無効（SPEC-CS-24 手順5。足した3行は取り除き、TradingView のメニューを素のまま残す）
+  test('遷移先が1つも無く証券会社のタブも無ければ、区切り線も「<コード> を開く」も残さない',
+    async ({ page, context, extensionId, serveFixture }) => {
+      await setEnableLinkKeysAsync(context, extensionId, {})
+
+      await openChartPageAsync(page, serveFixture)
+      await rightClickAsync(page, `[${CHART_MARK}]`)
+      // 3行はメニューの出現の監視（MutationObserver。通知はマイクロタスク）の中で同期的に足され、
+      // 取り除くのは Service Worker から遷移先を読んだあと（SPEC-CS-24 手順5）。
+      // マイクロタスクを1回待って足されたことを数えてから、取り除かれるのを待つ（空振りを防ぐ）
+      const added = await page.evaluate(async ([mark, html]) => {
+        document.querySelector(`[${mark}]`).insertAdjacentHTML('beforeend', html)
+        await Promise.resolve()
+        return document.querySelectorAll('tr[data-kabu-tantan]').length
+      }, [OVERLAP_MARK, contextMenuHtml()])
+      expect(added).toBe(1)
+
+      await expect(page.locator('tr[data-kabu-tantan]')).toHaveCount(0)
+      await expect(page.locator(`[${MENU_BOX_MARK}]`)).toHaveCount(1)
+      await expect(page.locator(`[${MENU_BOX_MARK}]`)).not.toContainText('を開く')
+      await expect(page.locator(`[${MENU_BOX_MARK}] tr`)).toHaveCount(0)
+    })
+})
