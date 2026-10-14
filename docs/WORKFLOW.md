@@ -198,7 +198,10 @@ HEAD も比べることで、**承認は1回のコミットで使い切られ**�
   終わりの行が見つかったものだけ（取り除き過ぎると、承認の無い `git commit` を隠して通してしまう）。引用符の中の `<` `>` はリダイレクトとして読まない
 - **`git commit` 以外でコミットを作るコマンド（`merge`・`cherry-pick`・`revert`・`rebase`・`am`、その `--skip`、`npm version`）は、承認があっても止める**（2026-10-15 利用者判断）。
   作る中身を前もって承認した中身と比べられないため（承認した変更を含まないマージコミットが作れた）。`--skip` も、残りの手順を続けてコミットを作る
-- 途中で止まった `merge` などを続ける `--continue` だけは、`git commit` と同じく index の中身を承認した中身と比べて通す（引数は `--continue` だけ。`GIT_EDITOR=true` の前置きは置ける）。
+- 途中で止まった `merge` などを続ける `--continue` だけは、`git commit` と同じく index の中身を承認した中身と比べて通す（引数は `--continue` だけ）。
+  形は `git add -A && GIT_EDITOR=true git merge --continue`。`merge`・`rebase` の `--continue` はメッセージのエディタを開き、端末の無い Bash では待ったまま止まるか、すぐ失敗する（出力の先による）
+  （エディタの設定を外した一時リポジトリで確かめた。`cherry-pick`・`revert`・`am` は開かなかった。`--no-edit` は `--continue` と一緒に書けない。git 2.54）。
+  Claude Code の Bash にはもともと `GIT_EDITOR=true` が入っていたが、それに頼らず前置きする。`GIT_EDITOR=true` はコミットを作るセグメント（`git merge --continue`）の前置きなので、前に置くコマンドの `GIT_` の代入の守りには掛からない。
   ただし、今のものの後に手順が残っていれば止める（同じ呼び出しの中で、確かめていないコミットが続けて作られるため）。
   残りは、cherry-pick / revert は `sequencer/todo`、rebase は `rebase-merge/git-rebase-todo`、am と rebase の apply は `rebase-apply/next`・`last` から数える（git 2.54 で確かめた）
 - `git pull` はマージやリベースのコミットを作りうるので止める。`--ff-only`（早送りだけ。`--ff` / `--no-ff` とは後に書いた方が勝つ）と `--dry-run` だけ通す。

@@ -123,7 +123,7 @@ git push
 
 - **承認は変更内容のハッシュに紐づく。** 承認後にファイルを1文字でも変えると無効になり、
   レビューからやり直しになる
-- `merge`・`cherry-pick`・`revert`・`rebase`・`am`・`git pull`（`--ff-only` か `--dry-run` 以外）は、承認があっても止まる（途中で止まったものの `--continue` は `git commit` と同じく確かめる）。要るときは利用者に相談する
+- `merge`・`cherry-pick`・`revert`・`rebase`・`am`・`git pull`（`--ff-only` か `--dry-run` 以外）は、承認があっても止まる（途中で止まったものの `--continue` は `git commit` と同じく確かめる。`git add -A && GIT_EDITOR=true git merge --continue` の形で）。要るときは利用者に相談する
 - `reviewer` の確認を取らずに `npm run approve` を実行しないこと。
   ゲートは通っても、それは工程を飛ばしたことになる
 - レビューと承認が通ったら、**利用者に確認せずにコミットして push する**（`AGENTS.md`「修正したら…」）。

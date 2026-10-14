@@ -541,7 +541,8 @@ if (unchecked?.hit === 'git pull') {
 if (unchecked) {
   deny(`コミットがブロックされました（検出: ${what}）: git commit 以外でコミットを作るコマンド（merge・cherry-pick・revert・rebase・am と、その --skip、npm version など）は、
 作る中身を前もって承認した中身と比べられないので、承認があっても止めます。
-途中で止まった merge などを続けるなら、git add -A && git merge --continue のように --continue だけを付けて実行してください（git commit と同じく確かめます）。
+途中で止まった merge などを続けるなら、git add -A && GIT_EDITOR=true git merge --continue のように --continue だけを付けて実行してください（git commit と同じく確かめます。
+GIT_EDITOR=true は、merge・rebase の --continue がメッセージのエディタを開いて、端末の無い Bash で止まらないようにするため。--no-edit は --continue と一緒に書けません）。
 それ以外が要るときは、利用者に相談してください。`)
 }
 if (found.length > 1) {

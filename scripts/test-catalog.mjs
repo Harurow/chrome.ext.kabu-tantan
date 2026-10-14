@@ -76,7 +76,7 @@ const FILE_INFO = {
     detail: 'ブラウザを起動せず、一時の git リポジトリで承認を記録し、フック（.claude/hooks/commit-gate.mjs）に Bash の呼び出しを渡して、' +
       'コミットされる中身（index）が承認した作業ツリーの中身と同じときだけ通すことを検証する。' +
       '一部だけのステージ・パスの指定・git commit -a と未追跡のファイル・前に置くコマンド（set・GIT_ の代入を含む）・シェル経由・ヒアドキュメント・引用符とリダイレクト、' +
-      'commit 以外でコミットを作るコマンド（merge などと --skip・git pull）を止めること、--continue の中身と残りの手順（cherry-pick・revert・rebase・am を実際に衝突させる）を見る。',
+      'commit 以外でコミットを作るコマンド（merge などと --skip・git pull）を止めること、--continue の中身と残りの手順（cherry-pick・revert・rebase・am を実際に衝突させる）、止めたときに案内する --continue の形が端末もエディタの設定も無い状態でコミットまで終わることを見る。',
     specs: 'docs/WORKFLOW.md「コミットされる中身を確かめる」'
   }
 }

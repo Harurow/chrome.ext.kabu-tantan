@@ -61,6 +61,26 @@ const divergeAsync = async () => {
   return main
 }
 
+/**
+ * 端末が無く、エディタの設定（GIT_EDITOR / EDITOR / VISUAL）も無い状態で、bash にコマンドを流す。
+ * エディタを待って止まったら、プロセスグループごと止めて失敗にする
+ */
+const runWithoutTerminalAsync = (command) => new Promise((resolve, reject) => {
+  const env = { ...process.env }
+  for (const name of ['GIT_EDITOR', 'EDITOR', 'VISUAL']) delete env[name]
+  const child = spawn('bash', ['-c', command], { cwd: root, env, stdio: 'ignore', detached: true })
+  const timer = setTimeout(() => {
+    try {
+      process.kill(-child.pid, 'SIGKILL')
+    } catch {
+      // ちょうど終わっていた
+    }
+    reject(new Error(`端末の無い状態で 10 秒たっても終わらない（エディタを待っている）: ${command}`))
+  }, 10_000)
+  child.on('error', reject)
+  child.on('close', (code) => { clearTimeout(timer); resolve(code) })
+})
+
 /** フックに Bash の呼び出しを渡し、止めたかどうかと理由を返す */
 const gate = (command) => new Promise((resolve, reject) => {
   const child = spawn(process.execPath, [HOOK], { env: { ...process.env, CLAUDE_PROJECT_DIR: root } })
@@ -80,6 +100,9 @@ test.beforeEach(async () => {
   await gitAsync('init', '-q')
   await gitAsync('config', 'user.email', 'test@example.invalid')
   await gitAsync('config', 'user.name', 'test')
+  // テストの中で bash から git を直接動かすときも、利用者の署名やフックの設定を使わない
+  await gitAsync('config', 'commit.gpgsign', 'false')
+  await gitAsync('config', 'core.hooksPath', '/dev/null')
   // 本物と同じ .gitignore（記録と承認のファイルは無視される）
   await write('.gitignore', await readFile(path.join(repoRoot, '.gitignore')))
   await write('a.txt', 'base\n')
@@ -330,7 +353,7 @@ test.describe('コミットゲート: コミットされる中身を確かめる
 
     // index には解決していない a.txt がある
     expect((await gate('git merge --continue')).denied).toBe(true)
-    expect((await gate('git add -A && git merge --continue')).denied).toBe(false)
+    expect((await gate('git add -A && GIT_EDITOR=true git merge --continue')).denied).toBe(false)
 
     // index にはテストしていない中身、作業ツリーにはテストした中身がある
     await write('a.txt', 'staged but not tested\n')
@@ -340,6 +363,38 @@ test.describe('コミットゲート: コミットされる中身を確かめる
 
     await gitAsync('add', '-A')
     expect((await gate('GIT_EDITOR=true git merge --continue')).denied).toBe(false)
+  })
+
+  test('止めたときに案内する --continue の形は、ゲートを通り、端末もエディタの設定も無い状態でエディタを待たずにコミットまで終わる', async () => {
+    const recommended = 'git add -A && GIT_EDITOR=true git merge --continue'
+    const main = await divergeAsync()
+
+    // merge と rebase の --continue は、エディタを開く（cherry-pick・revert・am は開かない。git 2.54）
+    const cases = [
+      // 件名は、既定のブランチ名が master / main 以外だと後ろに " into <名前>" が付く
+      { command: recommended, start: () => gitMayFailAsync('merge', '-q', 'other'), subject: /^Merge branch 'other'/ },
+      {
+        command: recommended.replace('merge', 'rebase'),
+        start: async () => {
+          await gitAsync('reset', '-q', '--hard', 'HEAD~1') // merge を取り消す
+          await gitAsync('checkout', '-q', 'other')
+          await gitAsync('reset', '-q', '--hard', 'HEAD~2') // 手順を o1 だけにする
+          await gitMayFailAsync('rebase', main)
+        },
+        subject: /^o1$/
+      }
+    ]
+    for (const { command, start, subject } of cases) {
+      await start()
+      await write('a.txt', 'resolved\n')
+      await approve()
+
+      expect((await gate('git merge other')).reason, command).toContain(recommended)
+      expect((await gate(command)).denied, command).toBe(false)
+      expect(await runWithoutTerminalAsync(command), command).toBe(0)
+      expect((await gitAsync('status', '--porcelain')).stdout, command).toBe('')
+      expect((await gitAsync('log', '-1', '--format=%s')).stdout.trim(), command).toMatch(subject)
+    }
   })
 
   test('cherry-pick の --continue は、続きの手順が残っていれば止め、残っていなければ通す', async () => {
