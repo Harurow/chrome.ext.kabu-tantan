@@ -62,12 +62,14 @@ const divergeAsync = async () => {
 }
 
 /**
- * 端末が無く、エディタの設定（GIT_EDITOR / EDITOR / VISUAL）も無い状態で、bash にコマンドを流す。
- * エディタを待って止まったら、プロセスグループごと止めて失敗にする
+ * 端末が無く、エディタの設定（GIT_EDITOR / EDITOR / VISUAL と、利用者・システムの git の設定の core.editor など）も無い状態で、
+ * bash にコマンドを流す。エディタを待って止まったら、プロセスグループごと止めて失敗にする
+ * （利用者の設定に core.editor = true があると、エディタを開く形でも通ってしまい、検出できない）
  */
 const runWithoutTerminalAsync = (command) => new Promise((resolve, reject) => {
-  const env = { ...process.env }
-  for (const name of ['GIT_EDITOR', 'EDITOR', 'VISUAL']) delete env[name]
+  const env = { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' }
+  // 環境変数で渡す git の設定（GIT_CONFIG_COUNT / GIT_CONFIG_PARAMETERS）でも core.editor を差し込めるので消す
+  for (const name of ['GIT_EDITOR', 'EDITOR', 'VISUAL', 'GIT_CONFIG_PARAMETERS', 'GIT_CONFIG_COUNT']) delete env[name]
   const child = spawn('bash', ['-c', command], { cwd: root, env, stdio: 'ignore', detached: true })
   const timer = setTimeout(() => {
     try {
