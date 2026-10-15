@@ -12,6 +12,7 @@
 import { test, expect } from './fixtures/extension.mjs'
 import { domFromSelector, parseCompound, parseSelectorChain } from './fixtures/selector-dom.mjs'
 import { loadMenuSelectors, evaluateScripts } from '../scripts/selector-check/load-selectors.mjs'
+import { measureSubmenuGapAsync } from '../scripts/selector-check/check.mjs'
 import {
   TRADINGVIEW_URL,
   CHART_CODE,
@@ -82,10 +83,17 @@ test.describe('セレクタから DOM を組み立てる', () => {
   })
 
   // 変換できないセレクタが `menuSelectors` に入ったら、フィクスチャを黙って空振りさせずに落とす
-  test('TradingView の検出用セレクタ4つはすべて DOM に直せる', () => {
+  test('TradingView の検出用セレクタはウォッチリストの行を除いてすべて DOM に直せる', () => {
     const entries = loadMenuSelectors('src/tradingview-cs.js')
-    expect(entries).toHaveLength(4)
+    expect(entries).toHaveLength(5)
     for (const entry of entries) {
+      if (entry.key === 'watchlist-row') {
+        // 行のフィクスチャはセレクタからではなく属性の候補（watchlistSymbolAttrs）から作る。
+        // セレクタは同じ候補から組み立てた OR（カンマ区切り）で、それ以外の値になっていないことだけを見る
+        const attrs = evaluateScripts(['src/tradingview-cs.js'], 'watchlistSymbolAttrs')
+        expect(entry.selector).toBe(attrs.map((attr) => `[${attr}]`).join(','))
+        continue
+      }
       expect(() => domFromSelector(entry.selector), entry.key).not.toThrow()
     }
   })
@@ -1444,6 +1452,45 @@ test.describe('TradingView: 入れ子メニューの開閉と位置（FR-18）',
       await expect(page.locator(`[${MENU_BOX_MARK}]`)).toHaveCount(1)
       await expect(page.locator(`[${MENU_BOX_MARK}]`)).not.toContainText('を開く')
       await expect(page.locator(`[${MENU_BOX_MARK}] tr`)).toHaveCount(0)
+    })
+
+  /**
+   * 半自動検証（`npm run check:selectors`）が入れ子を開かずに測る隙間が、入れ子を実際に置く位置（`positionSubmenu()`）と合っていること（SPEC-SC-11）。
+   * 外枠の、入れ子が開く側にだけ余白を付け（反対側は 0。片側だけを測る作りを落とすため）、入れ子を開く前に測った値と、
+   * 開いた入れ子と親行の実際の隙間を比べる。測り方が置き方からずれると、実サイトで「0px」と出ても根拠にならない
+   * @param {'right' | 'left'} side 入れ子が開く側
+   */
+  const expectMeasuredGapMatchesAsync = async (page, serveFixture, side) => {
+    await openChartPageAsync(page, serveFixture)
+    const { width } = page.viewportSize()
+    await rightClickAsync(page, `[${CHART_MARK}]`)
+    // 左に開かせるときは、4-11 と同じく親メニューを画面の右端に寄せる
+    await openContextMenuAsync(page, side === 'right' ? { left: 200, top: 80 } : { left: width - 250, top: 80 })
+    await page.evaluate(([mark, property]) => {
+      document.querySelector(`[${mark}]`).style[property] = '7px'
+    }, [MENU_BOX_MARK, side === 'right' ? 'paddingRight' : 'paddingLeft'])
+
+    const { gap } = await measureSubmenuGapAsync(page.mainFrame(), 'tr[data-kabu-tantan]',
+      evaluateScripts(['src/tradingview-cs.js'], 'contextMenuBoxSelector'))
+
+    await openSubmenuAsync(page)
+    const rects = await rectsAsync(page)
+    const actual = side === 'right'
+      ? rects.submenu.left - rects.parentRow.right
+      : rects.parentRow.left - rects.submenu.right
+    // 余白が実際に隙間になっている（空振りを防ぐ）
+    expect(actual).toBeGreaterThan(6)
+    expect(gap).toBeCloseTo(actual, 0)
+  }
+
+  test('半自動検証が測る入れ子の隙間は、入れ子が右に開くときの実際の隙間と一致する',
+    async ({ page, serveFixture }) => {
+      await expectMeasuredGapMatchesAsync(page, serveFixture, 'right')
+    })
+
+  test('半自動検証が測る入れ子の隙間は、入れ子が左に開くときの実際の隙間と一致する',
+    async ({ page, serveFixture }) => {
+      await expectMeasuredGapMatchesAsync(page, serveFixture, 'left')
     })
 })
 

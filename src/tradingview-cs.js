@@ -40,7 +40,7 @@ const chartWrapperSelector = 'div.chart-gui-wrapper'
  */
 const watchlistSymbolAttrs = ['data-symbol-full', 'data-symbol-short']
 
-/** 行の目印セレクタ。属性名を直書きせず候補配列から組み立てる */
+/** 行の目印セレクタ。属性名を直書きせず候補配列から組み立てる(menuSelectors の `watchlist-row` に載せ、`selectorOf()` で引く) */
 const watchlistRowSelector = watchlistSymbolAttrs.map((attr) => `[${attr}]`).join(',')
 
 /**
@@ -150,7 +150,7 @@ const resolveContextMenuOrigin = (target) => {
  *   形はあって解釈できなければ code/type ともに null(捨てる)
  */
 const findRowTickerCode = (target) => {
-  let element = $(target).closest(watchlistRowSelector)[0]
+  let element = $(target).closest(selectorOf('watchlist-row'))[0]
   if (!element) {
     return null
   }
@@ -175,7 +175,7 @@ const findRowTickerCode = (target) => {
       }
     }
     const parent = element.parentElement
-    element = parent ? $(parent).closest(watchlistRowSelector)[0] : undefined
+    element = parent ? $(parent).closest(selectorOf('watchlist-row'))[0] : undefined
   }
 
   return shaped ? { code: null, type: null } : null
@@ -1063,6 +1063,13 @@ const menuSelectors = [
     key: 'context-menu',
     title: '右クリックメニュー',
     selector: 'div.context-menu table'
+  },
+  {
+    // 属性名は直書きせず、候補配列から組み立てた値をそのまま載せる(変えるのは watchlistSymbolAttrs だけでよい)。
+    // 実サイトの行が今も候補属性を持つかを `npm run check:selectors` に数えさせるために載せている(FR-27 判定基準1)
+    key: 'watchlist-row',
+    title: 'ウォッチリストの行',
+    selector: watchlistRowSelector
   }
 ]
 

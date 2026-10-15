@@ -10,9 +10,9 @@ import { spawn } from 'node:child_process'
 import { test, expect } from '@playwright/test'
 import { lint } from 'markdownlint-cli2/markdownlint/promise'
 import jsoncParse from 'markdownlint-cli2/parsers/jsonc'
-import { loadMenuSelectors, indexByKey, resolveSite, rootDir } from '../scripts/selector-check/load-selectors.mjs'
+import { loadMenuSelectors, indexByKey, resolveSite, rootDir, evaluateScripts } from '../scripts/selector-check/load-selectors.mjs'
 import { sites, RAKUTEN_ORIGIN } from '../scripts/selector-check/targets.mjs'
-import { checkTargetAsync, createSkippedResult, OK, BROKEN, UNREACHED, SKIPPED, EXCLUDED } from '../scripts/selector-check/check.mjs'
+import { checkTargetAsync, createSkippedResult, describeSubmenuGap, OK, BROKEN, UNREACHED, SKIPPED, EXCLUDED } from '../scripts/selector-check/check.mjs'
 import {
   planPrefixTracking,
   summarizeTracking,
@@ -45,7 +45,7 @@ const EXPECTED_COUNTS = {
   'src/rakuten-scr-cs.js': 1,
   'src/sbi-cs.js': 2,
   'src/sbi-scr-cs.js': 1,
-  'src/tradingview-cs.js': 4
+  'src/tradingview-cs.js': 5
 }
 
 test.describe('セレクタ定義', () => {
@@ -105,6 +105,7 @@ test.describe('セレクタ定義', () => {
     'tradingview/chart-canvas': '識別セレクタは「チャート画面が描画されたか」を見る別系統（ハッシュ付きクラスを祖先に使わない）',
     'tradingview/toolbar-container': '同上',
     'tradingview/overlap-root': '同上',
+    'tradingview/watchlist-row': '同上（行の属性はチャート画面のどこにあってもよく、祖先を決めていない。SPEC-CS-23）',
     'tradingview/context-menu': '右クリックで生成されるオーバーレイ層が識別。検出用はその中の別ツリー'
   }
 
@@ -263,6 +264,12 @@ test.describe('セレクタ定義', () => {
 
     // フォーム送信は形を問わず現れない
     for (const forbidden of ['.submit(', 'requestSubmit']) {
+      expect(source, `${file}: ${forbidden} は書けない`).not.toContain(forbidden)
+    }
+
+    // マウスを乗せる・動かす操作も持たない（CON-10 の許容表に無い）。
+    // 入れ子の隙間は入れ子を開かずに測る（SPEC-SC-11）ので、要らない
+    for (const forbidden of ['.hover(', 'mouse.move(']) {
       expect(source, `${file}: ${forbidden} は書けない`).not.toContain(forbidden)
     }
   })
@@ -790,6 +797,138 @@ test.describe('手がかり', () => {
     expect(result.notes).toContain(TRACKING_UNAVAILABLE)
     // ⚠️ の対象はページ識別セレクタを追う (SPEC-SC-21)
     expect(result.diagnostics.tracking.source).toBe('ページ識別セレクタ')
+  })
+})
+
+/**
+ * TradingView で、セレクタの件数のほかに見るもの（SPEC-SC-11）。
+ *
+ * - ウォッチリストの行: 実サイトの行が今も `watchlistSymbolAttrs` の属性を持つかを件数で見る。
+ *   行は右クリックしない（CON-10 の許容表に無い）ので、拡張が足すものは無く、注入は数えない
+ * - 入れ子の隙間: 親行と入れ子のあいだに隙間があると、猶予より長くかけて越えたときに入れ子が閉じる。
+ *   入れ子は親メニューの外枠の端に置くので、入れ子を開かずに外枠と親行の端の差で測れる
+ *
+ * ブラウザは起動しない。`checkTargetAsync()` に Frame を模したスタブを渡す。
+ */
+test.describe('TradingView の行と入れ子の隙間', () => {
+  const SOURCE = 'src/tradingview-cs.js'
+  const tradingViewSite = () => sites.find((item) => item.site === 'tradingview')
+  const targetOf = (key) => resolveSite(tradingViewSite()).find((item) => item.target.key === key)
+  const delayMs = evaluateScripts([SOURCE], 'submenuCloseDelayMs')
+
+  /**
+   * Frame のスタブ。`evaluate(fn, arg)` を引数の形で分岐し、渡された引数を記録する。
+   * - 文字列 → セレクタの件数
+   * - `{ marker, box }` → 入れ子の隙間の測定
+   * - それ以外のオブジェクト → 手がかりの採取（題名など）
+   * @param { { hits: Record<string, number>, gap?: number | null, gapError?: string } } stub
+   */
+  const stubFrame = ({ hits, gap = null, gapError }) => {
+    const calls = []
+    return {
+      calls,
+      evaluate: async (_fn, arg) => {
+        calls.push(arg)
+        if (arg && typeof arg === 'object' && 'marker' in arg) {
+          if (gapError) throw new Error(gapError)
+          return { gap }
+        }
+        if (arg && typeof arg === 'object') {
+          return { title: '', headings: [], containers: [] }
+        }
+        return { count: hits[arg] ?? 0 }
+      }
+    }
+  }
+
+  /** TradingView の1対象を、リポジトリの実データ（targets.mjs + menuSelectors）のまま検証に流す */
+  const runTargetAsync = async (key, stub) => {
+    const { target, entry } = targetOf(key)
+    const frame = stubFrame(stub)
+    const runner = {
+      page: { waitForTimeout: async () => {} },
+      lastFrame: frame,
+      session: ''
+    }
+    // チャートの対象を渡さないので右クリックはしない（開けなかった旨の備考が1行付くだけ）
+    const result = await checkTargetAsync(runner, tradingViewSite(), target, entry, new Map())
+    return { target, entry, frame, result }
+  }
+
+  test('隙間の備考は 1px 未満を 0px に丸め、それ以上は要確認として猶予と並べる', () => {
+    const zero = '入れ子の隙間は 0px（親行から入れ子へ途切れずに移れる）'
+    for (const gap of [0, 0.4, -3]) {
+      expect(describeSubmenuGap(gap, 150), String(gap)).toBe(zero)
+    }
+    expect(describeSubmenuGap(0.6, 150)).toBe('要確認: 入れ子の隙間が 1px ある。猶予 150ms より長くかけて越えると入れ子が閉じる')
+    expect(describeSubmenuGap(12, 300)).toBe('要確認: 入れ子の隙間が 12px ある。猶予 300ms より長くかけて越えると入れ子が閉じる')
+    expect(describeSubmenuGap(null, 150)).toBe('入れ子の隙間を測れなかった（拡張の親行か外枠が見つからない）')
+  })
+
+  test('ウォッチリストの行は件数だけを見て、注入は数えない', async () => {
+    const { target, entry, frame, result } = await runTargetAsync('watchlist-row', {
+      hits: { [targetOf('watchlist-row').target.pageSelectors[0]]: 1, [targetOf('watchlist-row').entry.selector]: 18 }
+    })
+
+    expect(entry.selector).toBe(evaluateScripts([SOURCE], 'watchlistRowSelector'))
+    expect(target.action).toBeUndefined()
+    expect(result.status).toBe(OK)
+    expect(result.hits).toBe(18)
+    // 0 件と書くと注入の失敗に読めるので、数えずに `—` にする
+    expect(result.injectedHits).toBeNull()
+    expect(result.notes.join('\n')).not.toContain('注入が 0 件')
+    // サイト単位の注入先（ボタンのメニュー）を数えにいかない
+    expect(frame.calls).not.toContain(tradingViewSite().injected)
+  })
+
+  test('ウォッチリストの行が 0 件なら破損になる', async () => {
+    const { result } = await runTargetAsync('watchlist-row', {
+      hits: { [targetOf('watchlist-row').target.pageSelectors[0]]: 1 }
+    })
+
+    expect(result.status).toBe(BROKEN)
+    expect(result.hits).toBe(0)
+    expect(result.injectedHits).toBeNull()
+  })
+
+  /** 右クリックメニューの対象で、識別・検出・注入がそろって 1 件の状態 */
+  const menuHits = () => {
+    const { target, entry } = targetOf('context-menu')
+    return { [target.pageSelectors[0]]: 1, [entry.selector]: 1, [target.injected]: 3 }
+  }
+
+  test('右クリックメニューの対象で、拡張の区切り行と src の外枠を使って隙間を測る', async () => {
+    const { target, frame, result } = await runTargetAsync('context-menu', { hits: menuHits(), gap: 0 })
+
+    expect(result.status).toBe(OK)
+    expect(result.notes).toContain('入れ子の隙間は 0px（親行から入れ子へ途切れずに移れる）')
+    // 外枠のセレクタは書き写さず src から読む (NFR-13)
+    expect(frame.calls).toContainEqual({ marker: target.injected, box: evaluateScripts([SOURCE], 'contextMenuBoxSelector') })
+  })
+
+  test('隙間があれば要確認の備考を付けるが、判定は変えない', async () => {
+    const { result } = await runTargetAsync('context-menu', { hits: menuHits(), gap: 6 })
+
+    expect(result.status).toBe(OK)
+    expect(result.notes).toContain(`要確認: 入れ子の隙間が 6px ある。猶予 ${delayMs}ms より長くかけて越えると入れ子が閉じる`)
+  })
+
+  test('隙間を測れなくても、セレクタの破損にはしない', async () => {
+    const missing = await runTargetAsync('context-menu', { hits: menuHits(), gap: null })
+    expect(missing.result.status).toBe(OK)
+    expect(missing.result.notes).toContain('入れ子の隙間を測れなかった（拡張の親行か外枠が見つからない）')
+
+    // 測定の例外は評価の例外（❌ と「セレクタの評価に失敗した」）に混ぜない
+    const thrown = await runTargetAsync('context-menu', { hits: menuHits(), gapError: 'boom' })
+    expect(thrown.result.status).toBe(OK)
+    expect(thrown.result.reason).toBe('')
+    expect(thrown.result.notes).toContain('入れ子の隙間を測れなかった: boom')
+  })
+
+  test('隙間を測るのは右クリックメニューの対象だけ', async () => {
+    for (const { target } of resolveSite(tradingViewSite())) {
+      expect(target.extra === 'tv-submenu-gap', target.key).toBe(target.key === 'context-menu')
+    }
   })
 })
 

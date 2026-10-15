@@ -1,12 +1,13 @@
 /**
  * 1対象の検証と判定・再分類 (SPEC-SC-09, 10, 11, 24)。
  *
- * ここが持ってよいのは「件数・判定・例外メッセージ」だけ。
+ * ここが持ってよいのは「件数・判定・例外メッセージ」と、拡張が足した行の位置の差（px）だけ。
  * ページ本文・URL・認証情報は**記録しない** (SPEC-SC-14 / NFR-12)。
  * 到達のために組み立て URL を一時的に扱うが、結果ファイルにも標準出力にも出さない。
  */
 
 import { collectFactsAsync, attachTrackingAsync, decideReach, sanitize } from './diagnostics.mjs'
+import { evaluateScripts } from './load-selectors.mjs'
 
 // 消毒（URL を潰し 120 文字で切る）の実装は diagnostics.mjs にある。
 // 手がかりの整形と同じ関数を通す必要があるため、ここからは再輸出だけを行う (SPEC-SC-14)
@@ -186,6 +187,60 @@ const openContextMenuAsync = async (page, frame, chartSelector) => {
 }
 
 /**
+ * 入れ子の隙間を備考の1行にする (SPEC-SC-11)。
+ *
+ * 1px に満たない差は描画の端数として 0px に丸める。
+ * @param { number | null } gap 親メニューの外枠の端と親行の端の差（px）。測れなければ null
+ * @param { number } delayMs 入れ子が閉じるまでの猶予（`src/tradingview-cs.js` の `submenuCloseDelayMs`）
+ */
+export const describeSubmenuGap = (gap, delayMs) => {
+  if (gap === null) {
+    return '入れ子の隙間を測れなかった（拡張の親行か外枠が見つからない）'
+  }
+  const px = Math.max(0, Math.round(gap))
+  if (px === 0) {
+    return '入れ子の隙間は 0px（親行から入れ子へ途切れずに移れる）'
+  }
+  return `要確認: 入れ子の隙間が ${px}px ある。猶予 ${delayMs}ms より長くかけて越えると入れ子が閉じる`
+}
+
+/**
+ * 親行と入れ子のあいだの横の隙間を測る (SPEC-SC-11)。
+ *
+ * 入れ子は親メニューの外枠の端に置く（`src/tradingview-cs.js` の `positionSubmenu()`。右に開くのが基本で、
+ * 画面の右端では左に開く）ので、隙間は「外枠の端 − 親行の端」で決まり、**入れ子を開かずに測れる。**
+ * 右クリック（CON-10 の許容操作）より先の操作は要らない。返すのは位置の差（px）だけ (NFR-12)。
+ * @param { import('@playwright/test').Frame } frame
+ * @param { string } markerSelector 拡張が足す区切り行の目印。親行はその次の行
+ * @param { string } boxSelector 右クリックメニューの外枠（`contextMenuBoxSelector`）
+ * @returns { Promise<{ gap: number | null }> }
+ */
+export const measureSubmenuGapAsync = async (frame, markerSelector, boxSelector) => frame.evaluate(({ marker, box }) => {
+  const parentRow = document.querySelector(marker)?.nextElementSibling
+  const menu = parentRow?.closest(box)
+  if (!parentRow || !menu) return { gap: null }
+  const row = parentRow.getBoundingClientRect()
+  const outer = menu.getBoundingClientRect()
+  return { gap: Math.max(outer.right - row.right, row.left - outer.left) }
+}, { marker: markerSelector, box: boxSelector })
+
+/**
+ * 隙間を測って備考に足す。測れなかったときは備考に書くだけで、判定は変えない
+ * （隙間はセレクタの破損ではないので、評価の例外として ❌ に落とさない）
+ */
+const noteSubmenuGapAsync = async (frame, site, markerSelector, result) => {
+  try {
+    // 外枠のセレクタと猶予は src から読む。検証ツール側に書き写さない (NFR-13)
+    const { boxSelector, delayMs } = evaluateScripts([site.source],
+      '({ boxSelector: contextMenuBoxSelector, delayMs: submenuCloseDelayMs })')
+    const { gap } = await measureSubmenuGapAsync(frame, markerSelector, boxSelector)
+    result.notes.push(describeSubmenuGap(gap, delayMs))
+  } catch (err) {
+    result.notes.push(`入れ子の隙間を測れなかった: ${sanitize(err.message)}`)
+  }
+}
+
+/**
  * 組み立て URL を作る (SPEC-SC-06)。
  */
 const buildUrl = (target, runner, entry) => (typeof target.url === 'function'
@@ -295,9 +350,17 @@ export const checkTargetAsync = async (runner, site, target, entry, resolved) =>
 
     result.pageHits = await countPageAsync(frame, target.pageSelectors)
     result.hits = await countAsync(frame, entry.selector)
-    result.injectedHits = await countAsync(frame, target.injected ?? site.injected)
+    // `injected: false` は「拡張がこの対象に何も足さない」。数えずに `—` にする（0 件と書くと注入失敗に読める）
+    const injectedSelector = target.injected ?? site.injected
+    if (injectedSelector !== false) {
+      result.injectedHits = await countAsync(frame, injectedSelector)
+    }
 
     judge(result)
+
+    if (target.extra === 'tv-submenu-gap') {
+      await noteSubmenuGapAsync(frame, site, injectedSelector, result)
+    }
 
     if (target.extra === 'tv-symbol') {
       const prefix = await detectSymbolPrefixAsync(frame, entry.selector)

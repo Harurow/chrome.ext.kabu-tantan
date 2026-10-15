@@ -234,6 +234,15 @@ export const sites = [
         pageSelectors: ['#header-toolbar-symbol-search, canvas']
       },
       {
+        // 行は数えるだけで、右クリックしない（CON-10 の許容表に無い）。
+        // 拡張は行に何も足さないので、注入は数えない（右クリックで足す行は context-menu が数える）。
+        // 公開チャートはログインしなくてもウォッチリストを出している（2026-10-15 に 18 行を確かめた）
+        key: 'watchlist-row',
+        reach: 'after',
+        pageSelectors: ['#header-toolbar-symbol-search, canvas'],
+        injected: false
+      },
+      {
         key: 'overlap-root',
         reach: 'after',
         // 右クリックしないとオーバーレイレイヤーは生成されない (CON-10 の許容操作)
@@ -244,7 +253,9 @@ export const sites = [
         key: 'context-menu',
         reach: 'after',
         pageSelectors: ['div#overlap-manager-root'],
-        injected: 'tr[data-kabu-tantan]'
+        injected: 'tr[data-kabu-tantan]',
+        // 親行と入れ子のあいだの隙間を測る（入れ子は開かない。SPEC-SC-11）
+        extra: 'tv-submenu-gap'
       }
     ]
   }
