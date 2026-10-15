@@ -13,6 +13,7 @@ import { test, expect } from './fixtures/extension.mjs'
 import { domFromSelector, parseCompound, parseSelectorChain } from './fixtures/selector-dom.mjs'
 import { loadMenuSelectors, evaluateScripts } from '../scripts/selector-check/load-selectors.mjs'
 import { measureSubmenuGapAsync } from '../scripts/selector-check/check.mjs'
+import { sites } from '../scripts/selector-check/targets.mjs'
 import {
   TRADINGVIEW_URL,
   CHART_CODE,
@@ -1470,7 +1471,10 @@ test.describe('TradingView: 入れ子メニューの開閉と位置（FR-18）',
       document.querySelector(`[${mark}]`).style[property] = '7px'
     }, [MENU_BOX_MARK, side === 'right' ? 'paddingRight' : 'paddingLeft'])
 
-    const { gap } = await measureSubmenuGapAsync(page.mainFrame(), 'tr[data-kabu-tantan]',
+    // 区切り行の目印は、半自動検証が右クリックメニューの対象で渡すのと同じ値（targets.mjs の `injected`）を使う
+    const marker = sites.find((site) => site.site === 'tradingview')
+      .targets.find((target) => target.key === 'context-menu').injected
+    const { gap } = await measureSubmenuGapAsync(page.mainFrame(), marker,
       evaluateScripts(['src/tradingview-cs.js'], 'contextMenuBoxSelector'))
 
     await openSubmenuAsync(page)
