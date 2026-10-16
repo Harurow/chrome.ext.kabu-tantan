@@ -39,7 +39,7 @@ npm run check           # lint:all + validate + test
 ```
 
 変更が文書だけ（`docs/WORKFLOW.md`「文書だけの変更は文書の検査だけで承認する」の条件）なら、`npm run check` ではなく
-`npm run check:docs`（lint:md + テストカタログの陳腐化検査）を流す。テストの結果は変わらないので、全件（約3分）は流さない。
+`npm run check:docs`（lint:md + テストカタログの陳腐化検査）を流す。テストの結果は変わらないので、全件（約2分）は流さない。
 
 `npm run check` が落ちている場合は、**それを最優先で報告する**。
 通ると作業ツリーが `.claude/check-passed.json` に記録され、そのまま `npm run approve` すると流し直さない

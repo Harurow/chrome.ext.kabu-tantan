@@ -243,7 +243,9 @@ test.describe('切断状態: TradingView', () => {
       await world.created
 
       // 再試行が回っている（初回はツールバーが無く空振りした）ところで切断する
-      await expect.poll(() => world.activeIntervalsAsync()).toBe(1)
+      // （前提を待つだけなので、並列で負荷が高いときに備えて長めに待つ。再試行は 30 秒続く。
+      // 2026-10-16 に6並列・ロードアベレージ 49 で、既定の 5 秒では間に合わず落ちた）
+      await expect.poll(() => world.activeIntervalsAsync(), { timeout: 15000 }).toBe(1)
       await reloadExtension()
       await recordAddedNodesAsync(page)
 
@@ -459,8 +461,8 @@ test.describe('切断状態: 楽天証券・SBI証券', () => {
         await serveFixture(page, list.url, list.html)
         await world.created
 
-        // 再試行が回っている（行がまだ無いので静止しない）ところで切断する
-        await expect.poll(() => world.activeIntervalsAsync()).toBe(1)
+        // 再試行が回っている（行がまだ無いので静止しない）ところで切断する（前提を待つだけなので長めに待つ）
+        await expect.poll(() => world.activeIntervalsAsync(), { timeout: 15000 }).toBe(1)
         await reloadExtension()
         await recordAddedNodesAsync(page)
 

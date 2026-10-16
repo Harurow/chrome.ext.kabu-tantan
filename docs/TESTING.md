@@ -468,9 +468,13 @@ EXTENSION_PATH=/tmp/kt-pkg npm test
 
 ## 制約
 
-- `fullyParallel: false` / `workers: 1` で直列実行する。
-  拡張機能の読み込みには永続コンテキストが必要で、`chrome.storage.sync` の状態が
-  テスト間で干渉するため。
+- `fullyParallel: true` / `workers: 4` で、ファイルの中のテストも分けて4並列で流す（2026-10-16〜）。
+  テストごとに新しい一時プロファイルで拡張機能を読み込む（`tests/fixtures/extension.mjs`）ので、`chrome.storage` の状態はテスト間で干渉しない。
+  全件 278 件が直列の 5.3〜5.5 分から 1.7〜1.9 分になった（2026-10-16。この Mac で4回流して全件成功）。
+  **6並列は速くならず、負荷の高いときに時間に敏感なテスト（`tests/disconnected.spec.mjs`）が1件落ちた**ので、数を増やすときは測ってから。
+  テスト同士で状態を共有するもの（同じプロファイル・同じファイル）を足すときは、並列で干渉しないかを確かめる。
+  〔2026-10-16 まで〕`fullyParallel: false` / `workers: 1` の直列。理由を「プロファイルを共有すると `chrome.storage.sync` が干渉する」としていたが、
+  テストはプロファイルを共有していなかった
 - `evaluateAll` は自動待機しない。Content Script の注入は非同期なので、
   先に `expect(locator).toHaveCount(n)` などで待ってから使う。
 - **テストを増減したら `npm run docs:tests` で `docs/TEST-CATALOG.md` を再生成する。**

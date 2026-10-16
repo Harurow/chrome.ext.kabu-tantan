@@ -819,7 +819,8 @@ test.describe('TradingView: 「株Link」ボタンの表示', () => {
       const button = page.locator(KABU_LINK_BUTTON)
 
       // 初回（読み込みの 500ms 後）はツールバーが無く空振りし、再試行が回っている
-      await expect.poll(() => world.activeIntervalsAsync()).toBe(1)
+      // （前提を待つだけなので、並列で負荷が高いときに備えて長めに待つ。再試行は 30 秒続く）
+      await expect.poll(() => world.activeIntervalsAsync(), { timeout: 15000 }).toBe(1)
       await expect(button).toHaveCount(0)
 
       // ツールバーが現れると、再試行で足されて再試行は止まる
