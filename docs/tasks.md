@@ -7,7 +7,6 @@
 
 ## AI がやること
 
-- [ ] 手動確認 A-8 の前提（TradingView が銘柄を切り替えたとき、チャートの canvas を作り直さずに属性だけ書き換えること）を、`npm run check:selectors` で同じタブの銘柄を切り替えて見る半自動化を試す。参照: [AGENTS.md](../AGENTS.md)「自動でテストできるものは、自動でテストする」の「まだ試していないもの」
 - [ ] `FR-27` の未確定 1（判定基準 2 を `FR-27` に含めるか、`FR-12` の改訂にするか）を本人と決めて、判定基準 2 を実装する。待ち: `FR-13` が ✅ になること（下の本人の確認）。参照: [requirements/functional.md](requirements/functional.md) の `FR-27`
 - [ ] [README.md](README.md)（文書の索引）を消す。待ち: 各プロジェクトに共通の文書のひな形が、役割の説明（ID・追跡関係・担当の決まりなど）を受け持つようになること（このリポジトリの外で決める）。消すときは、このプロジェクトだけの説明を入口か [AGENTS.md](../AGENTS.md) へ移し、索引を指すリンク（AGENTS.md・ルートの README.md・入口・WORKFLOW.md・specs/ など）を張り替える
 

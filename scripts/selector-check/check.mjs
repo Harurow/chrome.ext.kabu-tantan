@@ -461,8 +461,54 @@ const trackingSourceOf = (result, target, entry) => (result.status === BROKEN
   : { source: 'ページ識別セレクタ', selector: (target.pageSelectors ?? [])[0] ?? '' })
 
 /**
- * TradingView の後始末と米国株の補足検査 (SPEC-SC-11 手順 7・8)。
- * 結果には接頭辞の判定だけを残す。
+ * 同じ document のまま指数へ切り替え、国内株へ戻す (SPEC-SC-11 / A-8)。
+ * 銘柄検索は CON-10 で許された銘柄切り替えにだけ使う。
+ * canvas の参照はブラウザ内に保ち、属性の全文は取り出さない。
+ */
+export const checkTradingViewSwitchAsync = async (page, chartSelector) => {
+  const originalDocument = await page.evaluateHandle(() => document)
+  const originalCanvas = await page.evaluateHandle((s) => window.__kabuCheckJq()(s)[0], chartSelector)
+  try {
+    // 非表示のボタンが最初から無い状態を「隠れた」と数えない。
+    await page.locator('div.ktt-tv-kabuLinkMenu').waitFor({ state: 'visible' })
+    const observations = []
+    for (const { symbol, pattern, visible } of [
+      { symbol: 'SP:SPX', pattern: '^SP(?:_DLY|_NAUTH)?:SPX\\b', visible: false },
+      { symbol: 'TSE:7203', pattern: '^TSE(?:_DLY)?:7203\\b', visible: true }
+    ]) {
+      await page.locator('#header-toolbar-symbol-search').press('Enter')
+      const search = page.getByRole('dialog').getByRole('searchbox')
+      await search.fill(symbol)
+      await search.press('Enter')
+      // 切り替え完了は対象銘柄の属性で待つ。ボタンだけでは違う銘柄でも通ってしまう。
+      await page.waitForFunction(({ selector, pattern }) => {
+        const label = window.__kabuCheckJq()(selector).attr('aria-label') ?? ''
+        return new RegExp(pattern).test(label)
+      }, { selector: chartSelector, pattern }, { timeout: 15000 })
+      const sameDocument = await originalDocument.evaluate((original) => original === document)
+      const sameCanvas = await originalCanvas.evaluate((original, s) => original === window.__kabuCheckJq()(s)[0], chartSelector)
+      if (sameDocument && sameCanvas) {
+        await page.locator('div.ktt-tv-kabuLinkMenu').waitFor({ state: visible ? 'visible' : 'hidden' })
+      }
+      observations.push({
+        sameDocument,
+        sameCanvas,
+        // hidden は要素が消えた場合も通るので、ボタンが残っていることも数える。
+        buttonPresent: await page.locator('div.ktt-tv-kabuLinkMenu').count() === 1
+      })
+    }
+    return observations.every(({ sameDocument, sameCanvas, buttonPresent }) => sameDocument && sameCanvas && buttonPresent)
+      ? '銘柄切り替え: 同じ document・canvas のまま、指数でボタンが隠れ、国内株に戻すと再表示された'
+      : '要確認: 銘柄切り替えで document・canvas が置き換わったか、ボタンが消えた'
+  } finally {
+    await originalCanvas.dispose()
+    await originalDocument.dispose()
+  }
+}
+
+/**
+ * TradingView の後始末・銘柄切り替え・米国株の補足検査 (SPEC-SC-11)。
+ * 結果には接頭辞と、要素の同一性・表示切り替えの判定だけを残す。
  */
 export const finishTradingViewAsync = async (runner, resolved, results) => {
   const chart = resolved.get('chart-canvas')
@@ -474,6 +520,11 @@ export const finishTradingViewAsync = async (runner, resolved, results) => {
   try {
     // 開いたメニューは選択せずに閉じる (CON-10)
     await runner.page.keyboard.press('Escape')
+    try {
+      chartResult.notes.push(await checkTradingViewSwitchAsync(runner.page, chart.selector))
+    } catch (err) {
+      chartResult.notes.push(`銘柄切り替えを確認できなかった: ${sanitize(err.message)}`)
+    }
     await runner.page.goto('https://jp.tradingview.com/chart/?symbol=BATS%3AAAPL', { waitUntil: 'domcontentloaded' })
     await runner.page.waitForTimeout(5000)
 

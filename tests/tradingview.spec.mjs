@@ -9,10 +9,11 @@
  * フィクスチャは `menuSelectors` / `watchlistSymbolAttrs` を**実行時に読んで**組み立てる
  * （`tests/fixtures/tradingview.mjs`）。ハッシュ付きクラス名はこのファイルにも出てこない。
  */
+import fs from 'node:fs'
 import { test, expect } from './fixtures/extension.mjs'
 import { domFromSelector, parseCompound, parseSelectorChain } from './fixtures/selector-dom.mjs'
 import { loadMenuSelectors, evaluateScripts } from '../scripts/selector-check/load-selectors.mjs'
-import { measureSubmenuGapAsync } from '../scripts/selector-check/check.mjs'
+import { measureSubmenuGapAsync, checkTradingViewSwitchAsync, createBootstrapScript } from '../scripts/selector-check/check.mjs'
 import { sites } from '../scripts/selector-check/targets.mjs'
 import {
   TRADINGVIEW_URL,
@@ -41,6 +42,69 @@ import {
   clickReceiverAsync,
   watchContentScriptAsync
 } from './fixtures/probes.mjs'
+
+/** 半自動検証の測定方法の退行を見る。実サイトの銘柄検索 UI を保証するものではない。 */
+test.describe('TradingView: 半自動検証の銘柄切り替え', () => {
+  const prepareAsync = async (page, serveFixture, replaceCanvas = false) => {
+    await openChartPageAsync(page, serveFixture)
+    await page.evaluate(createBootstrapScript(fs.readFileSync(new URL('../src/third-party/jquery.min.js', import.meta.url), 'utf8')))
+    const selector = loadMenuSelectors('src/tradingview-cs.js').find((entry) => entry.key === 'chart-canvas').selector
+    await page.evaluate(({ selector, replaceCanvas }) => {
+      const button = document.createElement('button')
+      button.id = 'header-toolbar-symbol-search'
+      button.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter') return
+        button.dataset.switchCount = String(Number(button.dataset.switchCount ?? 0) + 1)
+        const dialog = document.createElement('div')
+        dialog.setAttribute('role', 'dialog')
+        const input = document.createElement('input')
+        input.setAttribute('role', 'searchbox')
+        input.addEventListener('keydown', (event) => {
+          if (event.key !== 'Enter') return
+          const current = window.__kabuCheckJq()(selector)[0]
+          const canvas = replaceCanvas ? current.cloneNode(true) : current
+          if (replaceCanvas) current.replaceWith(canvas)
+          // 公開チャートの実測では指数は SP_NAUTH、国内株は TSE_DLY だった。
+          const symbol = input.value.replace(':', input.value.startsWith('SP:') ? '_NAUTH:' : '_DLY:')
+          canvas.setAttribute('aria-label', `${symbol} の 1 日 チャート`)
+          dialog.remove()
+        })
+        dialog.append(input)
+        document.body.append(dialog)
+      })
+      document.body.append(button)
+    }, { selector, replaceCanvas })
+    return selector
+  }
+
+  test('同じ canvas の属性変更とボタンの非表示・再表示を測り、国内株に戻す', async ({ page, serveFixture }) => {
+    const selector = await prepareAsync(page, serveFixture)
+    const note = await checkTradingViewSwitchAsync(page, selector)
+    expect(note).toBe('銘柄切り替え: 同じ document・canvas のまま、指数でボタンが隠れ、国内株に戻すと再表示された')
+    await expect(page.locator('div.ktt-tv-kabuLinkMenu')).toBeVisible()
+    expect(await page.evaluate((s) => window.__kabuCheckJq()(s).attr('aria-label'), selector)).toContain('TSE_DLY:7203 ')
+  })
+
+  test('canvas が差し替わったときは成功にせず、要確認にする', async ({ page, serveFixture }) => {
+    const selector = await prepareAsync(page, serveFixture, true)
+    expect(await checkTradingViewSwitchAsync(page, selector)).toBe('要確認: 銘柄切り替えで document・canvas が置き換わったか、ボタンが消えた')
+  })
+
+  test('指数でもボタンが表示されたままなら、成功にしない', async ({ page, serveFixture }) => {
+    const selector = await prepareAsync(page, serveFixture)
+    await page.addStyleTag({ content: 'div.ktt-tv-kabuLinkMenu { display: block !important; }' })
+    page.setDefaultTimeout(500)
+    await expect(checkTradingViewSwitchAsync(page, selector)).rejects.toThrow(/Timeout/)
+  })
+
+  test('最初からボタンが無い状態を、非表示になった成功として扱わない', async ({ page, serveFixture }) => {
+    const selector = await prepareAsync(page, serveFixture)
+    await page.locator('div.ktt-tv-kabuLinkMenu').evaluate((element) => element.remove())
+    page.setDefaultTimeout(500)
+    await expect(checkTradingViewSwitchAsync(page, selector)).rejects.toThrow(/Timeout/)
+    await expect(page.locator('#header-toolbar-symbol-search')).not.toHaveAttribute('data-switch-count')
+  })
+})
 
 /**
  * セレクタ → DOM の変換規則（SPEC-CS-27）。
