@@ -128,4 +128,4 @@ NFR-14 の「やらないこと」で禁じられている。設計の選択肢�
 既存の門（SPEC-CS-11 条件1 / SPEC-CS-12 手順2 / 監視コールバック）は**そのまま残す**。
 
 確認は自動テスト `tests/disconnected.spec.mjs` の「切断状態: TradingView」（2026-10-12〜。Content Script の注入を CDP で捕まえ、直後に拡張機能を再読み込みして窓を踏む。SPEC-CS-19「検証との対応」）。
-〔2026-10-12 まで〕「TradingView は自動テスト対象外のため、確認は手動（`docs/MANUAL-CHECKLIST.md` G-5）」と書いていた。G-5 は 2026-08-24 に利用者が手動で確認済み。
+〔2026-10-12 まで〕「TradingView は自動テスト対象外のため、確認は手動（`docs/notes/manual-checklist.md` G-5）」と書いていた。G-5 は 2026-08-24 に利用者が手動で確認済み。

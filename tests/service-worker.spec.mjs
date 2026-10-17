@@ -1099,7 +1099,7 @@ test.describe('urls.js: externalUrls の整合性', () => {
 // 打ち切りでは clearInterval の呼び出し自体を数えて到達を確かめ、
 // 例外では 2 回目が無いこと（＝タイマーが張られていないこと）で確かめる。
 // 切断（isExtensionAlive() が偽）は Service Worker 上では作れないため手動確認
-// （docs/MANUAL-CHECKLIST.md G-6）に委ねる。
+// （docs/notes/manual-checklist.md G-6）に委ねる。
 test.describe('service_worker: retrySetup', () => {
   test('成功したら再試行を止める', async ({ serviceWorker }) => {
     const result = await serviceWorker.evaluate(async () => {

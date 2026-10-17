@@ -6,7 +6,7 @@
  *
  * Chrome ウェブストアの審査およびプライバシー観点から、
  * fonts.googleapis.com への実行時リクエストを避けてローカル同梱している。
- * 使用アイコンだけにサブセット化済み（手順は docs/ARCHITECTURE.md）。
+ * 使用アイコンだけにサブセット化済み（手順は docs/notes/architecture.md）。
  */
 
 @font-face {

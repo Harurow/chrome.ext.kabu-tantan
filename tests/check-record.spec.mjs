@@ -1,5 +1,5 @@
 /**
- * コミットゲートの、全件のチェックが通った記録（docs/WORKFLOW.md「コミットゲート」）。
+ * コミットゲートの、全件のチェックが通った記録（docs/notes/workflow.md「コミットゲート」）。
  *
  * ブラウザを起動しない。一時の git リポジトリで、全件のチェックを差し替えた関数で演じ、
  * 記録を残す条件と、npm run approve が流し直さずに承認する条件を確かめる。
@@ -305,7 +305,7 @@ test.describe('コミットゲート: 文書だけの変更は文書の検査だ
   })
 
   test('テストやスクリプトが名前に触れている Markdown（テストが読む文書）は、全件を流す', async () => {
-    // tests/selector-defs.spec.mjs が docs/MANUAL-CHECKLIST.md を読むのと同じ形
+    // tests/selector-defs.spec.mjs が docs/notes/manual-checklist.md を読むのと同じ形
     await commitAsync('tests/read-doc.spec.mjs', "readFileSync(path.join(root, 'docs', 'CHECKLIST.md'))\n")
     await mkdir(path.join(root, 'docs'), { recursive: true })
     await writeFile(path.join(root, 'docs', 'CHECKLIST.md'), 'new\n')

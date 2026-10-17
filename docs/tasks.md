@@ -7,16 +7,15 @@
 
 ## AI がやること
 
-- [ ] `FR-27` の未確定 1（判定基準 2 を `FR-27` に含めるか、`FR-12` の改訂にするか）を本人と決めて、判定基準 2 を実装する。待ち: `FR-13` が ✅ になること（下の本人の確認）。参照: [requirements/functional.md](requirements/functional.md) の `FR-27`
-- [ ] [README.md](README.md)（文書の索引）を消す。待ち: 各プロジェクトに共通の文書のひな形が、役割の説明（ID・追跡関係・担当の決まりなど）を受け持つようになること（このリポジトリの外で決める）。消すときは、このプロジェクトだけの説明を入口か [AGENTS.md](../AGENTS.md) へ移し、索引を指すリンク（AGENTS.md・ルートの README.md・入口・WORKFLOW.md・specs/ など）を張り替える
+- [ ] `FR-27` の未確定 1（判定基準 2 を `FR-27` に含めるか、`FR-12` の改訂にするか）を本人と決めて、判定基準 2 を実装する。待ち: `FR-13` が ✅ になること（下の本人の確認）。参照: [notes/requirements/functional.md](notes/requirements/functional.md) の `FR-27`
 
 ## 本人がやること
 
 本人は、この拡張機能の利用者で持ち主。今の依頼ではなく、必要になったら AI から頼む。済むと、実サイト未確認で ⚠️ にしている要件が ✅ に近づく。
-残っている確認の正本は [requirements/README.md](requirements/README.md)「実サイトでの確認だけが残っているもの」。
+残っている確認の正本は [notes/requirements/index.md](notes/requirements/index.md)「実サイトでの確認だけが残っているもの」。
 
-- [ ] 手動確認の依頼表の項目（件数と中身は依頼表が正）。参照: [MANUAL-CHECKLIST.md](MANUAL-CHECKLIST.md)「次回まとめて依頼する分」
+- [ ] 手動確認の依頼表の項目（件数と中身は依頼表が正）。参照: [manual-checklist.md](notes/manual-checklist.md)「次回まとめて依頼する分」
 - [ ] ログインした状態で、TradingView の手動確認 A-1 / A-7 / A-10 を見る（`FR-04`。依頼表には載っていない）
-- [ ] 楽天証券と SBI証券に、それぞれログインした状態で、投資信託・債券・預り金・為替の行にメニューが出ないことを見る（`FR-28` の判定基準 7。見るページと手順は [MANUAL-CHECKLIST.md](MANUAL-CHECKLIST.md) の C-1 の表と C-3。依頼表には載っていない。次の行と同じ回にまとめられる）
+- [ ] 楽天証券と SBI証券に、それぞれログインした状態で、投資信託・債券・預り金・為替の行にメニューが出ないことを見る（`FR-28` の判定基準 7。見るページと手順は [manual-checklist.md](notes/manual-checklist.md) の C-1 の表と C-3。依頼表には載っていない。次の行と同じ回にまとめられる）
 - [ ] 楽天証券にログインしたタブを開いたまま `npm run check:selectors -- --only=rakuten` を1回（`FR-30`）
 - [ ] `npm run check:selectors` のフル実行を連続2回（`FR-13` の判定基準 5）

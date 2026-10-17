@@ -12,7 +12,7 @@ ES モジュールではなく `importScripts` を使う（CON-02）。
 これにより `externalUrls` / `externalUrlsMap` / `getEnableLinkKeysAsync` / `makeUrl` が
 Service Worker のグローバルスコープに入る。
 
-> このグローバル露出をテストから利用している（`docs/TESTING.md`）。
+> このグローバル露出をテストから利用している（`docs/notes/testing.md`）。
 
 - 要件: CON-02
 - 検証: `auto`（`urls.js: makeUrl` のテストが Service Worker 上で動くこと自体が証跡）
@@ -102,7 +102,7 @@ const remakeContextMenus = () => {
 | --- | --- |
 | `auto` | `tests/service-worker.spec.mjs` の describe **`service_worker: コンテキストメニューの再構築`**（1.20.3 で追加）。下の4件が SPEC-SW-02 の分。**同じ describe の5件目 `storage に残った未知のキーは読み飛ばし、エラーを出さない` は SPEC-ST-03 の自動テスト 2**（2026-10-11 追加） |
 | `review` | 契機のハンドラ（SPEC-SW-03）が `remakeContextMenus()` を呼ぶだけであること。`removeAll` / `create` の呼び出しが `rebuildContextMenusAsync()` / `createContextMenuAsync()` の外に無いこと |
-| `manual`（**任意**） | 下の「手動確認」（`docs/MANUAL-CHECKLIST.md` **D-2**）。**Chrome の画面の表示そのもの**（エラー欄・右クリックメニューの描画）だけを見る。依頼の対象にしない（2026-10-11 に必須から変更） |
+| `manual`（**任意**） | 下の「手動確認」（`docs/notes/manual-checklist.md` **D-2**）。**Chrome の画面の表示そのもの**（エラー欄・右クリックメニューの描画）だけを見る。依頼の対象にしない（2026-10-11 に必須から変更） |
 
 **自動テスト（describe `service_worker: コンテキストメニューの再構築`）:**
 
@@ -130,7 +130,7 @@ const remakeContextMenus = () => {
 - 1件目・4件目は 1.20.2 の実装では失敗する作りである（1件目は記録が `removeAll, removeAll, …` の順になり `lastError` が出る。
   4件目は B が呼び出し時点で設定を読むので2区間目が `keys` になる）
 
-**手動確認（`docs/MANUAL-CHECKLIST.md` D-2。任意。手順は同じ）:**
+**手動確認（`docs/notes/manual-checklist.md` D-2。任意。手順は同じ）:**
 
 1. `chrome://extensions` の株リンクのカードからエラーの一覧を開き、表示中のエラーをすべて消す（ボタンの表示名は Chrome の版・表示言語で異なる）
 2. `chrome://extensions` の一覧に戻り、株リンクのカードにある Service Worker のリンク（例: 「ビューを検査」の横の `service worker`。表示名は版・表示言語で異なる）から DevTools を開き、コンソールで `remakeContextMenus(); remakeContextMenus()` を実行する
@@ -526,7 +526,7 @@ OS の操作（osascript / xdotool）はアクセシビリティ権限が要り 
 押した後の処理と登録（`hasListener`）は自動テストが見る。(2) 手順 3 の収まりは、実測 7 のとおり Playwright が小窓の表示領域を置き換えるため、
 実際のウィンドウの大きさで測れない。自動テストは控えめな大きさで近似する（SPEC-NT-05）。
 
-> M-1 は `docs/MANUAL-CHECKLIST.md` の **D-3** に置いた。D-1 の `AAPL` の行と「何も開かない」3行も小窓に合わせて直した。
+> M-1 は `docs/notes/manual-checklist.md` の **D-3** に置いた。D-1 の `AAPL` の行と「何も開かない」3行も小窓に合わせて直した。
 > M-1 は FR-29 の ✅ の条件にしない（FR-29 の「手動確認」欄。FR-05 / FR-10 と同じ扱い）。
 
 - 要件: FR-29（判定基準 1・5・6・7・9）, NFR-03

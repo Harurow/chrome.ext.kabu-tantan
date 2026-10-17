@@ -70,7 +70,7 @@ const FILE_INFO = {
     detail: 'ブラウザを起動せず、一時の git リポジトリで、npm run check が通った作業ツリーを記録する条件と、' +
       'npm run approve が同じ作業ツリーならチェックを流し直さずに承認する条件を検証する。全件のチェックは差し替えた関数で演じる。' +
       '承認とチェックの記録が使う作業ツリーのハッシュ（日本語の名前の未追跡ファイル・名前の変更）も見る。',
-    specs: 'docs/WORKFLOW.md「コミットゲート」'
+    specs: 'docs/notes/workflow.md「コミットゲート」'
   },
   'commit-gate.spec.mjs': {
     title: 'コミットゲート（コミットされる中身）',
@@ -78,7 +78,7 @@ const FILE_INFO = {
       'コミットされる中身（index）が承認した作業ツリーの中身と同じときだけ通すことを検証する。' +
       '一部だけのステージ・パスの指定・git commit -a と未追跡のファイル・前に置くコマンド（set・GIT_ の代入を含む）・シェル経由・ヒアドキュメント・引用符とリダイレクト、' +
       'commit 以外でコミットを作るコマンド（merge などと --skip・git pull）を止めること、--continue の中身と残りの手順（cherry-pick・revert・rebase・am を実際に衝突させる）、止めたときに案内する --continue の形が端末もエディタの設定も無い状態でコミットまで終わることを見る。',
-    specs: 'docs/WORKFLOW.md「コミットされる中身を確かめる」'
+    specs: 'docs/notes/workflow.md「コミットされる中身を確かめる」'
   }
 }
 
@@ -148,7 +148,7 @@ const lines = [
   '',
   `テスト総数: **${total}**`,
   '',
-  'テストの方針・手法は [TESTING.md](TESTING.md) を参照。',
+  'テストの方針・手法は [testing.md](notes/testing.md) を参照。',
   ''
 ]
 
@@ -189,7 +189,7 @@ lines.push('| 楽天証券・内藤証券に**実際にログインした**状�
 lines.push('| Chrome の右クリックメニューを実際に押す操作と、開けないときの小窓の実際のウィンドウでの見え方（FR-29） | Playwright から Chrome 自身の右クリックメニューの項目を押す手段が無く（2026-10-11 に試行。ヘッドレス・画面ありとも `onClicked` が発火しない）、小窓の表示領域は Playwright が 1280×720 に置き換える。押した後の処理と登録（`hasListener`）、424×220 での収まりは自動テストが見る。実機は SPEC-SW-10 の手動確認 M-1 |')
 lines.push('| 楽天スーパースクリーナー / SBI銘柄スクリーニング の**見た目と実 DOM** | 注入そのものは 1.13.0 で自動化した（常設監視を document.body に上げたためフィクスチャで再現できる）。実 DOM との乖離は `npm run check:selectors` と手動確認 C-2 / C-4 で見る |')
 lines.push('')
-lines.push('これらは変更時に手動確認する。手順は [TESTING.md](TESTING.md) を参照。')
+lines.push('これらは変更時に手動確認する。手順は [testing.md](notes/testing.md) を参照。')
 lines.push('')
 lines.push('> **TradingView の自動テストが緑でも、実サイトが壊れていない根拠にはならない**')
 lines.push('> （改訂後の CON-08 の条件3 / FR-26 判定基準7）。見ているのは**自分たちのコードの退行だけ**で、')

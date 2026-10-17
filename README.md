@@ -132,10 +132,10 @@ npm run approve     # レビュー承認を記録する（コミットに必須�
 ### 開発フロー
 
 要件定義 → 設計 → 実装 → レビュー → コミット → push の順に進めます。
-工程ごとの担当エージェント（`.claude/agents/`）があり、どれに渡すかは [docs/WORKFLOW.md](docs/WORKFLOW.md) の基準で決めます（レビューは必ず `reviewer` に渡します）。
+工程ごとの担当エージェント（`.claude/agents/`）があり、どれに渡すかは [docs/notes/workflow.md](docs/notes/workflow.md) の基準で決めます（レビューは必ず `reviewer` に渡します）。
 **すべてのテストが通り、かつレビューが通るまでコミットできません**（`.claude/hooks/commit-gate.sh` が強制）。
 
-詳細は [docs/WORKFLOW.md](docs/WORKFLOW.md)。
+詳細は [docs/notes/workflow.md](docs/notes/workflow.md)。
 
 ### ドキュメント
 
@@ -143,14 +143,13 @@ npm run approve     # レビュー承認を記録する（コミットに必須�
 | --- | --- |
 | 開発ガイド（規約・注意事項） | [AGENTS.md](AGENTS.md) |
 | 入口（残りのタスク・要件・設計・確かめ方） | [tasks](docs/tasks.md) ・ [requirements](docs/requirements.md) ・ [design](docs/design.md) ・ [verification](docs/verification.md) |
-| ドキュメント索引 | [docs/README.md](docs/README.md) |
-| 開発フロー・エージェント | [docs/WORKFLOW.md](docs/WORKFLOW.md) |
-| 要件定義 | [docs/requirements/](docs/requirements/) |
-| 仕様書 | [docs/specs/](docs/specs/) |
-| アーキテクチャ | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
-| テスト方針・3層の切り分け | [docs/TESTING.md](docs/TESTING.md) |
+| 開発フロー・エージェント | [docs/notes/workflow.md](docs/notes/workflow.md) |
+| 要件定義 | [docs/notes/requirements/](docs/notes/requirements/) |
+| 仕様書 | [docs/notes/specs/](docs/notes/specs/) |
+| アーキテクチャ | [docs/notes/architecture.md](docs/notes/architecture.md) |
+| テスト方針・3層の切り分け | [docs/notes/testing.md](docs/notes/testing.md) |
 | **テスト一覧（何をテストしているか）** | [docs/TEST-CATALOG.md](docs/TEST-CATALOG.md) |
-| 手動確認チェックリスト | [docs/MANUAL-CHECKLIST.md](docs/MANUAL-CHECKLIST.md) |
+| 手動確認チェックリスト | [docs/notes/manual-checklist.md](docs/notes/manual-checklist.md) |
 
 ### テスト
 

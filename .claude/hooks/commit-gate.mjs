@@ -525,7 +525,7 @@ const what = [...new Set(hits)].join(', ')
 const projectDir = process.env.CLAUDE_PROJECT_DIR ||
   path.resolve(path.dirname(new URL(import.meta.url).pathname), '../..')
 
-// まず形を見る（承認があっても通さない形は、承認より先に理由を出す）。docs/WORKFLOW.md「コミットされる中身を確かめる」
+// まず形を見る（承認があっても通さない形は、承認より先に理由を出す）。docs/notes/workflow.md「コミットされる中身を確かめる」
 // 中身を確かめられるのは、git commit と、merge などの --continue（どちらも index の中身をコミットする）だけ。
 // ほかのコミットを作るコマンドは、作る中身を前もって比べられないので、承認があっても止める
 const found = segments.map((seg, at) => ({ at, hit: createsCommit(seg), commit: plainGitCommit(seg) })).filter((c) => c.hit)

@@ -30,7 +30,7 @@ EXTENSION_PATH=/tmp/kt-pkg npm test
 リリース前にはこれを実行すること（zip の詰め忘れ・パス間違いを検出できる）。
 
 `EXTENSION_PATH` を指定して `npm run check` を流しても、作業ツリーの `src/` を試していないので、
-全件のチェックが通った記録（`.claude/check-passed.json`。[WORKFLOW.md](WORKFLOW.md)「全件のチェックを同じ作業ツリーで2回流さない」）は残さない。
+全件のチェックが通った記録（`.claude/check-passed.json`。[workflow.md](workflow.md)「全件のチェックを同じ作業ツリーで2回流さない」）は残さない。
 
 ## 何をどう検証するか（3層の切り分け）
 
@@ -38,9 +38,9 @@ EXTENSION_PATH=/tmp/kt-pkg npm test
 
 | 層 | 対象 | 手段 | 実行 |
 | --- | --- | --- | --- |
-| **自動** | ロジック / オプションページ / 楽天・SBI・スクリーナー2種の注入 / メニュー項目のクリック範囲 / 注入の再試行 / **切断状態（拡張機能の再読み込み後の古いタブ）** / セレクタ定義の整合性 / 中断時の後始末 / **TradingView で拡張が自分で作った DOM の振る舞い** | Playwright（件数は [TEST-CATALOG.md](TEST-CATALOG.md)） | `npm test`（約3分。2026-10-12 に 187件で 3.1〜3.2分。切断状態などの17件を足す前は 170件で 2.2分） |
+| **自動** | ロジック / オプションページ / 楽天・SBI・スクリーナー2種の注入 / メニュー項目のクリック範囲 / 注入の再試行 / **切断状態（拡張機能の再読み込み後の古いタブ）** / セレクタ定義の整合性 / 中断時の後始末 / **TradingView で拡張が自分で作った DOM の振る舞い** | Playwright（件数は [TEST-CATALOG.md](../TEST-CATALOG.md)） | `npm test`（約3分。2026-10-12 に 187件で 3.1〜3.2分。切断状態などの17件を足す前は 170件で 2.2分） |
 | **半自動** | 実サイトのセレクタ健全性 | 利用者がログイン → 自動で検証 | `npm run check:selectors` |
-| **手動** | **サイト側の** DOM・見た目・挙動（TradingView の挿入先・模倣した見た目・サイト側メニュー）／ 証券会社セッション連携 | チェックリスト | [MANUAL-CHECKLIST.md](MANUAL-CHECKLIST.md) |
+| **手動** | **サイト側の** DOM・見た目・挙動（TradingView の挿入先・模倣した見た目・サイト側メニュー）／ 証券会社セッション連携 | チェックリスト | [manual-checklist.md](manual-checklist.md) |
 
 > **層は「サイトごと」ではなく「誰の持ち物か」で分ける**（2026-08-30 に `CON-08` を改訂）。
 > **拡張が自分で生成した DOM の振る舞いは、サイトの都合では変わらない**ので自動でよい。
@@ -75,7 +75,7 @@ EXTENSION_PATH=/tmp/kt-pkg npm test
 1.20.0 で `tests/tradingview.spec.mjs` が入り、**拡張が自分で作った DOM の振る舞い**（入れ子メニューのクリック範囲・
 縦位置の補正・証券会社の項目が URL を DOM に出さないこと）をフィクスチャで見るようになった（`FR-26` の段階1・2。SPEC-CS-27）。
 **サイト側の DOM・見た目・挙動**（挿入先が実在するか・模倣した見た目・サイト側メニュー）は上表の「半自動」「手動」条件に該当し、
-`npm run check:selectors` と [MANUAL-CHECKLIST.md](MANUAL-CHECKLIST.md) の A が見る。
+`npm run check:selectors` と [manual-checklist.md](manual-checklist.md) の A が見る。
 2026-10-12 に、「株Link」ボタンの表示の切り替え（A-8 の拡張側・A-12）とボタンメニューの 0 件・証券会社のタブの有無（A-7b の最終行・B-1）も加わった（`FR-26` の段階4・5 の一部）。
 拡張側の振る舞い（`FR-26` の (a)）は、2026-10-15 にすべて自動テストへ移した（段階3〜5）。A の手動確認に残るのは、サイト側に依存する (b) だけ。
 **`tradingview.spec.mjs` が緑でも実サイトが壊れていない根拠にはならない**（`CON-08`）。
@@ -94,7 +94,7 @@ DOM はサイト側の構造に依存したままなので、見た目と実 DOM
 `npm run check:selectors` と手動確認 C-2 / C-4 で行う。
 
 > **「自動化できない＝テストしない」ではない。**
-> 手動で確認するものは [MANUAL-CHECKLIST.md](MANUAL-CHECKLIST.md) に手順と期待結果を書き、
+> 手動で確認するものは [manual-checklist.md](manual-checklist.md) に手順と期待結果を書き、
 > 実施結果を記録できる形にしてある。
 
 ## 半自動: 実サイトのセレクタ検証
@@ -135,7 +135,7 @@ npm run check:selectors -- --help                # 使い方
 | ❌ 破損 | **ページに到達したと判断できるのに**検出用セレクタが 0 件 | **まず手がかりの題名が対象ページのものかを読む。** そのうえでサイト改修を疑い、実 DOM を見てセレクタを直す |
 | ⚠️ 未到達 | ページに到達したと判断できない（題名が未到達の目印に当たる／題名から判断できない） | 遷移に失敗したか、ログイン・エラー画面に飛ばされた。`targets.mjs` の到達方法を疑う |
 | — 未実施 | `--only` で除外・ログインしていない・対象のタブが開かれていない | 必要なら準備して再実行する |
-| 👤 対象外 | **ツールの仕組みでは到達できない**ため人が確認する（1.19.0〜） | `docs/MANUAL-CHECKLIST.md` の該当項目を見る。**破損・未到達・未実施のどれにも数えない**ので、終了コードにも影響しない |
+| 👤 対象外 | **ツールの仕組みでは到達できない**ため人が確認する（1.19.0〜） | `docs/notes/manual-checklist.md` の該当項目を見る。**破損・未到達・未実施のどれにも数えない**ので、終了コードにも影響しない |
 
 「識別」列はページ識別セレクタ、「ヒット」列は検出用セレクタ、
 「注入」列は拡張機能が実際に挿入した要素の数（参考値。判定には使わない）。
@@ -388,12 +388,12 @@ const page = await opened
 > 差し替えずに試したスパイクでは、実在しないセッション ID で楽天証券へ実リクエストが1回出た。
 > 2026-10-12 から全テストで名前解決を塞ぎ、fixture `externalRequests` でタブの遷移先も検査している（上の「全テストに効く前提」）。
 >
-> テストの**一覧**は [TEST-CATALOG.md](TEST-CATALOG.md)（`npm run docs:tests` で自動生成）。
+> テストの**一覧**は [TEST-CATALOG.md](../TEST-CATALOG.md)（`npm run docs:tests` で自動生成）。
 > このファイルには方針と手法だけを書く。
 
 ## カバーしている範囲
 
-**テストの一覧は [TEST-CATALOG.md](TEST-CATALOG.md)**（`npm run docs:tests` で自動生成）。
+**テストの一覧は [TEST-CATALOG.md](../TEST-CATALOG.md)**（`npm run docs:tests` で自動生成）。
 
 大まかには以下を検証している。
 
@@ -447,13 +447,13 @@ const page = await opened
 
 ## 手動確認
 
-自動テストの対象外は [MANUAL-CHECKLIST.md](MANUAL-CHECKLIST.md) に従って確認する。
+自動テストの対象外は [manual-checklist.md](manual-checklist.md) に従って確認する。
 **手順・期待結果・チェック欄がセクション別にまとまっている**ので、
 変更箇所に対応するセクションだけ実施すればよい。
 
 変更箇所ごとにどのセクションを実施するかは、チェックリスト冒頭の対応表を参照する（表はそこだけに置く）。
 
-利用者に依頼する場合は、`docs/MANUAL-CHECKLIST.md` の該当セクションを渡し、
+利用者に依頼する場合は、`docs/notes/manual-checklist.md` の該当セクションを渡し、
 末尾の報告フォーマットで結果を返してもらう。
 
 ### 配布物の確認
@@ -467,7 +467,7 @@ EXTENSION_PATH=/tmp/kt-pkg npm test
 ```
 
 さらに `chrome://extensions/` で `/tmp/kt-pkg` を「パッケージ化されていない拡張機能」として
-読み込み、[MANUAL-CHECKLIST.md](MANUAL-CHECKLIST.md) の全セクションを実施する。
+読み込み、[manual-checklist.md](manual-checklist.md) の全セクションを実施する。
 
 ## 制約
 

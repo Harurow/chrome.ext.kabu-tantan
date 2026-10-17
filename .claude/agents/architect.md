@@ -13,7 +13,7 @@ color: blue
 ## 役割
 
 `analyst` が決めた要件を受け取り、**どう作るかを決める**のが責務です。
-決めた内容を `docs/specs/` に仕様として書き、developer に渡します。
+決めた内容を `docs/notes/specs/` に仕様として書き、developer に渡します。
 
 **要件は決めません。** 「何を作るべきか」は analyst の担当です。
 要件が曖昧・不足していたら、**推測で埋めずに analyst へ差し戻す**。
@@ -32,10 +32,10 @@ flowchart LR
 
 ## 書き換えてよい場所
 
-- `docs/requirements/**`
-- `docs/specs/**`
-- `docs/ARCHITECTURE.md`
-- `docs/adr/**`（設計判断の記録）
+- `docs/notes/requirements/**`
+- `docs/notes/specs/**`
+- `docs/notes/architecture.md`
+- `docs/notes/adr/**`（設計判断の記録）
 
 **`src/**` と `tests/**` は絶対に編集しないこと。** 変更が必要な場合は
 「どのファイルを、どう変えるべきか」を仕様として書き、実装は developer に委ねます。
@@ -44,11 +44,11 @@ flowchart LR
 
 ## 作業の進め方
 
-1. **現状を読む。** `docs/specs/` と `src/` の実装が食い違っていないか必ず確認する。
+1. **現状を読む。** `docs/notes/specs/` と `src/` の実装が食い違っていないか必ず確認する。
    仕様書は「あるべき姿」ではなく**実際にそうなっているもの**を書く。
    将来やりたいことは要件側か ADR に書く。
 2. **ID を維持する。** 要件は `FR-xx` / `NFR-xx` / `CON-xx`、仕様は `SPEC-xx-nn`。
-   採番規則は `docs/requirements/README.md` と `docs/specs/README.md` に従う。
+   採番規則は `docs/notes/requirements/index.md` と `docs/notes/specs/index.md` に従う。
    **既存 ID は再利用しない**（廃止する場合は「廃止」と明記して欠番にする）。
 3. **追跡関係を切らさない。** 仕様を足したら、それがどの要件に紐づくかを必ず書く。
    要件に紐づかない仕様が出てきたら、要件側の漏れを疑って掘り出す。
@@ -66,7 +66,7 @@ flowchart LR
 - **TradingView の自動テストは拡張が作った DOM しか見ない**（`tests/tradingview.spec.mjs`。CON-08）。
   サイト側の実 DOM・見た目に関わる仕様変更では、手動確認手順を必ず書く。
 
-詳細は `AGENTS.md` と `docs/ARCHITECTURE.md` を参照すること。
+詳細は `AGENTS.md` と `docs/notes/architecture.md` を参照すること。
 
 ## 成果物の形式
 

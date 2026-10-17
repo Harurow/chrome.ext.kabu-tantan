@@ -73,7 +73,7 @@ npm run check          # まず自動テストが通ることを確認（ここ�
 3. 「パッケージ化されていない拡張機能を読み込む」で `src/` を指定（既に入っていれば🔄で再読み込み）
 4. 拡張機能のアイコンをクリックしてオプションページが開くこと、**全サイトが有効**になっていることを確認
 
-> リリース前は `src/` ではなく **zip を展開したもの**を読み込んでください（`docs/TESTING.md` 参照）。
+> リリース前は `src/` ではなく **zip を展開したもの**を読み込んでください（`docs/notes/testing.md` 参照）。
 
 ---
 
@@ -190,7 +190,7 @@ npm run check          # まず自動テストが通ることを確認（ここ�
   3. 入れ子の**背景色・角丸・影**、および開く位置（親メニューの右端・親行の高さ）
   > ずれている場合は模倣用クラス `tvMimicClasses`（SPEC-CS-16）が古くなっています。
   > **機能は正常なので NG ではありません。** 更新手順は
-  > `docs/ARCHITECTURE.md`「TradingView の模倣用クラスを更新する」。
+  > `docs/notes/architecture.md`「TradingView の模倣用クラスを更新する」。
   > `npm run check:selectors` では検出できない（FR-12 で検証対象外）ため、ここが唯一の気づく手段です
 - [x] 揃っている（2026-08-23 lead が実測: 背景 rgb(31,31,31)、角丸 6px、行高一致。ダークテーマ）
 
@@ -405,7 +405,7 @@ npm run check:selectors     # ブラウザが開く → ログイン → 端末�
 > **通常のターミナルで実行してください。** Claude Code の `!` プレフィックスは stdin を閉じて
 > 実行するため Enter 待ちができず、ログイン前に検証が始まって全件「未実施」になります。
 
-結果は [SELECTOR-CHECK.md](SELECTOR-CHECK.md) に出ます。読み方は [TESTING.md](TESTING.md) を参照。
+結果は [SELECTOR-CHECK.md](../SELECTOR-CHECK.md) に出ます。読み方は [testing.md](testing.md) を参照。
 
 > **⚠️ や ❌ が出たら、そのページを開きに行く前に「手がかり」節を読んでください**（1.12.0 で追加）。
 > 結果表の備考にプレフィックス追跡の1行要約が、サイトの表の後に
@@ -574,7 +574,7 @@ npm run check:selectors     # ブラウザが開く → ログイン → 端末�
 > 当初「拡張機能を再読み込みしたため切断状態（NFR-14）だった」と説明したが、これは**誤り**。
 > `check:selectors` は使い捨てプロファイルで独自の Chromium を起動するため、
 > 利用者の Chrome での再読み込みは影響しない。**原因は FR-13（注入失敗時のリトライが未実装）の未達**（2026-08-25 に特定）。
-> 切り分けの根拠は `docs/requirements/functional.md` FR-12 の「注入 0 件の切り分け」。
+> 切り分けの根拠は `docs/notes/requirements/functional.md` FR-12 の「注入 0 件の切り分け」。
 
 - **操作（1.13.0 / FR-13）:** 再検索・ページ送り・並び替えを**数回繰り返す**。DevTools のコンソールを開いたままにする
 - **期待結果:** メニューが毎回出る。**コンソールに例外が出ない**（とくに `NotFoundError: Failed to execute 'removeChild'`）。

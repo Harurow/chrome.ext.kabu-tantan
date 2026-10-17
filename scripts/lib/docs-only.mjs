@@ -1,12 +1,12 @@
 /**
- * 作業ツリーの変更が「文書だけ」かを判定する（docs/WORKFLOW.md「文書だけの変更は文書の検査だけで承認する」）。
+ * 作業ツリーの変更が「文書だけ」かを判定する（docs/notes/workflow.md「文書だけの変更は文書の検査だけで承認する」）。
  *
  * 文書だけ = HEAD からの変更（ステージ済み・未ステージ・削除・未追跡。名前の変更は元と先の両方）がすべて Markdown で、
  * 拡張機能・テスト・スクリプトの置き場（src/ tests/ scripts/）の外にあり、
  * tests/ と scripts/ のどのファイルもその名前に触れていないもの。
  * ステージ済みは `git diff --cached` でも見る（`git diff HEAD` は作業ツリーとしか比べないので、ステージしてから作業ツリーだけ戻した変更が漏れる）。
  *
- * テストが読む文書（tests/selector-defs.spec.mjs は docs/MANUAL-CHECKLIST.md を読む）は、コードに名前が書かれているので
+ * テストが読む文書（tests/selector-defs.spec.mjs は docs/notes/manual-checklist.md を読む）は、コードに名前が書かれているので
  * 変えると全件のチェックになる。コメントで触れているだけのものも全件に倒す（読むかどうかを見分けない。迷うなら流す）。
  */
 import { execFile } from 'node:child_process'

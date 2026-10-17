@@ -118,8 +118,8 @@ TradingView のリリースでハッシュ部分が変わる。**変わっても
      メニュー外枠・スクロール層・箱
 3. ツールバーの器は「株Link」ボタンの兄弟要素（買/売ボタンの `buttonsWrapper-…`）から採取する
 4. `src/tradingview-cs.js` の `tvMimicClasses` を書き換え、コメントの**採取日**を更新する
-5. `docs/specs/content-scripts.md` の SPEC-CS-16 の表を同じ値に更新する
-6. 手動確認 `docs/MANUAL-CHECKLIST.md` A-9 / A-10 を実施する
+5. `docs/notes/specs/content-scripts.md` の SPEC-CS-16 の表を同じ値に更新する
+6. 手動確認 `docs/notes/manual-checklist.md` A-9 / A-10 を実施する
 
 **ハッシュを推測で当てない。** 接頭辞（`column-` など）が同じでも別系統の要素があるため、
 後継が見つからないものは**そのクラスを付けない**（付けないほうが、誤ったクラスを当てるより崩れ方が読める）。
@@ -218,7 +218,7 @@ npm test   # 差し替え後は必ず実行する
 | 変更ファイル | 影響 |
 | --- | --- |
 | `src/urls.js` | 全 Content Script + Service Worker + オプションページ + 小窓（FR-29） |
-| `src/*-cs.js` の起動シーケンス・監視 | `docs/specs/content-scripts.md`（SPEC-CS-01 / 08 / 10 / 12 / 19 / 22）。**固定待機・再試行間隔・デバウンスを変えたら `scripts/selector-check/targets.mjs` の `settleMs` の下限を確かめる**（SPEC-SC-25。自動テストでは落ちない） |
+| `src/*-cs.js` の起動シーケンス・監視 | `docs/notes/specs/content-scripts.md`（SPEC-CS-01 / 08 / 10 / 12 / 19 / 22）。**固定待機・再試行間隔・デバウンスを変えたら `scripts/selector-check/targets.mjs` の `settleMs` の下限を確かめる**（SPEC-SC-25。自動テストでは落ちない） |
 | `src/linkMenu.js` | 楽天・SBI の Content Script **4本すべて**（国内株の経路も同時に変わる。FR-28 判定基準5 が崩れうる唯一の場所） |
 | `src/service_worker.js` | コンテキストメニュー、メッセージ通信全体、開けないときの小窓を開く処理（SPEC-SW-10） |
 | `src/notice.*`（FR-29） | 開けないときの小窓だけ。`urls.js` を読むので、`urls.js` の `externalUrlsMap` / `getEnableLinkKeysAsync` の形を変えたら `tests/notice.spec.mjs` も通す。大きさを変えたら SPEC-SW-10 の手動確認 M-1 |

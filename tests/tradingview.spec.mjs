@@ -4,7 +4,7 @@
  * **見ているのは自分たちのコードの退行だけ。**
  * このテストが緑でも「実サイトが壊れていない」根拠にはならない（CON-08 の条件3 /
  * FR-26 判定基準7）。挿入先が実在するかは `npm run check:selectors`（FR-12）が、
- * 見た目とサイト側メニューの挙動は `docs/MANUAL-CHECKLIST.md` が見る。
+ * 見た目とサイト側メニューの挙動は `docs/notes/manual-checklist.md` が見る。
  *
  * フィクスチャは `menuSelectors` / `watchlistSymbolAttrs` を**実行時に読んで**組み立てる
  * （`tests/fixtures/tradingview.mjs`）。ハッシュ付きクラス名はこのファイルにも出てこない。

@@ -18,8 +18,8 @@ flowchart TD
 
     USER -->|"やりたいこと"| ANALYST
     ANALYST <-->|"対話で要件を詰める"| USER
-    ANALYST -->|"要件<br/>docs/requirements/"| ARCHITECT
-    ARCHITECT -->|"仕様<br/>docs/specs/"| DEVELOPER
+    ANALYST -->|"要件<br/>docs/notes/requirements/"| ARCHITECT
+    ARCHITECT -->|"仕様<br/>docs/notes/specs/"| DEVELOPER
     DEVELOPER -->|"実装<br/>src/ tests/<br/>npm run check が通ったもの"| REVIEWER
     REVIEWER -->|"🔴 Critical あり"| DEVELOPER
     REVIEWER -->|"問題なし"| GATE
@@ -61,14 +61,14 @@ flowchart TD
 | エージェント | 役割 | model | 書き換えてよい場所 |
 | --- | --- | --- | --- |
 | `lead` | 全体調整。工程を回す | opus | なし（自分では作らない） |
-| `analyst` | 利用者と対話して要件を決める | opus | `docs/requirements/` |
-| `architect` | 要件から設計・仕様を起こす | opus | `docs/requirements/`, `docs/specs/`, `docs/ARCHITECTURE.md`, `docs/adr/` |
+| `analyst` | 利用者と対話して要件を決める | opus | `docs/notes/requirements/` |
+| `architect` | 要件から設計・仕様を起こす | opus | `docs/notes/requirements/`, `docs/notes/specs/`, `docs/notes/architecture.md`, `docs/notes/adr/` |
 | `developer` | 仕様に従って実装する | opus | `src/`, `tests/`, `scripts/`, ルート設定 |
 | `reviewer` | 実装と文書を突き合わせて検証する | opus | **なし（読み取り専用）** |
 
 - **サブエージェントは役割をまたいで変えない。** developer は仕様書を書かない。architect は実装しない
 - `reviewer` は `tools` に `Write` / `Edit` を持たない。ただし `Bash` は持つので、書き換えないことは定義の指示で禁じている（道具の側の保証ではない）
-- `AGENTS.md`・`docs/` 直下の入口の4ファイル（`tasks.md`・`requirements.md`・`design.md`・`verification.md`）・`docs/README.md`・`docs/WORKFLOW.md`・`docs/TESTING.md`・`docs/MANUAL-CHECKLIST.md`・`.claude/` は、どの担当の書き換え範囲にも入れない。
+- `AGENTS.md`・`docs/` 直下の入口の4ファイル（`tasks.md`・`requirements.md`・`design.md`・`verification.md`）・`docs/notes/workflow.md`・`docs/notes/testing.md`・`docs/notes/manual-checklist.md`・`.claude/` は、どの担当の書き換え範囲にも入れない。
   書くのはメインセッション。サブエージェントは、書くべきことに気づいたら報告に書いて渡す
 - `docs/TEST-CATALOG.md` は生成物。テストを増減したら（developer か、自分で書いたメインセッションが）`npm run docs:tests` で作り直す
 
@@ -164,7 +164,7 @@ git push
 ```
 
 `npm run approve && git commit …` のように1回の呼び出しにまとめると、フックが承認前の状態で判定して止める。
-手順の詳細と経緯は [AGENTS.md](../AGENTS.md)「修正したら、テスト → レビュー → テスト → コミット → push までをセットで行う」。
+手順の詳細と経緯は [AGENTS.md](../../AGENTS.md)「修正したら、テスト → レビュー → テスト → コミット → push までをセットで行う」。
 
 ### 承認は変更内容に紐づく
 
@@ -237,8 +237,8 @@ HEAD も比べることで、**承認は1回のコミットで使い切られ**�
 - Markdown（`.md`）である
 - `src/`・`tests/`・`scripts/` の外にある
 - `tests/` と `scripts/` のどのファイルにも、その名前が書かれていない。
-  テストが読む文書（`tests/selector-defs.spec.mjs` は `docs/MANUAL-CHECKLIST.md` を読む）を変えると、テストの結果が変わりうるため。
-  コメントで触れているだけのものも全件に倒す（例: `MANUAL-CHECKLIST.md`・`WORKFLOW.md`。どれが当たるかは `tests/` と `scripts/` の中身で決まる）。
+  テストが読む文書（`tests/selector-defs.spec.mjs` は `docs/notes/manual-checklist.md` を読む）を変えると、テストの結果が変わりうるため。
+  コメントで触れているだけのものも全件に倒す（例: `manual-checklist.md`・`workflow.md`。どれが当たるかは `tests/` と `scripts/` の中身で決まる）。
   ステージ済みの変更も見る（ステージしてから作業ツリーだけ戻したコードの変更を漏らさないため）
 
 ひとつでも外れれば、今までどおり全件を流す（同じ作業ツリーの記録があれば使い回す）。
@@ -301,4 +301,4 @@ HEAD も比べることで、**承認は1回のコミットで使い切られ**�
 - エージェント定義: `.claude/agents/`
 - フック: `.claude/hooks/commit-gate.sh`（高速パス）, `.claude/hooks/commit-gate.mjs`（解析）, `.claude/settings.json`
 - 承認スクリプト: `scripts/approve.mjs`, `scripts/check.mjs`, `scripts/lib/check-record.mjs`, `scripts/lib/change-hash.mjs`, `scripts/lib/docs-only.mjs`
-- ドキュメント索引: [README.md](README.md)
+- 文書の入口: [AGENTS.md](../../AGENTS.md)

@@ -29,7 +29,7 @@ const runCheckAsync = () => new Promise((resolve) => {
 
 const runDocsCheckAsync = () => new Promise((resolve) => {
   console.log('▶ 変更は文書（Markdown）だけなので、npm run check:docs だけを実行します（lint:md + テストカタログの陳腐化検査）')
-  console.log('  テスト全件は流しません（docs/WORKFLOW.md「文書だけの変更は文書の検査だけで承認する」）\n')
+  console.log('  テスト全件は流しません（docs/notes/workflow.md「文書だけの変更は文書の検査だけで承認する」）\n')
   const child = spawn('npm', ['run', 'check:docs'], { cwd: root, stdio: 'inherit' })
   child.on('close', (code) => resolve(code ?? 1))
 })

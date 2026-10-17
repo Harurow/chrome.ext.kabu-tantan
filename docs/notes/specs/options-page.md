@@ -161,7 +161,7 @@ Material Icons をサブセット化して同梱する（32KB）。使用アイ�
 **リガチャは `liga` ではなく `rlig`（必須リガチャ）。**
 `rlig` は指定なしで適用されるため `font-feature-settings` は不要
 （Google 配布の CSS にある `font-feature-settings: "liga"` はこのフォントには効かない）。
-アイコンを増やしたら `docs/ARCHITECTURE.md` の手順で再サブセットが必要。
+アイコンを増やしたら `docs/notes/architecture.md` の手順で再サブセットが必要。
 
 ファイル配置:
 

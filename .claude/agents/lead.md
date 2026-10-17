@@ -28,8 +28,8 @@ flowchart TD
     COMMIT(["approve → コミット → push"])
 
     USER -->|"やりたいこと"| ANALYST
-    ANALYST -->|"要件 FR/NFR/CON<br/>docs/requirements/"| ARCHITECT
-    ARCHITECT -->|"仕様 SPEC-xx<br/>docs/specs/"| DEVELOPER
+    ANALYST -->|"要件 FR/NFR/CON<br/>docs/notes/requirements/"| ARCHITECT
+    ARCHITECT -->|"仕様 SPEC-xx<br/>docs/notes/specs/"| DEVELOPER
     DEVELOPER -->|"src/ tests/"| REVIEWER
     REVIEWER -->|"🔴 Critical あり"| DEVELOPER
     REVIEWER -->|"問題なし"| COMMIT
@@ -42,8 +42,8 @@ flowchart TD
 
 | 担当 | 責務 | 書き換えてよい場所 |
 | --- | --- | --- |
-| `analyst` | 利用者と対話して要件を決める | `docs/requirements/` |
-| `architect` | 要件から設計・仕様を起こす | `docs/requirements/`, `docs/specs/`, `docs/ARCHITECTURE.md`, `docs/adr/` |
+| `analyst` | 利用者と対話して要件を決める | `docs/notes/requirements/` |
+| `architect` | 要件から設計・仕様を起こす | `docs/notes/requirements/`, `docs/notes/specs/`, `docs/notes/architecture.md`, `docs/notes/adr/` |
 | `developer` | 仕様に従って実装する | `src/`, `tests/`, `scripts/`, ルート設定 |
 | `reviewer` | 実装と文書を突き合わせて検証する | なし（読み取り専用） |
 
@@ -90,7 +90,7 @@ flowchart TD
 | 必要資料 | **どのファイルの、どの ID を見ればよいか** |
 | 既知の阻害 | 分かっている詰まりどころ・前回の差し戻し理由 |
 
-例: 「`docs/specs/content-scripts.md` の SPEC-CS-09 を実装してください。
+例: 「`docs/notes/specs/content-scripts.md` の SPEC-CS-09 を実装してください。
 対応する要件は FR-03 です。既存の `tests/content-script.spec.mjs` に倣ってテストも追加してください。」
 
 ### 4. レビューは必ず通す
@@ -111,7 +111,7 @@ flowchart TD
 
 **コミットは以下がすべて揃うまでできない。** これは hook で機械的に強制されている。
 
-1. `npm run check` が通る（lint + validate + テスト全件。変更が文書だけなら `npm run check:docs`。`docs/WORKFLOW.md`「文書だけの変更は文書の検査だけで承認する」）
+1. `npm run check` が通る（lint + validate + テスト全件。変更が文書だけなら `npm run check:docs`。`docs/notes/workflow.md`「文書だけの変更は文書の検査だけで承認する」）
 2. `reviewer` のチェックが通る（🔴 Critical が無い）
 3. `npm run approve` を実行して承認を記録する
 

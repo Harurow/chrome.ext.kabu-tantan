@@ -875,7 +875,7 @@ matchInjectionTicker(text, allowUs)
   **自動テストで分からないのは、実サイトの canvas が今もこの形の `aria-label` を持つか**で、それは下の半自動と手動が見る／
   `半自動`（`npm run check:selectors -- --only=tradingview` の `chart-canvas` と
   `tv-symbol` 追加検査。SPEC-SC-11）／
-  `manual`（`docs/MANUAL-CHECKLIST.md` A-1 / A-7。TradingView にログインして `NASDAQ:AAPL` でも
+  `manual`（`docs/notes/manual-checklist.md` A-1 / A-7。TradingView にログインして `NASDAQ:AAPL` でも
   「株Link」ボタンが出ること）
 
 ## SPEC-TC-08 コンテキストメニューでの抽出
@@ -888,4 +888,4 @@ matchInjectionTicker(text, allowUs)
 > 抽出の規則（SPEC-TC-04）は変えていない。
 
 - 要件: FR-05, FR-29
-- 検証: `auto`（`getTickerCode` のテスト／`service_worker: 開けない項目を押したときの小窓 › 銘柄コードと解釈できない文字列では、選択した文字列を渡さずに小窓を開く`）／`manual`（実際に選択して右クリック。`docs/MANUAL-CHECKLIST.md` D-1）
+- 検証: `auto`（`getTickerCode` のテスト／`service_worker: 開けない項目を押したときの小窓 › 銘柄コードと解釈できない文字列では、選択した文字列を渡さずに小窓を開く`）／`manual`（実際に選択して右クリック。`docs/notes/manual-checklist.md` D-1）

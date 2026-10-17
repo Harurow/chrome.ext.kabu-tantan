@@ -33,10 +33,10 @@ npm run approve       # レビュー承認を記録する（コミットに必�
 
 > `npm run check` は lint + validate + テスト + **テストカタログの陳腐化検査**を行う。
 > 通ると作業ツリーを `.claude/check-passed.json` に記録し、同じ作業ツリーなら `npm run approve` は流し直さない
-> （[docs/WORKFLOW.md](docs/WORKFLOW.md)「全件のチェックを同じ作業ツリーで2回流さない」）。
+> （[docs/notes/workflow.md](docs/notes/workflow.md)「全件のチェックを同じ作業ツリーで2回流さない」）。
 >
 > **コミットは、テスト全件が通り（文書だけの変更は文書の検査が通り）、かつ reviewer のレビューが通るまでできない。**
-> `.claude/hooks/commit-gate.sh` が機械的にブロックする。詳細は [docs/WORKFLOW.md](docs/WORKFLOW.md)。
+> `.claude/hooks/commit-gate.sh` が機械的にブロックする。詳細は [docs/notes/workflow.md](docs/notes/workflow.md)。
 
 ### Chrome への読み込み
 
@@ -65,28 +65,27 @@ src/                        ← このディレクトリがそのまま拡張機
 ├── notice.html/js/css      # 右クリックの項目で開けないときに理由を知らせる小窓
 ├── _locales/ja/            # 日本語ローカライズ
 ├── images/                 # アイコン画像
-└── third-party/            # 同梱ライブラリ (編集しない。docs/ARCHITECTURE.md 参照)
+└── third-party/            # 同梱ライブラリ (編集しない。docs/notes/architecture.md 参照)
 
 scripts/                    # 開発用 Node スクリプト (validate / package / test-catalog)
 tests/                      # Playwright テスト
 docs/
 ├── tasks.md                # 入口: 残りのタスク (AI の分も利用者の分も)
-├── requirements.md         # 入口: 何を作るか → requirements/
-├── design.md               # 入口: どう作るか → ARCHITECTURE.md・specs/・adr/
-├── verification.md         # 入口: 確かめ方と結果 → TESTING.md・MANUAL-CHECKLIST.md ほか
-├── README.md               # 文書の索引・ID 採番規則・追跡関係
-├── requirements/           # 要件定義 (FR / NFR / CON)
-├── specs/                  # 仕様書 (SPEC-xx) ← 実装と1対1
-├── adr/                    # 設計判断の記録 (ADR-xxxx)
-├── ARCHITECTURE.md         # 実装構造・ライブラリ更新手順
-├── TESTING.md              # テスト方針・手動確認手順
+├── requirements.md         # 入口: 何を作るか → notes/requirements/
+├── design.md               # 入口: どう作るか → notes/architecture.md・notes/specs/・notes/adr/
+├── verification.md         # 入口: 確かめ方と結果 → notes/testing.md・notes/manual-checklist.md ほか
+├── notes/                  # 現在の資料（英小文字とハイフン。話題ごとのフォルダは1段まで）
+│   ├── architecture.md     # 実装構造・同梱ライブラリの更新手順
+│   ├── testing.md          # テスト方針・3層の切り分け
+│   ├── manual-checklist.md # 手動確認と結果
+│   ├── workflow.md         # 開発フロー・エージェント・コミットゲート
+│   ├── requirements/       # 要件 (FR / NFR / CON)。index.md が案内する
+│   ├── specs/              # 仕様 (SPEC)。index.md が実装との対応を案内する
+│   └── adr/                # 設計判断 (ADR)。index.md が案内する
 ├── TEST-CATALOG.md         # テスト一覧 (自動生成)
 ├── SELECTOR-CHECK.md       # 実サイトのセレクタ検証結果 (check:selectors の生成物)
-├── MANUAL-CHECKLIST.md     # 手動確認チェックリスト
-├── WORKFLOW.md             # 開発フロー・エージェント・コミットゲート
-├── notes/                  # そのほかの新しい資料 (最初の1件を書くときに作る)
-├── images/                 # README 用スクリーンショット
-└── zenn/                   # 記事化用の作業ログ
+├── images/                 # 固定した既存スクリーンショット（移動しない）
+└── zenn/                   # 固定した2026年8月の作業ログ（移動しない）
 
 .claude/
 ├── agents/                 # 要件 / 設計 / 実装 / レビュー / 調整のエージェント定義
@@ -101,20 +100,54 @@ docs/
 | Content Script | `*-cs.js` | 各サイトへのメニュー注入 |
 | オプション | `options.*` | ユーザー設定 UI |
 
-詳細は [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
+詳細は [docs/notes/architecture.md](docs/notes/architecture.md)。
 
 ### ドキュメントの役割分担
 
 | ディレクトリ | 書くもの | 担当エージェント |
 | --- | --- | --- |
-| `docs/requirements/` | **満たすべきこと**（FR / NFR / CON） | analyst |
-| `docs/specs/` | **今そうなっていること**（SPEC-xx）。実装と1対1 | architect |
+| `docs/notes/requirements/` | **満たすべきこと**（FR / NFR / CON） | analyst |
+| `docs/notes/specs/` | **今そうなっていること**（SPEC-xx）。実装と1対1 | architect |
 | `src/`, `tests/` | 実装 | developer |
 | — | レビュー（書き換えなし） | reviewer |
 
 どこを開けばよいかは、`docs/` 直下の入口の4ファイル（[tasks.md](docs/tasks.md)・[requirements.md](docs/requirements.md)・[design.md](docs/design.md)・[verification.md](docs/verification.md)）が案内する。
-入口には中身を書かず、上の表の文書へリンクする（tasks.md は除く。残りのタスクはそこが正本）。そのほかの新しい資料は `docs/notes/` に置く（今ある文書は動かしていない）。
-索引は [docs/README.md](docs/README.md)。**仕様書は「あるべき姿」ではなく「実際にそうなっているもの」を書く。**
+入口は上の表の文書を案内し、残りのタスクは `docs/tasks.md`、検証の結果と証拠の案内は `docs/verification.md` に置く。
+現在の資料は `docs/notes/` に置く（2026-10-17 に旧配置から移行）。生成物2ファイル・既存画像・固定した過去の作業ログは動かさず、入口から案内する。
+**仕様書は「あるべき姿」ではなく「実際にそうなっているもの」を書く。**
+
+### このプロジェクトの文書の入口
+
+- 要件の状態・優先度・更新履歴: [docs/notes/requirements/index.md](docs/notes/requirements/index.md)。背景・目的は同じフォルダの `background.md`
+- 実装と1対1の仕様: [docs/notes/specs/index.md](docs/notes/specs/index.md)。領域は `SPEC-MF`（manifest）、`SPEC-EL`（外部リンク）、`SPEC-TC`（銘柄判定）、`SPEC-ST`（保存）、`SPEC-SW`（Service Worker）、`SPEC-MSG`（通信）、`SPEC-CS`（注入）、`SPEC-OP`（オプション）、`SPEC-NT`（小窓）、`SPEC-SC`（実サイト検証）
+- 選択肢を比較して決めた記録: [docs/notes/adr/index.md](docs/notes/adr/index.md)
+- 実装構造・同梱ライブラリの更新: [docs/notes/architecture.md](docs/notes/architecture.md)
+- テストの切り分け・実行: [docs/notes/testing.md](docs/notes/testing.md)。実際に手で見る項目と結果は [docs/notes/manual-checklist.md](docs/notes/manual-checklist.md)
+- フロー・担当の権限・コミットゲート: [docs/notes/workflow.md](docs/notes/workflow.md)
+
+`docs/SELECTOR-CHECK.md` は毎回上書きされる生成物。数値や判定を引用するときは収録コミットを添える（例: `git show e0d3c5e:docs/SELECTOR-CHECK.md`）。
+規約は SPEC-SC-13、実行ごとの一覧は FR-12「結果ファイルの出典」表。現在の結果へのリンクだけでは次回実行後に出所を追えない。
+
+### ID 採番規則
+
+| 接頭辞 | このプロジェクトでの対象 | 例 |
+| --- | --- | --- |
+| `FR-` | 機能要件 | `FR-01` |
+| `NFR-` | 非機能要件 | `NFR-01` |
+| `CON-` | 制約条件 | `CON-01` |
+| `SPEC-<領域>-` | 現在の仕様 | `SPEC-CS-03` |
+| `ADR-` | 設計判断 | `ADR-0001` |
+
+既存 ID は再利用しない。廃止する場合は項目を残して「廃止」と明記し、欠番にする。
+
+### 追跡関係
+
+```mermaid
+flowchart LR
+    R["要件 FR / NFR / CON"] --> S["仕様 SPEC"] --> T["自動テストまたは手動確認"]
+```
+
+仕様には満たす要件と確かめ方を書く。要件に紐づかない仕様は要件の漏れを疑う。実装との食い違いは放置しない。
 
 ### エージェント
 
@@ -123,20 +156,20 @@ docs/
 | エージェント | 役割 | 書き換えてよい場所 |
 | --- | --- | --- |
 | `lead` | 全体調整。工程を回す | なし |
-| `analyst` | 利用者と対話して要件を決める | `docs/requirements/` |
-| `architect` | 要件から設計・仕様を起こす | `docs/requirements/`, `docs/specs/`, `docs/ARCHITECTURE.md`, `docs/adr/` |
+| `analyst` | 利用者と対話して要件を決める | `docs/notes/requirements/` |
+| `architect` | 要件から設計・仕様を起こす | `docs/notes/requirements/`, `docs/notes/specs/`, `docs/notes/architecture.md`, `docs/notes/adr/` |
 | `developer` | 仕様に従って実装する | `src/`, `tests/`, `scripts/`, ルート設定 |
 | `reviewer` | 実装と文書を突き合わせて検証する | **なし（読み取り専用）** |
 
-`AGENTS.md`・`docs/` 直下の入口の4ファイル・`docs/README.md`・`docs/WORKFLOW.md`・`docs/TESTING.md`・`docs/MANUAL-CHECKLIST.md`・`.claude/` は、どの担当の書き換え範囲にも入れない。
+`AGENTS.md`・`docs/` 直下の入口の4ファイル・`docs/notes/workflow.md`・`docs/notes/testing.md`・`docs/notes/manual-checklist.md`・`.claude/` は、どの担当の書き換え範囲にも入れない。
 書くのはメインセッション（利用者と直接やり取りしている AI）だけ（`AGENTS.md` は下の「[AI エージェント向けの記録](#ai-エージェント向けの記録)」）。
 
 担当を指定せずに起動したメインセッションは、この表の書き換え範囲に縛られない（`src/third-party/` を編集しないなど、ほかの規則には従う）。
 `claude --agent <担当>` で起動したときは、その担当の定義（書き換えてよい場所を含む）に従う。
 サブエージェントに渡すのは、独立した確認（レビュー）・並行できる作業・利用者が `claude --agent` で工程を回すと決めたときだけ
-（[docs/WORKFLOW.md](docs/WORKFLOW.md)「サブエージェントに渡す基準」）。
+（[docs/notes/workflow.md](docs/notes/workflow.md)「サブエージェントに渡す基準」）。
 
-フロー・モデル選定・コミットゲートは [docs/WORKFLOW.md](docs/WORKFLOW.md)。
+フロー・モデル選定・コミットゲートは [docs/notes/workflow.md](docs/notes/workflow.md)。
 
 ### データフロー
 
@@ -264,7 +297,7 @@ async function attachAsync () {
 
 ## テスト
 
-Playwright で拡張機能を実際に Chromium へロードして検証する。詳細は [docs/TESTING.md](docs/TESTING.md)。
+Playwright で拡張機能を実際に Chromium へロードして検証する。詳細は [docs/notes/testing.md](docs/notes/testing.md)。
 
 | ファイル | 対象 |
 | --- | --- |
@@ -284,10 +317,10 @@ Playwright で拡張機能を実際に Chromium へロードして検証する�
 **TradingView の自動テストは、拡張が自分で作った DOM の振る舞いだけを見る**
 （`tests/tradingview.spec.mjs`）。**緑でも実サイトが壊れていない根拠にはならない**（CON-08）。
 サイト側の DOM・見た目・挙動は `npm run check:selectors` と
-[docs/MANUAL-CHECKLIST.md](docs/MANUAL-CHECKLIST.md) の A セクションが見る。
+[docs/notes/manual-checklist.md](docs/notes/manual-checklist.md) の A セクションが見る。
 変更時は同チェックリストに従って利用者に確認を依頼する。
 
-検証の切り分け（自動 / 半自動 / 手動）は [docs/TESTING.md](docs/TESTING.md) を参照。
+検証の切り分け（自動 / 半自動 / 手動）は [docs/notes/testing.md](docs/notes/testing.md) を参照。
 
 ## 注意事項
 
@@ -298,7 +331,7 @@ Playwright で拡張機能を実際に Chromium へロードして検証する�
 - **外部リソースを実行時に取得しない:** Chrome ウェブストアの審査とプライバシーの観点から、
   フォント・アイコン・画像はすべて `src/` に同梱する
   （`tests/options.spec.mjs` に外部リクエストゼロを保証する回帰テストがある）
-- **`src/third-party/` は編集しない:** 更新手順は [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) 参照
+- **`src/third-party/` は編集しない:** 更新手順は [docs/notes/architecture.md](docs/notes/architecture.md) 参照
 
 ## AI エージェント向けの記録
 
@@ -332,7 +365,7 @@ Chrome 拡張機能に共通する取り決めとノウハウは、利用者の�
 
 ### 手動確認の補助ページ（このプロジェクトでの実測）
 
-補助ページの作り方は共通ルールにある。このプロジェクトでは、ページを消す前に結果を `docs/MANUAL-CHECKLIST.md` に記録する。
+補助ページの作り方は共通ルールにある。このプロジェクトでは、ページを消す前に結果を `docs/notes/manual-checklist.md` に記録する。
 
 - `file://` で開いたページでも、株リンクの右クリックメニューは出て、押すとタブや小窓も開く（2026-10-12 の D-1 で確かめた。
   `chrome://extensions` の「ファイルの URL へのアクセスを許可する」がオンだったかオフだったかは記録していない）
@@ -340,7 +373,7 @@ Chrome 拡張機能に共通する取り決めとノウハウは、利用者の�
 ### 自動でテストできるものは、自動でテストする
 
 **テストは自動化を基本にする。** 利用者に手動確認を頼むのは、自動化できないと確かめたものだけにする（2026-10-11 利用者指示。進め方は共通ルール）。
-このプロジェクトでは、試して自動化できなかったものを下の表に書き、自動テストに移した項目は `docs/MANUAL-CHECKLIST.md` から外す
+このプロジェクトでは、試して自動化できなかったものを下の表に書き、自動テストに移した項目は `docs/notes/manual-checklist.md` から外す
 （自動と手動で同じことを二重に持たない。FR-26 判定基準 3）。
 
 **自動化できないと確かめたもの:**
@@ -398,10 +431,10 @@ push の前に利用者へ確認しない（2026-10-11 利用者指示）。
    developer の完了報告の前・reviewer のレビュー・手順3の `npm run approve`。
    approve は、同じ作業ツリーで通った記録（reviewer のレビューで流した分など）があれば流し直さない。
    **変更が文書だけ**（`src/`・`tests/`・`scripts/` の外の Markdown で、テストとスクリプトが名前に触れていないもの）なら、
-   全件は流さず `npm run check:docs` だけでよい。approve も同じ判定で全件を流さない（`docs/WORKFLOW.md`「文書だけの変更は文書の検査だけで承認する」）
+   全件は流さず `npm run check:docs` だけでよい。approve も同じ判定で全件を流さない（`docs/notes/workflow.md`「文書だけの変更は文書の検査だけで承認する」）
 2. reviewer のレビューを通す。OK が出なければ直して（関係するテストを流し直して）、もう一度レビューを通す
 3. レビューが OK なら `npm run approve` でテストする。`npm run check` を全件流し（文書だけの変更なら `npm run check:docs` だけ）、通れば承認を記録する
-   （コミットゲート。`docs/WORKFLOW.md`）。同じ作業ツリーで通った記録があれば、流し直さずに承認する。
+   （コミットゲート。`docs/notes/workflow.md`）。同じ作業ツリーで通った記録があれば、流し直さずに承認する。
    通らなければ承認されないので、直して手順2からやり直す
 4. 変更を**すべて**コミットする（一部だけ `git add` すると、テストしていない組み合わせが履歴に入りうる）。
    一部だけのコミットや、ステージした中身と作業ツリーのずれはゲートが止める（2026-10-14〜）。`git add -A && git commit` の形で行う。

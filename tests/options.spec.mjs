@@ -155,7 +155,7 @@ test.describe('オプションページ', () => {
   })
 
   // フォントはサブセット化してある。アイコンを増やしたときは
-  // docs/ARCHITECTURE.md の手順で再サブセットしないとリガチャが効かず文字列のまま表示される
+  // docs/notes/architecture.md の手順で再サブセットしないとリガチャが効かず文字列のまま表示される
   test('Material Icons がローカル同梱フォントとして読み込まれリガチャが効く', async ({ page, extensionId }) => {
     await openOptions(page, extensionId)
 

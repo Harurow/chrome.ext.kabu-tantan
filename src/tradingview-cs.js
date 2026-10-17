@@ -1083,7 +1083,7 @@ const selectorOf = (key) => menuSelectors.find((menuSelector) => menuSelector.ke
 /**
  * TradingView の見た目に合わせるための模倣用クラス（検証対象外 / 採取日: 2026-08-23）
  * ハッシュ部分は TradingView のリリースで変わる。壊れても見た目が崩れるだけで機能は落ちない。
- * 更新手順は docs/ARCHITECTURE.md「TradingView の模倣用クラスを更新する」
+ * 更新手順は docs/notes/architecture.md「TradingView の模倣用クラスを更新する」
  * @type { Record<string, string> }
  */
 const tvMimicClasses = {

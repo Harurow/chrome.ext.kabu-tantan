@@ -39,7 +39,7 @@ $(() => {
 > 上表の「待機」と「エントリポイント」は 1.12.2 から変えていない。
 
 - 要件: FR-02, FR-03, NFR-09, FR-13, NFR-14
-- 検証: `auto`（楽天・SBI の注入テスト）／`manual`（門は `docs/MANUAL-CHECKLIST.md` G）
+- 検証: `auto`（楽天・SBI の注入テスト）／`manual`（門は `docs/notes/manual-checklist.md` G）
 
 ## SPEC-CS-02 メニュー注入の手順
 
@@ -498,7 +498,7 @@ ADR-0002 の 3 ／ ADR-0010 の 6）。
   `context-menu` が ✅。参考値として「注入」列の `tr[data-kabu-tantan]` が **1 件**になる。
   ただし注入列は判定条件にしない。SPEC-SC-09）／
   `auto`（右クリックで足す行・入れ子の項目とツールチップ・二重追加の防止・起点を特定できない場所。2026-10-15〜。SPEC-CS-27 の 5-5〜5-10）／
-  `manual`（`docs/MANUAL-CHECKLIST.md` A-7（`NASDAQ:` の表記。旧2行目）, A-9, A-10, A-11 の残り（1行目・観測・最終行）。
+  `manual`（`docs/notes/manual-checklist.md` A-7（`NASDAQ:` の表記。旧2行目）, A-9, A-10, A-11 の残り（1行目・観測・最終行）。
   **「自動テスト対象外」ではない。** CON-08 は 2026-08-30 に改訂され、
   **拡張が自分で作った DOM の振る舞いはフィクスチャで検査してよい**（SPEC-CS-27）。
   本節の項目は FR-26 の段階1・4・5 で自動テストへ移した（段階4・5 は 2026-10-15。SPEC-CS-27 の 4-2〜4-14・5-3〜5-10。旧 A-5 / A-6）。
@@ -674,7 +674,7 @@ FR-07「やらないこと」に従い、**ラベル・開き方・未ログイ�
 | 観点 | 判定手段 |
 | --- | --- |
 | 挿入先が存在するか | `npm run check:selectors -- --only=tradingview`（ログイン不要） |
-| ボタンが**見えるか** | 手動確認 `docs/MANUAL-CHECKLIST.md` A-1（**TradingView にログインして実施する**） |
+| ボタンが**見えるか** | 手動確認 `docs/notes/manual-checklist.md` A-1（**TradingView にログインして実施する**） |
 
 セレクタがヒットしていてボタンが見えない場合、原因は挿入先の選択であって
 セレクタの破損ではない。挿入先の見直しが要る（ADR-0002 の 4 に候補を残す）。
@@ -726,14 +726,14 @@ FR-07「やらないこと」に従い、**ラベル・開き方・未ログイ�
   `auto`（切断状態。`tests/disconnected.spec.mjs` の「切断状態: TradingView」。メニューを出さない・起動時にボタンを注入しない。旧 G-2 / G-5）／
   `auto`（項目の集合と順序。2026-10-15〜。SPEC-CS-27 の 4-3〜4-7。旧 A-7b）／
   `auto`（ボタンのメニューが背景とキーで閉じる・項目で遷移する。2026-10-15〜。SPEC-CS-27 の 5-3 / 5-4。旧 A-3 / A-4）／
-  `manual`（`docs/MANUAL-CHECKLIST.md` A-1, A-8, A-9。
+  `manual`（`docs/notes/manual-checklist.md` A-1, A-8, A-9。
   **「自動テスト対象外」ではない**（CON-08 の改訂。SPEC-CS-27）。
   A-2 の2行目は FR-26 の段階1、A-7b は段階4、A-2 の1行目・A-3・A-4 は段階5（いずれも 2026-10-15）で移った。
   **A-1（挿入先が実サイトに在るか）・A-8（実サイトが canvas の属性をその場で書き換えるか）・A-9（テーマ別の可読性）は移らない**（サイト側＝(b)））
 
 #### FR-07 の手動確認手順
 
-実施用の手順は `docs/MANUAL-CHECKLIST.md` **A-7b**（1.12.0 で書き換え済み）。下表はその根拠。
+実施用の手順は `docs/notes/manual-checklist.md` **A-7b**（1.12.0 で書き換え済み）。下表はその根拠。
 
 | # | 操作 | 期待 |
 | --- | --- | --- |
@@ -849,7 +849,7 @@ FR-07「やらないこと」に従い、**ラベル・開き方・未ログイ�
 ```javascript
 /** TradingView の見た目に合わせるための模倣用クラス（検証対象外 / 採取日: 2026-08-23）
  *  ハッシュ部分は TradingView のリリースで変わる。壊れても見た目が崩れるだけで機能は落ちない。
- *  更新手順は docs/ARCHITECTURE.md「TradingView の模倣用クラスを更新する」 */
+ *  更新手順は docs/notes/architecture.md「TradingView の模倣用クラスを更新する」 */
 const tvMimicClasses = { ... }
 ```
 
@@ -906,12 +906,12 @@ TradingView 自身が付けている属性のうち、次を同じ位置に付�
 > **TradingView 自身のメニューのキー操作はフィクスチャに無いので、親メニューの選択状態は見ていない**（手動確認 A-11 の行も外した）。**本人の判断で、自動にも手動にもせず「気づいたら報告」とした（2026-10-15）。** 拡張は右クリックのメニューでキーを受けない（閉じるために Esc を送るだけ）ので、拡張がここを壊す経路が無い。実サイトで半自動にしないのは、Enter が TradingView のメニュー項目を実行してしまい、CON-10 で許していないため。
 
 - **検証対象外（FR-12）。** ハッシュが変わっても `npm run check:selectors` は検出しない。
-  崩れたことに気づく手段は手動確認 `docs/MANUAL-CHECKLIST.md` A-9 / A-10 のみ
+  崩れたことに気づく手段は手動確認 `docs/notes/manual-checklist.md` A-9 / A-10 のみ
 - 値が古くなっても**機能は落ちない**（見た目だけが TradingView と揃わなくなる）。
   これは意図した設計であり、模倣用クラスを検証対象に格上げしない理由でもある（ADR-0002 の 6）
 
 - 要件: FR-04, FR-12（検証対象外の側）
-- 検証: `manual`（`docs/MANUAL-CHECKLIST.md` A-9「テーマ切り替え」・
+- 検証: `manual`（`docs/notes/manual-checklist.md` A-9「テーマ切り替え」・
   A-10「追加項目が TradingView の項目と同じ見た目か」）
 
 ## SPEC-CS-17 TradingView: 右クリックメニューの入れ子（サブメニュー）
@@ -1111,7 +1111,7 @@ Esc キーと外クリックで親メニューを閉じ、それに伴って入�
 - 検証: `auto`（**入れ子の開閉と項目のクリック**は `tests/tradingview.spec.mjs` が通している
   （1.20.0。SPEC-CS-27 の 1-1〜1-3 / 2-2）。**判定基準 7〜9（スクロール・Esc・外クリック）・配置の反転・閉じる猶予は
   2026-10-15 から**（SPEC-CS-27 の 4-8〜4-12。FR-26 の段階4。〔2026-10-15 まで〕未着手））／
-  `manual`（`docs/MANUAL-CHECKLIST.md` A-11 の残り（1行目のサイト側の外クリック判定との競合・観測・楽天ログイン時の並び）。**見た目（A-10）は移らない**＝ (b)）
+  `manual`（`docs/notes/manual-checklist.md` A-11 の残り（1行目のサイト側の外クリック判定との競合・観測・楽天ログイン時の並び）。**見た目（A-10）は移らない**＝ (b)）
 
 ## SPEC-CS-18 TradingView: メニュー項目リストの生成
 
@@ -1200,7 +1200,7 @@ Esc キーと外クリックで親メニューを閉じ、それに伴って入�
   SPEC-ST-03 の自動テスト 5）／
   `auto`（**項目の集合と順序**。2026-10-15〜。`tests/tradingview.spec.mjs`「TradingView: 項目の集合と順序（FR-07 / FR-18）」。SPEC-CS-27 の 4-2〜4-7。
   国内株・米国株、入れ子とボタン、設定順。全サイト無効のときに何も残さないことは 4-14）／
-  `manual`（`docs/MANUAL-CHECKLIST.md` A-7（実サイトの取引所の表記。旧2行目）と A-11 の最終行（楽天ログイン時の並び））。
+  `manual`（`docs/notes/manual-checklist.md` A-7（実サイトの取引所の表記。旧2行目）と A-11 の最終行（楽天ログイン時の並び））。
   〔2026-10-15 まで〕「項目の集合と順序の `auto` はまだ無い。`FR-26` の段階4 が未着手なだけ」だった
 
 ## SPEC-CS-19 切断状態（Extension context invalidated）での振る舞い
@@ -1216,7 +1216,7 @@ Esc キーと外クリックで親メニューを閉じ、それに伴って入�
 ### 生存判定 `isExtensionAlive()`
 
 置き場所は **`src/urls.js`**。5本の Content Script すべてと Service Worker が読む唯一の共有ファイルであり、
-`linkMenu.js` は TradingView に読み込まれないため使えない（SPEC-MF-06、`docs/ARCHITECTURE.md`「モジュール共有の仕組み」）。
+`linkMenu.js` は TradingView に読み込まれないため使えない（SPEC-MF-06、`docs/notes/architecture.md`「モジュール共有の仕組み」）。
 
 ```javascript
 const isExtensionAlive = () =>
@@ -1328,7 +1328,7 @@ TradingView だけ、起動時に DOM を追加する処理（`createKabuLinkMen
 #### 検証との対応（2026-10-12〜 自動テスト）
 
 **`tests/disconnected.spec.mjs` が見る。** 拡張機能を実際に再読み込みして古いタブを切断状態にする
-（`reloadExtension` fixture。開発者モードを有効にして `chrome.developerPrivate.reload`。手法は `docs/TESTING.md`「5. 切断状態」）。
+（`reloadExtension` fixture。開発者モードを有効にして `chrome.developerPrivate.reload`。手法は `docs/notes/testing.md`「5. 切断状態」）。
 各テストは NFR-14 の判定基準どおり、**(1) 例外が出ない**（`pageerror` / `console` の error）、
 **(2) 要素を一切足さない**（操作の前にページ側へ仕込んだ MutationObserver の記録が空。足してすぐ消す経路も捕まえる）、
 **(3) 正常時は同じ操作が効く**（切断の前、または再読み込み後のタブでの対照）を見る。
@@ -1349,10 +1349,10 @@ TradingView だけ、起動時に DOM を追加する処理（`createKabuLinkMen
   （窓を外して生きているうちに `attach()` が走っていれば、直前の時点でボタンが1つある）
 - **G-6 は時間の窓が要らない。** 後から現れる行・ツールバーは、切断の**後に**テストが足す。
   G-6 の3件（と A-12）は、isolated world の `setInterval` を数えて**再試行が回っていること（1）を確かめてから**操作し、
-  G-6 では切断後にタイマーが止まった（0）ことも見る（`docs/TESTING.md`「5. 切断状態」）
+  G-6 では切断後にタイマーが止まった（0）ことも見る（`docs/notes/testing.md`「5. 切断状態」）
 - **対照:** G-1 / G-1 の変形 / G-2 / G-7 は、切断の前に同じ操作が効くこと（行が足される・メニューが開く・ボタンが隠れる）を同じテストの中で示す。
   G-1 の変形は層の監視が一度で外れるので、対照を別のタブで行う
-- **外部への要求:** 13件とも fixture `externalRequests` で、差し替えていない外部への要求とタブの遷移が無いことを検査する（`docs/TESTING.md`「全テストに効く前提」）
+- **外部への要求:** 13件とも fixture `externalRequests` で、差し替えていない外部への要求とタブの遷移が無いことを検査する（`docs/notes/testing.md`「全テストに効く前提」）
 - **G-7 は A-8 と対でなくても判定できる。** フィクスチャでは切断の前後に**同じ変化**（canvas の `aria-label` の書き換え）を与えるため、
   旧 G-7 にあった「canvas が DOM から外れて監視が発火しなかっただけ」という曖昧さが起きない
 - **限界: テストが終わった後に出る例外は見えない。** 例外の検査はテストの中で集めたものだけを見る。
@@ -1381,7 +1381,7 @@ TradingView だけ、起動時に DOM を追加する処理（`createKabuLinkMen
 - 要件: NFR-14, NFR-01, NFR-05, CON-01, CON-03
 - 検証: `auto`（`tests/disconnected.spec.mjs`。上の表。2026-10-12〜）／
   `auto`（楽天・SBI・スクリーナー2種の**正常時の退行が無いこと**は既存の注入テスト `tests/content-script.spec.mjs` も担保する。判定基準3）。
-  **手動確認は無い**（`docs/MANUAL-CHECKLIST.md` セクション G は 2026-10-12 に自動テストへの対応表だけになった）。
+  **手動確認は無い**（`docs/notes/manual-checklist.md` セクション G は 2026-10-12 に自動テストへの対応表だけになった）。
   〔2026-10-12 まで〕本欄は `manual` で、「拡張機能の再読み込みは Playwright から再現できず、切断状態は Chrome の内部状態のため自動テストにできない」と書いていた。
   **誤りだった。** 2026-10-11 に再読み込みそのものの再現が分かり（SPEC-SW-02）、2026-10-12 に古いタブが切断状態になることまで確かめた。
   canvas 監視の門を足した 1.13.0 の正常時の非退行（ボタンの表示の切り替え）は、`tests/tradingview.spec.mjs` の「TradingView: 「株Link」ボタンの表示」が見る。
@@ -1450,13 +1450,13 @@ TradingView だけ、起動時に DOM を追加する処理（`createKabuLinkMen
 | 手段 | 内容 |
 | --- | --- |
 | 検証ツール | **対象外（`👤`）。** `targets.mjs` の `excluded` に理由を持たせ、**定義は消さない**（SPEC-SC-10 / SPEC-SC-04）。`excluded` を外せば検証が復活する |
-| 人 | **`docs/MANUAL-CHECKLIST.md` の C-1b**（`rakuten-cs.js` の `menuSelectors` か `manifest.json` を変えたときに実施）。FR-30 判定基準7 |
+| 人 | **`docs/notes/manual-checklist.md` の C-1b**（`rakuten-cs.js` の `menuSelectors` か `manifest.json` を変えたときに実施）。FR-30 判定基準7 |
 
 **自動化を試みる前に CON-10 を変える判断が要る。** C-1b の冒頭に同じ注意を置いてある
 （**理由を書かないと、次の担当が自動化を試みる**）。
 
 - 要件: FR-02, FR-12, **FR-30**（FR-20 は 2026-09-01 に取り下げ）
-- 検証: `manual`（`docs/MANUAL-CHECKLIST.md` **C-1b**）。
+- 検証: `manual`（`docs/notes/manual-checklist.md` **C-1b**）。
   **`半自動` は無い**（ツールの対象外。上表）。自動テストも無い（実サイトの POST 遷移が要る）
 
 ## SPEC-CS-21 検出用セレクタが依存してよいクラス（CON-11 の点検とガード）
@@ -1673,7 +1673,7 @@ FR-13 判定基準5 (c) が「注入 = ヒット」を課す 8 対象を直接�
   `auto`（TradingView の銘柄切替への追随（FR-13 判定基準6）と、切断状態での再試行停止・canvas 監視の停止（同 4）。
   `tests/tradingview.spec.mjs`「TradingView: 「株Link」ボタンの表示」と `tests/disconnected.spec.mjs`。下の検証表 7〜9。
   2026-10-12 に旧手動確認 A-12 / G-6 / G-7 から移した。canvas 監視の門の**正常時の非退行**も前者が見る（NFR-14 判定基準3））／
-  `半自動`（SPEC-SC-11 の銘柄切り替え）／`manual`（`docs/MANUAL-CHECKLIST.md` **A-8 の1行**。チャート以外への画面移動。下記「canvas 監視の切断時の停止」）
+  `半自動`（SPEC-SC-11 の銘柄切り替え）／`manual`（`docs/notes/manual-checklist.md` **A-8 の1行**。チャート以外への画面移動。下記「canvas 監視の切断時の停止」）
 
 ### 検証（developer が用意するもの）
 
@@ -2131,7 +2131,7 @@ if ($(target).closest('div.chart-gui-wrapper').length > 0) {
 
 - この条件が成り立つ世界では**そもそも FR-19 が動かない**（形の値が無いので銘柄を取れない）。
   つまり「新機能が動かないうえに誤った銘柄が出る」という並びになるため、**実サイトで行から何も出ないなら、
-  まず属性名を実測して直す**（`docs/MANUAL-CHECKLIST.md` A-13〜A-16 の注）
+  まず属性名を実測して直す**（`docs/notes/manual-checklist.md` A-13〜A-16 の注）
 - 〔2026-10-15 まで〕検出は手動確認 **A-13**（行の銘柄が出るか）と **A-15**（指数の行で何も出ないか）だった。
   手動確認は自動テストへ移したので、**実サイトでこの穴を踏んでいるかは今は見ていない**（拡張側の分岐は SPEC-CS-27 の 3-5〜3-8・3-12 が固定。実サイトの行の値は、2026-10-15 の一度きりの確かめで 18 行とも `EXCHANGE:CODE` の形だった。`npm run check:selectors` が数えるのは候補属性を持つ行の数で、値の形までは見ない）。
   実サイトの指数の行で「チャートの銘柄が出る」なら、この穴を踏んでいる。**その場合は手当て 2 を外し、
@@ -2235,7 +2235,7 @@ if ($(target).closest('div.chart-gui-wrapper').length > 0) {
 > **2026-10-15 に拡張側を自動テストへ移した**（SPEC-CS-27 の 3-9 / 3-10）。**サイト側（行の要素が使い回されるときに属性が表示に追随するか）は、手動確認 A-19 が見る**（2026-10-15 の本人の判断。旧 A-16 が兼ねていた。半自動にはウォッチリストのスクロールが要り、CON-10 の許容表に無い）。
 > あちらは推測ではなく確認の話なので本表に行が無い。
 > **本表だけを見て「残るは A-17 の後半だけ」と読まないこと**
-> （`docs/requirements/README.md` と FR-19 は「未確認 3 と 6」と数えている。
+> （`docs/notes/requirements/index.md` と FR-19 は「未確認 3 と 6」と数えている。
 > **番号が指すものが表ごとに違う**）。
 
 **「誤った銘柄のリンクが出る経路は無い」とは書かない。**
@@ -2316,7 +2316,7 @@ if ($(target).closest('div.chart-gui-wrapper').length > 0) {
   チャート起点の非退行は既存の `overlap-root` / `context-menu` が見る。〔2026-10-15 まで〕無し（`menuSelectors` を増やさないため対象は 20 のまま））／
   `auto`（2026-10-15〜。`tests/tradingview.spec.mjs`「TradingView: ウォッチリストの行を起点にする（FR-19）」。SPEC-CS-27 の 3-1〜3-12。
   国内株・米国株の行／対象外の行／行の差し替え後／チャート起点の非退行／チャート内の形でない値）／
-  `manual`（`docs/MANUAL-CHECKLIST.md` **A-17 の2行目**（ツールバー・銘柄検索・ほかのウィジェットで出ないこと。上表 6）と
+  `manual`（`docs/notes/manual-checklist.md` **A-17 の2行目**（ツールバー・銘柄検索・ほかのウィジェットで出ないこと。上表 6）と
   **A-19**（2026-10-15〜。ウォッチリストをスクロールした後の行でも、その行の銘柄が出ること。行の要素の使い回しへの属性の追随）。
   既存の **A-6 の3つめの操作**は期待結果を反転させた（ウォッチリストでは**出るのが正しい**）。
   〔2026-10-15 まで〕A-13〜A-17（1.15.0 で新設）で、2026-08-30 に A-13 / A-14 / A-15 / A-17 の前半を実施し、未消化は A-16 と A-17 の後半だった）／
@@ -2481,7 +2481,7 @@ if ($(target).closest('div.chart-gui-wrapper').length > 0) {
 
 - 要件: FR-24, FR-04, FR-18, FR-19, NFR-01, CON-03, CON-08
 - 検証: `auto`（`tests/tradingview.spec.mjs`。**SPEC-CS-27 の 2-1〜2-6**。1.20.0）／
-  `manual`（`docs/MANUAL-CHECKLIST.md` **A-18**。段階2 の後に残るのは
+  `manual`（`docs/notes/manual-checklist.md` **A-18**。段階2 の後に残るのは
   **5行目**（サイト側メニューのスクロール可否）と**7行目**（ボタンメニューの観察）だけ。
   **判定基準4 はサイト側のスクロールで満たす**ことが 2026-08-30 の実機確認で確定した）
 
@@ -2884,7 +2884,7 @@ table#pcmm-foreign-stock tr > td:nth-of-type(2) div.mbody
 - 要件: FR-28（判定基準1・7）
 - 検証: `auto`（`米国株のお気に入り2ページでは米国ティッカーの行にメニューが出る`。
   **案B の回帰**＝`APPLE INC`（銘柄名の列）にメニューが出ないことを同じテストで固定している）／
-  `manual`（`docs/MANUAL-CHECKLIST.md` C-1）／`半自動`（`npm run check:selectors`）
+  `manual`（`docs/notes/manual-checklist.md` C-1）／`半自動`（`npm run check:selectors`）
 
 #### 案B の回帰テストと実物の1点の違い（developer の申告。2026-09-01）
 
@@ -2976,7 +2976,7 @@ div#table_possess_data table.tbl-bold-border tr > td:contains("米国株式") + 
 > **商品種別の列は無いので構造だけでは足りない**が、**銘柄名の列（`APPLE INC` のような英字）に
 > 届かなくなる**のは大きい。**残るのは列構成が変わったときと、編集ページ（未確認）。**
 
-**確認は `docs/MANUAL-CHECKLIST.md` の C-1 / C-3 に置いた**（下記「`manual`」）。
+**確認は `docs/notes/manual-checklist.md` の C-1 / C-3 に置いた**（下記「`manual`」）。
 
 ### 注入件数と再試行の関係
 
@@ -3064,7 +3064,7 @@ CON-08 は TradingView だけの制約で、楽天・SBI はフィクスチャ�
 > 残る3エントリは商品種別で絞っておらず、**フィクスチャに株式以外の行を置けば注入される**
 > （＝仕様どおりの結果になり、テストにならない）。**目視で担保する**（上記の節）。
 
-**`manual`（`docs/MANUAL-CHECKLIST.md` の C-1 / C-3。FR-28 を ✅ にする条件）**
+**`manual`（`docs/notes/manual-checklist.md` の C-1 / C-3。FR-28 を ✅ にする条件）**
 
 **1回目を 2026-08-30 に実施した**（利用者。1.17.0）。結果は2つ。
 
@@ -3183,7 +3183,7 @@ CON-08 は TradingView だけの制約で、楽天・SBI はフィクスチャ�
 > **同じ注意が FR-26 判定基準5 にも要る。** 判定基準5 は
 > 「`src/tradingview-cs.js` の変更が (a) の範囲なら、**利用者への依頼なしにコミット・リリースできる**」を求めている。
 > **A に残る行はすべて (b)**（2026-10-15 の段階5 の後に 11 行。同日の本人の判断で A-19 を足して 12 行。段階4 の後は 19 行のうち 8 行、段階3 の後は 33 行のうち 22 行、2026-10-12 時点は 44 行のうち 33 行が (a) だった）。
-> 〔2026-10-15〕`docs/MANUAL-CHECKLIST.md` の「変更箇所 → 実施するセクション」を、(a) だけの変更は依頼が要らない・起点の判定と `watchlistSymbolAttrs` は A-17 が要る、と書き直し、**表の上では判定基準5 を満たした**。
+> 〔2026-10-15〕`docs/notes/manual-checklist.md` の「変更箇所 → 実施するセクション」を、(a) だけの変更は依頼が要らない・起点の判定と `watchlistSymbolAttrs` は A-17 が要る、と書き直し、**表の上では判定基準5 を満たした**。
 > 〔2026-10-15 の本人の判断〕段階3・4 で手動から外したサイト側の確かめのうち、**手動に戻したのは行の使い回しへの追随（A-19）だけ**で、表にも行を足した。
 > 行の属性と余白の隙間は `npm run check:selectors`（SPEC-SC-11）が見る。TradingView 自身のキー操作と猶予 150ms の体感は「気づいたら報告」で、どこでも見ない。
 > 〔2026-10-15 まで〕「段階1・2 の完了ではまだ達していない。変更箇所の表が `src/tradingview-cs.js` → A（全部）のままなのは現状として正しい」だった。
@@ -3196,7 +3196,7 @@ CON-08 は TradingView だけの制約で、楽天・SBI はフィクスチャ�
 | --- | --- |
 | 1. ハッシュ付きクラス名を含めない | フィクスチャは `menuSelectors`（SPEC-CS-15）と `watchlistSymbolAttrs`（SPEC-CS-23）を**実行時に読み**、そこから DOM を生成する。`container-OH8c8Nc3` のような文字列を**テストコードに書かない** |
 | 2. サイト改修で更新が要らない | セレクタを差し替えたらフィクスチャは**自動で追従する**。更新が要るのは「拡張が依存する構造そのもの」を変えたときだけ |
-| 3. 実サイトの根拠にしない | 本節・`docs/TESTING.md`・`docs/TEST-CATALOG.md` に明記する（下記「このテストが言えないこと」） |
+| 3. 実サイトの根拠にしない | 本節・`docs/notes/testing.md`・`docs/TEST-CATALOG.md` に明記する（下記「このテストが言えないこと」） |
 
 #### セレクタから DOM を組み立てる規則
 
@@ -3403,7 +3403,7 @@ SPEC-CS-24 の書き戻しには2つの主張がある。**検査できるのは
 - 5-2 / 4-1 / B-1 は fixture `externalRequests` で、差し替えていない外部への要求とタブの遷移が無いことも検査する
 - **B-1 の楽天証券のタブは実タブ。** `member.rakuten-sec.co.jp/…;BV_SessionID=…` をフィクスチャで返したタブを開き、
   Service Worker の `chrome.tabs.query` は差し替えない。拡張はタブの有無と URL だけで判定するので（SPEC-SW-06）、実際の判定と同じになる
-- **タブを開く操作は Service Worker の `chrome.tabs.create` を差し替える。** SW が開いたタブの最初の遷移は `context.route` で差し替えられない（2026-10-12 実測。`docs/TESTING.md`「5. 切断状態」の注）
+- **タブを開く操作は Service Worker の `chrome.tabs.create` を差し替える。** SW が開いたタブの最初の遷移は `context.route` で差し替えられない（2026-10-12 実測。`docs/notes/testing.md`「5. 切断状態」の注）
 - **5-2 の旧 A-12 の 2 行目（切り替え後のボタンメニューが新しい銘柄になる）は監視を判別しない。** ボタンを押した時点で canvas を読むため、
   監視が外れていても成り立つ。監視が再試行の単位で張られていることを判別するのは「隠れる」のほう
 
@@ -3545,7 +3545,7 @@ SPEC-CS-24 の書き戻しには2つの主張がある。**検査できるのは
 | --- | --- |
 | `tests/tradingview.spec.mjs` | 段階1 の 1-1〜1-5、段階2 の 2-1〜2-6 |
 | フィクスチャ | `menuSelectors` / `watchlistSymbolAttrs` を**実行時に読んで**組み立てる（`scripts/selector-check/load-selectors.mjs` の `evaluateScripts`） |
-| `docs/MANUAL-CHECKLIST.md` | 移した **9 行を削除済み**（A は 57 → 48） |
+| `docs/notes/manual-checklist.md` | 移した **9 行を削除済み**（A は 57 → 48） |
 
 - **フィクスチャに `ktt-tv-` / `x-kabu-` を書かない。** それは拡張が付けるクラスで、
   **テストが先に書くと「拡張が付けた」ことを検査できなくなる**
@@ -3567,7 +3567,7 @@ SPEC-CS-24 の書き戻しには2つの主張がある。**検査できるのは
 
 - 要件: FR-26, FR-24, FR-25, FR-12, NFR-08, CON-08, CON-09
 - 検証: `auto`（`tests/tradingview.spec.mjs`。本節が定義する 1-1〜1-5 / 2-1〜2-6 / 3-1〜3-12 / 4-1〜4-14 / 5-1〜5-10 / B-1）／
-  `manual`（**残る行**は上表のとおり。`docs/MANUAL-CHECKLIST.md` A-8 / A-11 の観測 / A-18 の 5・7行目）
+  `manual`（**残る行**は上表のとおり。`docs/notes/manual-checklist.md` A-8 / A-11 の観測 / A-18 の 5・7行目）
 
 ## SPEC-CS-28 TradingView: 右クリックの証券会社項目は URL を持たない（NFR-03）
 

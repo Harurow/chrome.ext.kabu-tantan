@@ -1000,11 +1000,11 @@ test.describe('検証ツールの対象外', () => {
     // ツールから外すだけで人の確認も無いと、その対象は**誰も見ていない**状態になる
     // (FR-30 判定基準7)。チェックリストに `key` が現れることまでを機械で見る。
     // 中身の手順までは見ない（脆くなるため）。見るのは「項目が在るか」だけ
-    const checklist = fs.readFileSync(path.join(rootDir, 'docs', 'MANUAL-CHECKLIST.md'), 'utf8')
+    const checklist = fs.readFileSync(path.join(rootDir, 'docs', 'notes', 'manual-checklist.md'), 'utf8')
 
     for (const site of sites) {
       for (const target of site.targets.filter((item) => item.excluded)) {
-        expect(checklist, `${site.site}/${target.key} の項目が MANUAL-CHECKLIST.md に無い`)
+        expect(checklist, `${site.site}/${target.key} の項目が manual-checklist.md に無い`)
           .toContain(target.key)
       }
     }

@@ -98,7 +98,7 @@
 | ボタン | `.notice-actions` で右寄せ |
 
 - 長い文言は折り返す（横スクロールを出さない。`overflow-wrap: anywhere`）
-- **ダークモード（`prefers-color-scheme`）には対応していない**（配色は白地に濃い文字の固定）。オプションページは対応している（`NFR-10` の対象はオプションページだけ）。候補として要件側に記録した（`docs/requirements/README.md` の 2026-10-11 その10）
+- **ダークモード（`prefers-color-scheme`）には対応していない**（配色は白地に濃い文字の固定）。オプションページは対応している（`NFR-10` の対象はオプションページだけ）。候補として要件側に記録した（`docs/notes/requirements/index.md` の 2026-10-11 その10）
 - CSS のプロパティの並びは Stylelint（`stylelint-config-recess-order`）に従う
 
 **収まりの検証の考え方:** 小窓のページは Playwright が表示領域を 1280×720 に置き換える（SPEC-SW-10 の実測 7）ので、
@@ -142,7 +142,7 @@ macOS のタイトルバーは 28px 前後、Windows は 30px 前後と見てい
 - テスト 10 で `notice.html` そのものの要求を数えないのは、Playwright が新しいウィンドウにつながる前に出て `request` イベントに現れないため（2026-10-11 実測）。
   **assert はしない**（Playwright の都合であって、本ページの振る舞いではない）。`notice.html` が外部を読み込めば、その要求は `notice.css` と同じく取れる
 - テストの増減に合わせて `npm run docs:tests` で `docs/TEST-CATALOG.md` を再生成する
-- `tests/notice.spec.mjs` は `docs/TESTING.md` と `AGENTS.md` のテスト表に載せてある
+- `tests/notice.spec.mjs` は `docs/notes/testing.md` と `AGENTS.md` のテスト表に載せてある
 
 **「ガードを外すと落ちる」ことの実証（1.21.0 の実装時に developer が1回ずつ行い、下の全行で該当テストが落ちることを確かめた。変更はコミットしていない）:**
 

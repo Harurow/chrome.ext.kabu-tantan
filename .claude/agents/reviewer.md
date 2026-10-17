@@ -38,12 +38,12 @@ git diff --cached       # ステージ済みの変更
 npm run check           # lint:all + validate + test
 ```
 
-変更が文書だけ（`docs/WORKFLOW.md`「文書だけの変更は文書の検査だけで承認する」の条件）なら、`npm run check` ではなく
+変更が文書だけ（`docs/notes/workflow.md`「文書だけの変更は文書の検査だけで承認する」の条件）なら、`npm run check` ではなく
 `npm run check:docs`（lint:md + テストカタログの陳腐化検査）を流す。テストの結果は変わらないので、全件（約2分）は流さない。
 
 `npm run check` が落ちている場合は、**それを最優先で報告する**。
 通ると作業ツリーが `.claude/check-passed.json` に記録され、そのまま `npm run approve` すると流し直さない
-（`docs/WORKFLOW.md`「全件のチェックを同じ作業ツリーで2回流さない」）。記録を書くのはスクリプトで、あなたが書くファイルではない。
+（`docs/notes/workflow.md`「全件のチェックを同じ作業ツリーで2回流さない」）。記録を書くのはスクリプトで、あなたが書くファイルではない。
 
 ## 観点（優先順）
 
@@ -71,7 +71,7 @@ npm run check           # lint:all + validate + test
 
 ### 3. 仕様との整合
 
-- 変更が `docs/specs/` の記述と一致しているか。ズレていればどちらが正か指摘する
+- 変更が `docs/notes/specs/` の記述と一致しているか。ズレていればどちらが正か指摘する
 - 仕様書の更新漏れが無いか
 - `chrome.storage.sync` の `key` を変更していないか（**既存ユーザーの設定が消える**）
 
