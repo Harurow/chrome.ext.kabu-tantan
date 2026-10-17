@@ -70,12 +70,21 @@ src/                        ← このディレクトリがそのまま拡張機
 scripts/                    # 開発用 Node スクリプト (validate / package / test-catalog)
 tests/                      # Playwright テスト
 docs/
+├── tasks.md                # 入口: 残りのタスク (AI の分も利用者の分も)
+├── requirements.md         # 入口: 何を作るか → requirements/
+├── design.md               # 入口: どう作るか → ARCHITECTURE.md・specs/・adr/
+├── verification.md         # 入口: 確かめ方と結果 → TESTING.md・MANUAL-CHECKLIST.md ほか
+├── README.md               # 文書の索引・ID 採番規則・追跡関係
 ├── requirements/           # 要件定義 (FR / NFR / CON)
 ├── specs/                  # 仕様書 (SPEC-xx) ← 実装と1対1
+├── adr/                    # 設計判断の記録 (ADR-xxxx)
 ├── ARCHITECTURE.md         # 実装構造・ライブラリ更新手順
 ├── TESTING.md              # テスト方針・手動確認手順
 ├── TEST-CATALOG.md         # テスト一覧 (自動生成)
+├── SELECTOR-CHECK.md       # 実サイトのセレクタ検証結果 (check:selectors の生成物)
+├── MANUAL-CHECKLIST.md     # 手動確認チェックリスト
 ├── WORKFLOW.md             # 開発フロー・エージェント・コミットゲート
+├── notes/                  # そのほかの新しい資料 (最初の1件を書くときに作る)
 ├── images/                 # README 用スクリーンショット
 └── zenn/                   # 記事化用の作業ログ
 
@@ -103,6 +112,8 @@ docs/
 | `src/`, `tests/` | 実装 | developer |
 | — | レビュー（書き換えなし） | reviewer |
 
+どこを開けばよいかは、`docs/` 直下の入口の4ファイル（[tasks.md](docs/tasks.md)・[requirements.md](docs/requirements.md)・[design.md](docs/design.md)・[verification.md](docs/verification.md)）が案内する。
+入口には中身を書かず、上の表の文書へリンクする（tasks.md は除く。残りのタスクはそこが正本）。そのほかの新しい資料は `docs/notes/` に置く（今ある文書は動かしていない）。
 索引は [docs/README.md](docs/README.md)。**仕様書は「あるべき姿」ではなく「実際にそうなっているもの」を書く。**
 
 ### エージェント
@@ -117,7 +128,7 @@ docs/
 | `developer` | 仕様に従って実装する | `src/`, `tests/`, `scripts/`, ルート設定 |
 | `reviewer` | 実装と文書を突き合わせて検証する | **なし（読み取り専用）** |
 
-`AGENTS.md`・`docs/README.md`・`docs/WORKFLOW.md`・`docs/TESTING.md`・`docs/MANUAL-CHECKLIST.md`・`.claude/` は、どの担当の書き換え範囲にも入れない。
+`AGENTS.md`・`docs/` 直下の入口の4ファイル・`docs/README.md`・`docs/WORKFLOW.md`・`docs/TESTING.md`・`docs/MANUAL-CHECKLIST.md`・`.claude/` は、どの担当の書き換え範囲にも入れない。
 書くのはメインセッション（利用者と直接やり取りしている AI）だけ（`AGENTS.md` は下の「[AI エージェント向けの記録](#ai-エージェント向けの記録)」）。
 
 担当を指定せずに起動したメインセッションは、この表の書き換え範囲に縛られない（`src/third-party/` を編集しないなど、ほかの規則には従う）。
@@ -306,6 +317,8 @@ Playwright で拡張機能を実際に Chromium へロードして検証する�
 | この拡張機能で繰り返し効く規則・手順、実行環境の癖、利用者との進め方の取り決め | 進行中の状態（どの版を申請したか、残り・次の一手・未決の質問など）、個人情報、コードや git 履歴から読み取れること |
 
 進行中の状態は、git log・docs と、利用者の Obsidian のプロジェクトノートに残す。
+残りのタスクは [docs/tasks.md](docs/tasks.md) に置く。増えたら足し、済んだら消して、その作業のコミットに含める（公開リポジトリなので、私的なことは書かない）。
+本人の分は、今要るときだけ頼む（一覧にあることを理由に、報告で先に予告しない）。
 Chrome 拡張機能に共通する取り決めとノウハウは、利用者の共通ルール `~/.claude/rules/chrome-extensions.md` に書く。
 **このリポジトリで作業するときは、着手前にそのファイルと `~/.claude/rules/testing.md` を読む**
 （自動の読み込みは対象のファイルを開いたときにしか起きず、このプロジェクトの Content Script（`*-cs.js`）は対象のパターンに当たらない）。

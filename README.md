@@ -142,6 +142,7 @@ npm run approve     # レビュー承認を記録する（コミットに必須�
 | | |
 | --- | --- |
 | 開発ガイド（規約・注意事項） | [AGENTS.md](AGENTS.md) |
+| 入口（残りのタスク・要件・設計・確かめ方） | [tasks](docs/tasks.md) ・ [requirements](docs/requirements.md) ・ [design](docs/design.md) ・ [verification](docs/verification.md) |
 | ドキュメント索引 | [docs/README.md](docs/README.md) |
 | 開発フロー・エージェント | [docs/WORKFLOW.md](docs/WORKFLOW.md) |
 | 要件定義 | [docs/requirements/](docs/requirements/) |

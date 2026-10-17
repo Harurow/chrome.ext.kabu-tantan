@@ -1,9 +1,16 @@
 # ドキュメント
 
+どこを開けばよいかは、入口の4ファイル（[tasks.md](tasks.md)・[requirements.md](requirements.md)・[design.md](design.md)・[verification.md](verification.md)）が案内する。
+このファイルは、文書全体の構成と、ID・追跡関係・担当の決まりを書く。
+
 ## 構成
 
 ```text
 docs/
+├── tasks.md            入口 — 残りのタスク（AI の分も利用者の分も）
+├── requirements.md     入口 — 何を作るか（requirements/ へ案内する）
+├── design.md           入口 — どう作るか（ARCHITECTURE.md・specs/・adr/ へ案内する）
+├── verification.md     入口 — 確かめ方と結果（TESTING.md・MANUAL-CHECKLIST.md ほかへ案内する）
 ├── requirements/       要件定義 — 「何を満たすべきか」
 │   ├── background.md       背景・目的・スコープ
 │   ├── functional.md       機能要件 (FR-xx)
@@ -18,6 +25,7 @@ docs/
 │   ├── messaging.md        SPEC-MSG メッセージ通信
 │   ├── content-scripts.md  SPEC-CS  各サイトへの注入
 │   ├── options-page.md     SPEC-OP  オプションページ
+│   ├── notice-page.md      SPEC-NT  開けないときの小窓
 │   └── selector-check.md   SPEC-SC  実サイトのセレクタ検証ツール
 ├── adr/                設計判断の記録 (ADR-xxxx)
 │   └── 0001-selector-check-design.md
@@ -27,6 +35,7 @@ docs/
 ├── TEST-CATALOG.md     テスト一覧（自動生成）
 ├── SELECTOR-CHECK.md   実サイトのセレクタ検証結果（`npm run check:selectors` の生成物）
 ├── MANUAL-CHECKLIST.md 手動確認チェックリスト（利用者が実施）
+├── notes/              そのほかの新しい資料（最初の1件を書くときに作る。今ある文書は動かしていない）
 ├── images/             README 用スクリーンショット
 └── zenn/               記事化用の作業ログ
 ```
@@ -83,7 +92,7 @@ docs/
 | `developer` | 実装 | `src/`, `tests/`, `scripts/`, ルートの設定ファイル |
 | `reviewer` | レビュー | **なし（読み取り専用）** |
 
-`AGENTS.md`・この README・`WORKFLOW.md`・`TESTING.md`・`MANUAL-CHECKLIST.md`・`.claude/` は、どの担当の範囲にも入れず、メインセッションが書く。
+`AGENTS.md`・入口の4ファイル・この README・`WORKFLOW.md`・`TESTING.md`・`MANUAL-CHECKLIST.md`・`.claude/` は、どの担当の範囲にも入れず、メインセッションが書く。
 担当に渡すかどうかの基準は [WORKFLOW.md](WORKFLOW.md)「サブエージェントに渡す基準」。
 
 > **コミットは、テスト全件が通り、かつ reviewer のレビューが通るまでできない。**

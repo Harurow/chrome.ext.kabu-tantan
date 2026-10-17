@@ -68,7 +68,7 @@ flowchart TD
 
 - **サブエージェントは役割をまたいで変えない。** developer は仕様書を書かない。architect は実装しない
 - `reviewer` は `tools` に `Write` / `Edit` を持たない。ただし `Bash` は持つので、書き換えないことは定義の指示で禁じている（道具の側の保証ではない）
-- `AGENTS.md`・`docs/README.md`・`docs/WORKFLOW.md`・`docs/TESTING.md`・`docs/MANUAL-CHECKLIST.md`・`.claude/` は、どの担当の書き換え範囲にも入れない。
+- `AGENTS.md`・`docs/` 直下の入口の4ファイル（`tasks.md`・`requirements.md`・`design.md`・`verification.md`）・`docs/README.md`・`docs/WORKFLOW.md`・`docs/TESTING.md`・`docs/MANUAL-CHECKLIST.md`・`.claude/` は、どの担当の書き換え範囲にも入れない。
   書くのはメインセッション。サブエージェントは、書くべきことに気づいたら報告に書いて渡す
 - `docs/TEST-CATALOG.md` は生成物。テストを増減したら（developer か、自分で書いたメインセッションが）`npm run docs:tests` で作り直す
 
