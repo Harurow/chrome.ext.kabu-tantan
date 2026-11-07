@@ -142,7 +142,7 @@ macOS のタイトルバーは 28px 前後、Windows は 30px 前後と見てい
 - テスト 10 で `notice.html` そのものの要求を数えないのは、Playwright が新しいウィンドウにつながる前に出て `request` イベントに現れないため（2026-10-11 実測）。
   **assert はしない**（Playwright の都合であって、本ページの振る舞いではない）。`notice.html` が外部を読み込めば、その要求は `notice.css` と同じく取れる
 - テストの増減に合わせて `npm run docs:tests` で `docs/TEST-CATALOG.md` を再生成する
-- `tests/notice.spec.mjs` は `docs/notes/testing.md` と `AGENTS.md` のテスト表に載せてある
+- `tests/notice.spec.mjs` は `docs/notes/testing.md`（「テストファイルごとの対象」の表を含む）に載せてある（テスト表は 2026-11-07 に `AGENTS.md` から移した）
 
 **「ガードを外すと落ちる」ことの実証（1.21.0 の実装時に developer が1回ずつ行い、下の全行で該当テストが落ちることを確かめた。変更はコミットしていない）:**
 

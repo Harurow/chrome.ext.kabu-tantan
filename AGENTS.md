@@ -63,7 +63,7 @@ docs/
 ├── verification.md         # 入口: 確かめ方と結果 → notes/testing.md・notes/manual-checklist.md ほか
 ├── notes/                  # 現在の資料（英小文字とハイフン。話題ごとのフォルダは1段まで）
 │   ├── architecture.md     # 実装構造・同梱ライブラリの更新手順
-│   ├── testing.md          # テスト方針・3層 (自動 / 半自動 / 手動) の切り分け・実行
+│   ├── testing.md          # テスト方針・3層 (自動 / 半自動 / 手動) の切り分け・実行・テストを書くときの知見・テストファイルごとの対象
 │   ├── manual-checklist.md # 実際に手で見る項目と結果
 │   ├── workflow.md         # 開発フロー・担当の権限・モデル選定・コミットゲート
 │   ├── requirements/       # 要件 (FR / NFR / CON)。index.md が案内する
@@ -257,23 +257,11 @@ async function attachAsync () {
 ## テスト
 
 Playwright で拡張機能を実際に Chromium へロードして検証する。詳細と検証の切り分け（自動 / 半自動 / 手動）は [testing.md](docs/notes/testing.md)。
+**テストを書く・直す・流して確かめる（変異での確かめ・シグナルの検証を含む）前に [docs/notes/testing.md](docs/notes/testing.md) を読む**（テストファイルごとの対象の表と、Playwright の癖などの知見がある）。
 
-| ファイル | 対象 |
-| --- | --- |
-| `tests/service-worker.spec.mjs` | `getTickerCode` / `compareVersion` / `makeUrl` / `externalUrls` の整合性 |
-| `tests/options.spec.mjs` | オプションページの表示・保存・並び替え・外部リクエスト有無 |
-| `tests/content-script.spec.mjs` | 楽天・SBI へのメニュー注入（フィクスチャ HTML を実オリジンで差し替え） |
-| `tests/tradingview.spec.mjs` | TradingView で拡張が作った DOM（ウォッチリストの行の起点（国内株・米国株・対象外の行・行の差し替え後・チャートの非退行）・項目の集合と順序（入れ子とボタン・設定順）・入れ子の開閉と位置（猶予・Esc・外クリック・右端・高さ・キー・0件）・ボタンのメニューの閉じ方と遷移・右クリックで足す行と二重追加の防止・入れ子メニューのクリック範囲・縦位置補正・証券会社の項目が URL を DOM に出さないこと・未知キーの読み飛ばし・「株Link」ボタンの表示と隠れ方・遅れて出たボタンの追随・項目0件のとき・証券会社のタブの有無・半自動検証が測る入れ子の隙間と実際の位置の一致）と、セレクタからフィクスチャを組み立てる規則 |
-| `tests/disconnected.spec.mjs` | 拡張機能の再読み込み後に残った古いタブ（切断状態）。TradingView・スクリーナー・楽天証券・SBI証券で、注入しない・例外を出さない・タブを再読み込みすれば戻ること（NFR-14 / 手動確認だった G 節） |
-| `tests/notice.spec.mjs` | 右クリックの項目で開けないときの小窓（文言・設定順の並び・選択文字列を出さないこと・HTML として解釈しないこと・閉じ方・外部リクエストゼロ・大きさへの収まり） |
-| `tests/selector-defs.spec.mjs` | `menuSelectors` の定義・`check:selectors` の中断処理・手がかりの消毒と書式・TradingView のウォッチリストの行の数え方と入れ子の隙間の測り方 |
-| `tests/check-record.spec.mjs` | コミットゲート: `npm run check` が通った作業ツリーの記録と、`npm run approve` がそれを使い回す条件、作業ツリーのハッシュ（日本語の名前の未追跡ファイル・名前の変更）、文書だけの変更を文書の検査だけで承認する条件、チェックの途中で作業ツリーや HEAD が変わったら記録・承認しないこと |
-| `tests/commit-gate.spec.mjs` | コミットゲートのフック: コミットされる中身（index）が承認した中身と同じときだけ通すこと（一部だけのステージ・ステージしてから作業ツリーを戻した中身・パスの指定・`-a` と未追跡のファイル・前に置くコマンド（`set` と `GIT_` の代入を含む）・シェル経由・場所の変更・ヒアドキュメント・引用符とリダイレクト）、commit 以外でコミットを作るコマンド（merge など・`--skip`・`git pull`）を止めること、`--continue` の中身と残りの手順 |
-
-コミットゲートの2つ（`check-record`・`commit-gate`）は一時の git リポジトリで流し、ブラウザは起動しない。
 テストの一覧は [docs/TEST-CATALOG.md](docs/TEST-CATALOG.md)（`npm run docs:tests` で自動生成）。**テストを増減したらこれを再生成すること。**
 
-**TradingView の自動テストは、拡張が自分で作った DOM の振る舞いだけを見る。サイト側の実 DOM は見ないので、緑でも実サイトが壊れていない根拠にはならない**（CON-08）。
+**TradingView の自動テスト（`tests/tradingview.spec.mjs`）は、拡張が自分で作った DOM の振る舞いだけを見る。サイト側の実 DOM は見ないので、緑でも実サイトが壊れていない根拠にはならない**（CON-08）。
 サイト側の DOM・見た目・挙動は `npm run check:selectors` と [manual-checklist.md](docs/notes/manual-checklist.md) の A セクションが見る。変更時は同チェックリストに従って利用者に確認を依頼する。
 
 ## 注意事項
@@ -286,6 +274,7 @@ Playwright で拡張機能を実際に Chromium へロードして検証する�
 ## AI エージェント向けの記録
 
 **この拡張機能について AI が覚えておくべきことは、このファイルに書く。** 個人用のメモリ（Claude Code の auto memory など）には置かない。
+例外として、テストの知見は [docs/notes/testing.md](docs/notes/testing.md)「テストを書くときの知見」に置く（2026-11-07 利用者判断。本ファイルを 32 KiB 以内に収めるため）。
 `CLAUDE.md` は置かない（2026-10-11 利用者判断）。Claude Code は v2.1.277 以降、作業ディレクトリとその上に `CLAUDE.md`（`.claude/CLAUDE.md`・`CLAUDE.local.md` を含む）が無ければ本ファイルを読む。
 利用者の `~/.claude/CLAUDE.md` はこの判定に数えないので、あっても本ファイルは読まれる。サブエージェントも、定義に `omitClaudeMd` が無ければ `~/.claude/CLAUDE.md` と本ファイルを読み込む
 （2026-10-12 に公式ドキュメントの [memory](https://code.claude.com/docs/en/memory) と [sub-agents](https://code.claude.com/docs/en/sub-agents)「What loads at startup」で確認）。
@@ -344,26 +333,6 @@ Chrome 拡張機能に共通する取り決めとノウハウは、利用者の�
 
 > 利用者の言葉（2026-10-11）: 「自動でテストできるとか、基本的に自動でテストしてください。」
 
-### 拡張が開いたタブは `context.route` で止まらない
-
-Service Worker の `chrome.tabs.create` で開いたタブは、**最初の遷移が `context.route` を素通りし、`request` イベントにも出ない**（2026-10-12 実測）。
-同じタブでの2回目以降の遷移と、ページから開いたタブ（`<a target="_blank">` / `window.open`）には route が効く。
-素通りすると実在のサイトへリクエストが出て、Playwright からは見えない（2026-10-12 の試行では、実在しないセッション ID で楽天証券へ実際に1回出てしまった）。
-
-- テストの context は名前解決を塞いである（`tests/fixtures/extension.mjs`。`--host-resolver-rules`）。route の差し替えは名前解決より前に応えるので効く
-- それでも、拡張がタブを開きうるテストでは Service Worker の `chrome.tabs.create` を差し替えて、開く URL を記録する
-  （`tests/tradingview.spec.mjs` の `stubBrokerTabsAsync` や `tests/service-worker.spec.mjs` と同じやり方）
-- 拡張を再読み込みすると Service Worker が入れ替わるので、差し替えはかけ直す
-
-### Playwright でのテストの癖
-
-- **初回インストールのオプションページが、テストのタブを奪うことがある。** 起動の約 100ms 後に空のタブを上書きして開くので、テストのページが先にできているとそちらが遷移させられる
-  （2026-10-12 に B-1 を25回流して2回落ちて見つかった）。`context` fixture で開き終わるのを待っている
-- **TradingView のフィクスチャのチャートは、ウォッチリストの行の候補属性（`watchlistSymbolAttrs`）を持たない。** そのため、チャート起点を守る分岐
-  （候補属性はあるが値が `EXCHANGE:CODE` の形でない → 行ではない → チャート起点）は、チャートの中に候補属性を足したテスト（`addChartElementWithRowAttrsAsync`）でしか通らない
-  （2026-10-15 のレビューで、分岐を壊しても 40 件すべて通ることを変異で確かめて見つかった）
-- **ガードを外すと落ちることの確かめは、`src/` を書き換えずに行う**（`src/` を戻し忘れる心配がない）。`src/` の複製に変異を当て、環境変数 `EXTENSION_PATH` でその複製を読み込ませる
-
 ### 修正したら、テスト → レビュー → テスト → コミット → push までをセットで行う
 
 **コードを修正したら、テスト → レビュー → テスト → コミット → push までを1セットとして行う。** push の前に利用者へ確認しない（2026-10-11 利用者指示）。
@@ -403,13 +372,3 @@ AI と利用者の分担は共通ルール（`chrome-extensions.md`「リリー�
 - `npm run package` は作業ツリーの `src/` をそのまま固める。作業中で `src/` が汚れているときは、対象コミットを `git worktree add --detach <dir> <commit>` で取り出してそこで `node scripts/package.mjs` を実行し、
   展開した zip と `git archive <commit> src` の中身が一致することを `diff -r` で確かめてから `dist/` に置く
 - タグは付けていない
-
-### 実行環境ではシグナルが届かないことがある
-
-AI エージェントの Bash 実行環境（Claude Code で確認）は、`kill -INT` を子プロセスに届けない（素の `bash -c 'trap … INT'` すら反応しない。SIGTERM は届く）。
-`( … ) &` の背景ジョブや `sleep | node` のパイプ経由で起動すると、シグナルの継承（SIG_IGN）や stdin の TTY の有無も変わる。
-コミットゲートやセレクタ検証ツールの後始末の検証で、これが原因の誤判定を3回繰り返した。
-
-- シグナル関連の検証は **`child_process.spawn` + `child.kill(sig)`** で行う（シェルを介さない）
-- **実 TTY（raw モードの readline）は再現できない。** `SELECTOR_CHECK_FORCE_TERMINAL=1` のようなテスト用の強制フラグで擬似的に再現し、最終確認は利用者に実端末で依頼する
-- 「自分の環境で再現しない」を根拠に他の担当の報告を否定しない。先に最小再現（`node -e 'process.on("SIGINT",…)'` 程度）で環境そのものを疑う。逆に自己申告も鵜呑みにしない
